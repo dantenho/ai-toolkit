@@ -1,21 +1,19 @@
 from functools import partial
+
 import torch
-from toolkit.prompt_utils import PromptEmbeds
-from PIL import Image
 from diffusers import UniPCMultistepScheduler
-import torch
+from PIL import Image
 from toolkit.config_modules import GenerateImageConfig, ModelConfig
+from toolkit.data_transfer_object.data_loader import DataLoaderBatchDTO
+from toolkit.models.wan21.wan21 import AggressiveWanUnloadPipeline, Wan21
+from toolkit.models.wan21.wan_utils import add_first_frame_conditioning_v22
+from toolkit.prompt_utils import PromptEmbeds
 from toolkit.samplers.custom_flowmatch_sampler import (
     CustomFlowMatchEulerDiscreteScheduler,
 )
-from .wan22_pipeline import Wan22Pipeline
-
-from toolkit.data_transfer_object.data_loader import DataLoaderBatchDTO
 from torchvision.transforms import functional as TF
 
-from toolkit.models.wan21.wan21 import Wan21, AggressiveWanUnloadPipeline
-from toolkit.models.wan21.wan_utils import add_first_frame_conditioning_v22
-
+from .wan22_pipeline import Wan22Pipeline
 
 # for generation only?
 scheduler_configUniPC = {
@@ -56,17 +54,20 @@ scheduler_config = {
     "use_dynamic_shifting": False,
 }
 
+
 # TODO: this is a temporary monkeypatch to fix the time text embedding to allow for batch sizes greater than 1. Remove this when the diffusers library is fixed.
 def time_text_monkeypatch(
     self,
     timestep: torch.Tensor,
     encoder_hidden_states,
-    encoder_hidden_states_image = None,
-    timestep_seq_len = None,
+    encoder_hidden_states_image=None,
+    timestep_seq_len=None,
 ):
     timestep = self.timesteps_proj(timestep)
     if timestep_seq_len is not None:
-        timestep = timestep.unflatten(0, (encoder_hidden_states.shape[0], timestep_seq_len))
+        timestep = timestep.unflatten(
+            0, (encoder_hidden_states.shape[0], timestep_seq_len)
+        )
 
     time_embedder_dtype = next(iter(self.time_embedder.parameters())).dtype
     if timestep.dtype != time_embedder_dtype and time_embedder_dtype != torch.int8:
@@ -79,6 +80,7 @@ def time_text_monkeypatch(
         encoder_hidden_states_image = self.image_embedder(encoder_hidden_states_image)
 
     return temb, timestep_proj, encoder_hidden_states, encoder_hidden_states_image
+
 
 class Wan225bModel(Wan21):
     arch = "wan22_5b"
@@ -104,12 +106,14 @@ class Wan225bModel(Wan21):
         )
 
         self._wan_cache = None
-    
+
     def load_model(self):
         super().load_model()
-        
+
         # patch the condition embedder
-        self.model.condition_embedder.forward = partial(time_text_monkeypatch, self.model.condition_embedder)
+        self.model.condition_embedder.forward = partial(
+            time_text_monkeypatch, self.model.condition_embedder
+        )
 
     def get_bucket_divisibility(self):
         # 16x compression  and 2x2 patch size
@@ -243,7 +247,7 @@ class Wan225bModel(Wan21):
         # for wan, only do i2v for video for now. Images do normal t2i
         conditioned_latent = latent_model_input
         noise_mask = None
-        
+
         if batch.dataset_config.do_i2v:
             with torch.no_grad():
                 frames = batch.tensor
@@ -256,7 +260,9 @@ class Wan225bModel(Wan21):
                         latent_model_input=latent_model_input.to(
                             self.device_torch, self.torch_dtype
                         ),
-                        first_frame=first_frames.to(self.device_torch, self.torch_dtype),
+                        first_frame=first_frames.to(
+                            self.device_torch, self.torch_dtype
+                        ),
                         vae=self.vae,
                     )
                 else:

@@ -1,13 +1,14 @@
-from collections import OrderedDict
-import os
-import sqlite3
 import asyncio
 import concurrent.futures
-from extensions_built_in.sd_trainer.SDTrainer import SDTrainer
-from typing import Literal, Optional
+import os
+import signal
+import sqlite3
 import threading
 import time
-import signal
+from collections import OrderedDict
+from typing import Literal
+
+from extensions_built_in.sd_trainer.SDTrainer import SDTrainer
 
 AITK_Status = Literal["running", "stopped", "error", "completed"]
 
@@ -26,8 +27,8 @@ class DiffusionTrainer(SDTrainer):
         if self.job_id is None:
             self.is_ui_trainer = False
         else:
-            print(f"Job ID: \"{self.job_id}\"")
-        
+            print(f'Job ID: "{self.job_id}"')
+
         if self.is_ui_trainer:
             self.is_stopping = False
             # Create a thread pool for database operations
@@ -38,7 +39,7 @@ class DiffusionTrainer(SDTrainer):
             self._run_async_operation(self._update_status("running", "Starting"))
             self._stop_watcher_started = False
             # self.start_stop_watcher(interval_sec=2.0)
-    
+
     def start_stop_watcher(self, interval_sec: float = 5.0):
         """
         Start a daemon thread that periodically checks should_stop()
@@ -114,11 +115,11 @@ class DiffusionTrainer(SDTrainer):
     def should_stop(self):
         if not self.is_ui_trainer:
             return False
+
         def _check_stop():
             with self._db_connect() as conn:
                 cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT stop FROM Job WHERE id = ?", (self.job_id,))
+                cursor.execute("SELECT stop FROM Job WHERE id = ?", (self.job_id,))
                 stop = cursor.fetchone()
                 return False if stop is None else stop[0] == 1
 
@@ -127,11 +128,13 @@ class DiffusionTrainer(SDTrainer):
     def should_return_to_queue(self):
         if not self.is_ui_trainer:
             return False
+
         def _check_return_to_queue():
             with self._db_connect() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT return_to_queue FROM Job WHERE id = ?", (self.job_id,))
+                    "SELECT return_to_queue FROM Job WHERE id = ?", (self.job_id,)
+                )
                 return_to_queue = cursor.fetchone()
                 return False if return_to_queue is None else return_to_queue[0] == 1
 
@@ -141,13 +144,11 @@ class DiffusionTrainer(SDTrainer):
         if not self.is_ui_trainer:
             return
         if self.should_stop():
-            self._run_async_operation(
-                self._update_status("stopped", "Job stopped"))
+            self._run_async_operation(self._update_status("stopped", "Job stopped"))
             self.is_stopping = True
             raise Exception("Job stopped")
         if self.should_return_to_queue():
-            self._run_async_operation(
-                self._update_status("queued", "Job queued"))
+            self._run_async_operation(self._update_status("queued", "Job queued"))
             self.is_stopping = True
             raise Exception("Job returning to queue")
 
@@ -168,8 +169,7 @@ class DiffusionTrainer(SDTrainer):
 
                     # Use parameterized query for both the column name and value
                     update_query = f"UPDATE Job SET {key} = ? WHERE id = ?"
-                    cursor.execute(
-                        update_query, (value_to_insert, self.job_id))
+                    cursor.execute(update_query, (value_to_insert, self.job_id))
                 finally:
                     cursor.execute("COMMIT")
 
@@ -185,7 +185,7 @@ class DiffusionTrainer(SDTrainer):
         if self.accelerator.is_main_process and self.is_ui_trainer:
             self._run_async_operation(self._update_key(key, value))
 
-    async def _update_status(self, status: AITK_Status, info: Optional[str] = None):
+    async def _update_status(self, status: AITK_Status, info: str | None = None):
         if not self.accelerator.is_main_process or not self.is_ui_trainer:
             return
 
@@ -197,19 +197,19 @@ class DiffusionTrainer(SDTrainer):
                     if info is not None:
                         cursor.execute(
                             "UPDATE Job SET status = ?, info = ? WHERE id = ?",
-                            (status, info, self.job_id)
+                            (status, info, self.job_id),
                         )
                     else:
                         cursor.execute(
                             "UPDATE Job SET status = ? WHERE id = ?",
-                            (status, self.job_id)
+                            (status, self.job_id),
                         )
                 finally:
                     cursor.execute("COMMIT")
 
         await self._execute_db_operation(_do_update)
 
-    def update_status(self, status: AITK_Status, info: Optional[str] = None):
+    def update_status(self, status: AITK_Status, info: str | None = None):
         """Non-blocking update of status."""
         if self.accelerator.is_main_process and self.is_ui_trainer:
             self._run_async_operation(self._update_status(status, info))
@@ -221,7 +221,7 @@ class DiffusionTrainer(SDTrainer):
 
         try:
             await asyncio.gather(*self._async_tasks)
-        except Exception as e:
+        except Exception:
             pass
         finally:
             # Clear the task list after completion
@@ -246,8 +246,7 @@ class DiffusionTrainer(SDTrainer):
             iters_per_sec = 1 / seconds_per_iter
             self.update_db_key("speed_string", f"{iters_per_sec:.2f} iter/sec")
         else:
-            self.update_db_key(
-                "speed_string", f"{seconds_per_iter:.2f} sec/iter")
+            self.update_db_key("speed_string", f"{seconds_per_iter:.2f} sec/iter")
 
     def done_hook(self):
         super(DiffusionTrainer, self).done_hook()
@@ -297,7 +296,8 @@ class DiffusionTrainer(SDTrainer):
         if self.is_ui_trainer:
             self.maybe_stop()
             self.update_status(
-                "running", f"Generating images - {img_num + 1}/{total_imgs}")
+                "running", f"Generating images - {img_num + 1}/{total_imgs}"
+            )
 
     def sample(self, step=None, is_first=False):
         self.maybe_stop()

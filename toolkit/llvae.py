@@ -1,7 +1,8 @@
+import itertools
+
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
-import itertools
 
 
 class LosslessLatentDecoder(nn.Module):
@@ -25,7 +26,12 @@ class LosslessLatentDecoder(nn.Module):
         out_channels = self.out_channels
 
         # kernel_shape = [kernel_filter_size, kernel_filter_size, out_channels, in_channels] # tensorflow
-        kernel_shape = [in_channels, out_channels, latent_depth, latent_depth]  # pytorch
+        kernel_shape = [
+            in_channels,
+            out_channels,
+            latent_depth,
+            latent_depth,
+        ]  # pytorch
         kernel = np.zeros(kernel_shape, np.float32)
 
         # Build the kernel so that a 4 pixel cluster has each pixel come from a separate channel.
@@ -44,7 +50,9 @@ class LosslessLatentDecoder(nn.Module):
             self.kernel = self.kernel.to(dtype=dtype)
 
         # Deconvolve input tensor with the kernel
-        return nn.functional.conv_transpose2d(x, self.kernel, stride=self.latent_depth, padding=0, groups=1)
+        return nn.functional.conv_transpose2d(
+            x, self.kernel, stride=self.latent_depth, padding=0, groups=1
+        )
 
 
 class LosslessLatentEncoder(nn.Module):
@@ -61,7 +69,6 @@ class LosslessLatentEncoder(nn.Module):
         else:
             self.kernel = numpy_kernel
 
-
     def build_kernel(self, in_channels, latent_depth):
         # my old code from tensorflow.
         # tensorflow kernel is  (height, width, in_channels, out_channels)
@@ -69,7 +76,12 @@ class LosslessLatentEncoder(nn.Module):
         out_channels = self.out_channels
 
         # kernel_shape = [latent_depth, latent_depth, in_channels, out_channels] # tensorflow
-        kernel_shape = [out_channels, in_channels, latent_depth, latent_depth]  # pytorch
+        kernel_shape = [
+            out_channels,
+            in_channels,
+            latent_depth,
+            latent_depth,
+        ]  # pytorch
         kernel = np.zeros(kernel_shape, np.float32)
 
         # Build the kernel so that a 4 pixel cluster has each pixel come from a separate channel.
@@ -86,7 +98,9 @@ class LosslessLatentEncoder(nn.Module):
         if self.kernel.dtype != dtype:
             self.kernel = self.kernel.to(dtype=dtype)
         # Convolve input tensor with the kernel
-        return nn.functional.conv2d(x, self.kernel, stride=self.latent_depth, padding=0, groups=1)
+        return nn.functional.conv2d(
+            x, self.kernel, stride=self.latent_depth, padding=0, groups=1
+        )
 
 
 class LosslessLatentVAE(nn.Module):
@@ -94,9 +108,13 @@ class LosslessLatentVAE(nn.Module):
         super(LosslessLatentVAE, self).__init__()
         self.latent_depth = latent_depth
         self.in_channels = in_channels
-        self.encoder = LosslessLatentEncoder(in_channels, latent_depth, dtype=dtype, trainable=trainable)
+        self.encoder = LosslessLatentEncoder(
+            in_channels, latent_depth, dtype=dtype, trainable=trainable
+        )
         encoder_out_channels = self.encoder.out_channels
-        self.decoder = LosslessLatentDecoder(encoder_out_channels, latent_depth, dtype=dtype, trainable=trainable)
+        self.decoder = LosslessLatentDecoder(
+            encoder_out_channels, latent_depth, dtype=dtype, trainable=trainable
+        )
 
     def forward(self, x):
         latent = self.latent_encoder(x)
@@ -111,11 +129,13 @@ class LosslessLatentVAE(nn.Module):
 
 
 # test it
-if __name__ == '__main__':
+if __name__ == "__main__":
     import os
-    from PIL import Image
+
     import torchvision.transforms as transforms
-    user_path = os.path.expanduser('~')
+    from PIL import Image
+
+    user_path = os.path.expanduser("~")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dtype = torch.float32
 
@@ -125,7 +145,9 @@ if __name__ == '__main__':
     img_tensor = transforms.ToTensor()(img)
     img_tensor = img_tensor.unsqueeze(0).to(device=device, dtype=dtype)
     print("input_shape: ", list(img_tensor.shape))
-    vae = LosslessLatentVAE(in_channels=3, latent_depth=8, dtype=dtype).to(device=device, dtype=dtype)
+    vae = LosslessLatentVAE(in_channels=3, latent_depth=8, dtype=dtype).to(
+        device=device, dtype=dtype
+    )
     latent = vae.encode(img_tensor)
     print("latent_shape: ", list(latent.shape))
     out_tensor = vae.decode(latent)

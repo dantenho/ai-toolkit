@@ -16,6 +16,7 @@ class AdvancedReferenceGeneratorExtension(Extension):
     def get_process(cls):
         # import your process class here so it is only loaded when needed and return it
         from .ReferenceGenerator import ReferenceGenerator
+
         return ReferenceGenerator
 
 
@@ -33,6 +34,7 @@ class PureLoraGenerator(Extension):
     def get_process(cls):
         # import your process class here so it is only loaded when needed and return it
         from .PureLoraGenerator import PureLoraGenerator
+
         return PureLoraGenerator
 
 
@@ -50,10 +52,13 @@ class Img2ImgGeneratorExtension(Extension):
     def get_process(cls):
         # import your process class here so it is only loaded when needed and return it
         from .Img2ImgGenerator import Img2ImgGenerator
+
         return Img2ImgGenerator
 
 
 AI_TOOLKIT_EXTENSIONS = [
     # you can put a list of extensions here
-    AdvancedReferenceGeneratorExtension, PureLoraGenerator, Img2ImgGeneratorExtension
+    AdvancedReferenceGeneratorExtension,
+    PureLoraGenerator,
+    Img2ImgGeneratorExtension,
 ]

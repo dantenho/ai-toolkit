@@ -1,7 +1,7 @@
 import torch
+from diffusers.models.embeddings import TimestepEmbedding, Timesteps
 from torch import nn
-from typing import List
-from diffusers.models.embeddings import Timesteps, TimestepEmbedding
+
 
 # Copied from https://github.com/black-forest-labs/flux/blob/main/src/flux/math.py
 def rope(pos: torch.Tensor, dim: int, theta: int) -> torch.Tensor:
@@ -19,9 +19,10 @@ def rope(pos: torch.Tensor, dim: int, theta: int) -> torch.Tensor:
     out = stacked_out.view(batch_size, -1, dim // 2, 2, 2)
     return out.float()
 
+
 # Copied from https://github.com/black-forest-labs/flux/blob/main/src/flux/modules/layers.py
 class EmbedND(nn.Module):
-    def __init__(self, theta: int, axes_dim: List[int]):
+    def __init__(self, theta: int, axes_dim: list[int]):
         super().__init__()
         self.theta = theta
         self.axes_dim = axes_dim
@@ -33,7 +34,8 @@ class EmbedND(nn.Module):
             dim=-3,
         )
         return emb.unsqueeze(2)
-    
+
+
 class PatchEmbed(nn.Module):
     def __init__(
         self,
@@ -44,7 +46,9 @@ class PatchEmbed(nn.Module):
         super().__init__()
         self.patch_size = patch_size
         self.out_channels = out_channels
-        self.proj = nn.Linear(in_channels * patch_size * patch_size, out_channels, bias=True)
+        self.proj = nn.Linear(
+            in_channels * patch_size * patch_size, out_channels, bias=True
+        )
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
@@ -56,13 +60,16 @@ class PatchEmbed(nn.Module):
     def forward(self, latent):
         latent = self.proj(latent)
         return latent
-    
+
+
 class PooledEmbed(nn.Module):
-    def __init__(self, text_emb_dim, hidden_size): 
+    def __init__(self, text_emb_dim, hidden_size):
         super().__init__()
-        self.pooled_embedder = TimestepEmbedding(in_channels=text_emb_dim, time_embed_dim=hidden_size)
+        self.pooled_embedder = TimestepEmbedding(
+            in_channels=text_emb_dim, time_embed_dim=hidden_size
+        )
         self.apply(self._init_weights)
-    
+
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
             nn.init.normal_(m.weight, std=0.02)
@@ -71,12 +78,19 @@ class PooledEmbed(nn.Module):
 
     def forward(self, pooled_embed):
         return self.pooled_embedder(pooled_embed)
-    
+
+
 class TimestepEmbed(nn.Module):
     def __init__(self, hidden_size, frequency_embedding_size=256):
         super().__init__()
-        self.time_proj = Timesteps(num_channels=frequency_embedding_size, flip_sin_to_cos=True, downscale_freq_shift=0)
-        self.timestep_embedder = TimestepEmbedding(in_channels=frequency_embedding_size, time_embed_dim=hidden_size)
+        self.time_proj = Timesteps(
+            num_channels=frequency_embedding_size,
+            flip_sin_to_cos=True,
+            downscale_freq_shift=0,
+        )
+        self.timestep_embedder = TimestepEmbedding(
+            in_channels=frequency_embedding_size, time_embed_dim=hidden_size
+        )
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
@@ -89,15 +103,17 @@ class TimestepEmbed(nn.Module):
         t_emb = self.time_proj(timesteps).to(dtype=wdtype)
         t_emb = self.timestep_embedder(t_emb)
         return t_emb
-    
+
+
 class OutEmbed(nn.Module):
     def __init__(self, hidden_size, patch_size, out_channels):
         super().__init__()
         self.norm_final = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        self.linear = nn.Linear(hidden_size, patch_size * patch_size * out_channels, bias=True)
+        self.linear = nn.Linear(
+            hidden_size, patch_size * patch_size * out_channels, bias=True
+        )
         self.adaLN_modulation = nn.Sequential(
-            nn.SiLU(),
-            nn.Linear(hidden_size, 2 * hidden_size, bias=True)
+            nn.SiLU(), nn.Linear(hidden_size, 2 * hidden_size, bias=True)
         )
         self.apply(self._init_weights)
 

@@ -1,9 +1,9 @@
 import math
 import weakref
+from typing import TYPE_CHECKING, Any
 
 import torch
 import torch.nn as nn
-from typing import TYPE_CHECKING, List, Dict, Any
 from toolkit.resampler import Resampler
 
 if TYPE_CHECKING:
@@ -34,16 +34,17 @@ class MLP(nn.Module):
             x = x + residual
         return x
 
+
 class LoRAGenerator(torch.nn.Module):
     def __init__(
-            self,
-            input_size: int = 768,  # projection dimension
-            hidden_size: int = 768,
-            head_size: int = 512,
-            num_heads: int = 1,
-            num_mlp_layers: int = 1,
-            output_size: int = 768,
-            dropout: float = 0.0
+        self,
+        input_size: int = 768,  # projection dimension
+        hidden_size: int = 768,
+        head_size: int = 512,
+        num_heads: int = 1,
+        num_mlp_layers: int = 1,
+        output_size: int = 768,
+        dropout: float = 0.0,
     ):
         super().__init__()
         self.input_size = input_size
@@ -57,9 +58,18 @@ class LoRAGenerator(torch.nn.Module):
         else:
             self.lin_in = nn.Linear(input_size, hidden_size)
 
-            self.mlp_blocks = nn.Sequential(*[
-                MLP(hidden_size, hidden_size, hidden_size, dropout=dropout, use_residual=True) for _ in range(num_mlp_layers)
-            ])
+            self.mlp_blocks = nn.Sequential(
+                *[
+                    MLP(
+                        hidden_size,
+                        hidden_size,
+                        hidden_size,
+                        dropout=dropout,
+                        use_residual=True,
+                    )
+                    for _ in range(num_mlp_layers)
+                ]
+            )
             self.head = nn.Linear(hidden_size, head_size, bias=False)
         self.norm = nn.LayerNorm(head_size)
 
@@ -70,7 +80,9 @@ class LoRAGenerator(torch.nn.Module):
                 self.output.weight.data *= 0.01
         else:
             head_output_size = output_size // num_heads
-            self.outputs = nn.ModuleList([nn.Linear(head_size, head_output_size) for _ in range(num_heads)])
+            self.outputs = nn.ModuleList(
+                [nn.Linear(head_size, head_output_size) for _ in range(num_heads)]
+            )
             # for each output block. multiply weights by 0.01
             with torch.no_grad():
                 for output in self.outputs:
@@ -111,12 +123,12 @@ class LoRAGenerator(torch.nn.Module):
 
 class InstantLoRAMidModule(torch.nn.Module):
     def __init__(
-            self,
-            index: int,
-            lora_module: 'LoRAModule',
-            instant_lora_module: 'InstantLoRAModule',
-            up_shape: list = None,
-            down_shape: list = None,
+        self,
+        index: int,
+        lora_module: "LoRAModule",
+        instant_lora_module: "InstantLoRAModule",
+        up_shape: list = None,
+        down_shape: list = None,
     ):
         super(InstantLoRAMidModule, self).__init__()
         self.up_shape = up_shape
@@ -155,14 +167,15 @@ class InstantLoRAMidModule(torch.nn.Module):
                 org_module = self.lora_module_ref().orig_module_ref()
                 stride = org_module.stride
                 padding = org_module.padding
-                x_chunk = nn.functional.conv2d(x_chunk, weight_chunk, padding=padding, stride=stride)
+                x_chunk = nn.functional.conv2d(
+                    x_chunk, weight_chunk, padding=padding, stride=stride
+                )
             else:
                 # run a simple linear layer with the down weight
                 x_chunk = x_chunk @ weight_chunk.T
             x_out.append(x_chunk)
         x = torch.cat(x_out, dim=0)
         return x
-
 
     def up_forward(self, x, *args, **kwargs):
         self.embed = self.instant_lora_module_ref().img_embeds[self.index]
@@ -200,17 +213,15 @@ class InstantLoRAMidModule(torch.nn.Module):
         return x
 
 
-
-
 class InstantLoRAModule(torch.nn.Module):
     def __init__(
-            self,
-            vision_hidden_size: int,
-            vision_tokens: int,
-            head_dim: int,
-            num_heads: int, # number of heads in the resampler
-            sd: 'StableDiffusion',
-            config=None
+        self,
+        vision_hidden_size: int,
+        vision_tokens: int,
+        head_dim: int,
+        num_heads: int,  # number of heads in the resampler
+        sd: "StableDiffusion",
+        config=None,
     ):
         super(InstantLoRAModule, self).__init__()
         # self.linear = torch.nn.Linear(2, 1)
@@ -222,7 +233,7 @@ class InstantLoRAModule(torch.nn.Module):
         self.num_heads = num_heads
 
         # stores the projection vector. Grabbed by modules
-        self.img_embeds: List[torch.Tensor] = None
+        self.img_embeds: list[torch.Tensor] = None
 
         # disable merging in. It is slower on inference
         self.sd_ref().network.can_merge_in = False
@@ -238,8 +249,8 @@ class InstantLoRAModule(torch.nn.Module):
 
         for idx, lora_module in enumerate(lora_modules):
             module_dict = lora_module.state_dict()
-            down_shape = list(module_dict['lora_down.weight'].shape)
-            up_shape = list(module_dict['lora_up.weight'].shape)
+            down_shape = list(module_dict["lora_down.weight"].shape)
+            up_shape = list(module_dict["lora_up.weight"].shape)
 
             self.weight_mapping.append([lora_module.lora_name, [down_shape, up_shape]])
 
@@ -247,15 +258,10 @@ class InstantLoRAModule(torch.nn.Module):
             output_size += module_size
             self.embed_lengths.append(module_size)
 
-
             # add a new mid module that will take the original forward and add a vector to it
             # this will be used to add the vector to the original forward
             instant_module = InstantLoRAMidModule(
-                idx,
-                lora_module,
-                self,
-                up_shape=up_shape,
-                down_shape=down_shape
+                idx, lora_module, self, up_shape=up_shape, down_shape=down_shape
             )
 
             self.ilora_modules.append(instant_module)
@@ -264,10 +270,9 @@ class InstantLoRAModule(torch.nn.Module):
             lora_module.lora_down.forward = instant_module.down_forward
             lora_module.lora_up.forward = instant_module.up_forward
 
-
         self.output_size = output_size
 
-        number_formatted_output_size = "{:,}".format(output_size)
+        number_formatted_output_size = f"{output_size:,}"
 
         print(f" ILORA output size: {number_formatted_output_size}")
 
@@ -288,7 +293,7 @@ class InstantLoRAModule(torch.nn.Module):
                 max_seq_len=vision_tokens,
                 output_dim=head_dim,
                 apply_pos_emb=True,  # this is new
-                ff_mult=4
+                ff_mult=4,
             )
 
         self.proj_module = LoRAGenerator(
@@ -324,7 +329,6 @@ class InstantLoRAModule(torch.nn.Module):
         #     print("No keymap found. Using default names")
         #     return
 
-
     def forward(self, img_embeds):
         # expand token rank if only rank 2
         if len(img_embeds.shape) == 2:
@@ -341,11 +345,10 @@ class InstantLoRAModule(torch.nn.Module):
         # get all the slices
         start = 0
         for length in self.embed_lengths:
-            self.img_embeds.append(img_embeds[:, start:start+length])
+            self.img_embeds.append(img_embeds[:, start : start + length])
             start += length
 
-
-    def get_additional_save_metadata(self) -> Dict[str, Any]:
+    def get_additional_save_metadata(self) -> dict[str, Any]:
         # save the weight mapping
         return {
             "weight_mapping": self.weight_mapping,
@@ -355,4 +358,3 @@ class InstantLoRAModule(torch.nn.Module):
             "vision_tokens": self.vision_tokens,
             "output_size": self.output_size,
         }
-

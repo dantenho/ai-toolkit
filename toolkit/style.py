@@ -1,10 +1,9 @@
-from torch import nn
-import torch.nn.functional as F
 import torch
+from torch import nn
 from torchvision import models
 
-
 # device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
 
 def tensor_size(tensor):
     channels = tensor.shape[1]
@@ -12,16 +11,17 @@ def tensor_size(tensor):
     width = tensor.shape[3]
     return channels * height * width
 
-class ContentLoss(nn.Module):
 
-    def __init__(self, single_target=False, device='cuda' if torch.cuda.is_available() else 'cpu'):
+class ContentLoss(nn.Module):
+    def __init__(
+        self, single_target=False, device="cuda" if torch.cuda.is_available() else "cpu"
+    ):
         super(ContentLoss, self).__init__()
         self.single_target = single_target
         self.device = device
         self.loss = None
 
     def forward(self, stacked_input):
-
         if self.single_target:
             split_size = stacked_input.size()[0] // 2
             pred_layer, target_layer = torch.split(stacked_input, split_size, dim=0)
@@ -36,14 +36,14 @@ class ContentLoss(nn.Module):
             y_pred = y_pred.float()
             y_true = y_true.float()
             diff = torch.abs(y_pred - y_true)
-            l2 = torch.sum(diff ** 2, dim=[1, 2, 3], keepdim=True) / 2.0
-            return 2. * l2 / content_size
+            l2 = torch.sum(diff**2, dim=[1, 2, 3], keepdim=True) / 2.0
+            return 2.0 * l2 / content_size
 
         # Calculate itemized loss
         pred_itemized_loss = separated_loss(pred_layer, target_layer)
         # check if is nan
         if torch.isnan(pred_itemized_loss).any():
-            print('pred_itemized_loss is nan')
+            print("pred_itemized_loss is nan")
 
         # Calculate the mean of itemized loss
         loss = torch.mean(pred_itemized_loss, dim=(1, 2, 3), keepdim=True)
@@ -72,9 +72,11 @@ def convert_to_gram_matrix(inputs):
 # error between :math:`G_{XL}` and :math:`G_{SL}`.
 #
 
-class StyleLoss(nn.Module):
 
-    def __init__(self, single_target=False, device='cuda' if torch.cuda.is_available() else 'cpu'):
+class StyleLoss(nn.Module):
+    def __init__(
+        self, single_target=False, device="cuda" if torch.cuda.is_available() else "cpu"
+    ):
         super(StyleLoss, self).__init__()
         self.single_target = single_target
         self.device = device
@@ -93,7 +95,7 @@ class StyleLoss(nn.Module):
             gram_size = y_true.size(1) * y_true.size(2)
             sum_axis = (1, 2)
             diff = torch.abs(y_pred - y_true)
-            raw_loss = torch.sum(diff ** 2, dim=sum_axis, keepdim=True)
+            raw_loss = torch.sum(diff**2, dim=sum_axis, keepdim=True)
             return raw_loss / gram_size
 
         target_grams = convert_to_gram_matrix(style_target)
@@ -101,7 +103,7 @@ class StyleLoss(nn.Module):
         itemized_loss = separated_loss(pred_grams, target_grams)
         # check if is nan
         if torch.isnan(itemized_loss).any():
-            print('itemized_loss is nan')
+            print("itemized_loss is nan")
         # reshape itemized loss to be (batch, 1, 1, 1)
         itemized_loss = torch.unsqueeze(itemized_loss, dim=1)
         # gram_size = (tf.shape(target_grams)[1] * tf.shape(target_grams)[2])
@@ -140,7 +142,7 @@ class Normalization(nn.Module):
 
 
 class OutputLayer(nn.Module):
-    def __init__(self, name='output_layer'):
+    def __init__(self, name="output_layer"):
         super(OutputLayer, self).__init__()
         self.name = name
         self.tensor = None
@@ -151,15 +153,15 @@ class OutputLayer(nn.Module):
 
 
 def get_style_model_and_losses(
-        single_target=True,  # false has 3 targets, dont remember why i added this initially, this is old code
-        device='cuda' if torch.cuda.is_available() else 'cpu',
-        output_layer_name=None,
-        dtype=torch.float32
+    single_target=True,  # false has 3 targets, dont remember why i added this initially, this is old code
+    device="cuda" if torch.cuda.is_available() else "cpu",
+    output_layer_name=None,
+    dtype=torch.float32,
 ):
     # content_layers = ['conv_4']
     # style_layers = ['conv_1', 'conv_2', 'conv_3', 'conv_4', 'conv_5']
-    content_layers = ['conv2_2', 'conv3_2', 'conv4_2']
-    style_layers = ['conv2_1', 'conv3_1', 'conv4_1']
+    content_layers = ["conv2_2", "conv3_2", "conv4_2"]
+    style_layers = ["conv2_1", "conv3_1", "conv4_1"]
     cnn = models.vgg19(pretrained=True).features.to(device, dtype=dtype).eval()
     # set all weights in the model to our dtype
     # for layer in cnn.children():
@@ -186,47 +188,51 @@ def get_style_model_and_losses(
     for layer in children:
         if isinstance(layer, nn.Conv2d):
             i += 1
-            name = f'conv{block}_{i}_raw'
+            name = f"conv{block}_{i}_raw"
         elif isinstance(layer, nn.ReLU):
             # name = 'relu_{}'.format(i)
-            name = f'conv{block}_{i}'  # target this
+            name = f"conv{block}_{i}"  # target this
             # The in-place version doesn't play very nicely with the ``ContentLoss``
             # and ``StyleLoss`` we insert below. So we replace with out-of-place
             # ones here.
             layer = nn.ReLU(inplace=False)
         elif isinstance(layer, nn.MaxPool2d):
-            name = 'pool_{}'.format(i)
+            name = f"pool_{i}"
             block += 1
             i = 0
         elif isinstance(layer, nn.BatchNorm2d):
-            name = 'bn_{}'.format(i)
+            name = f"bn_{i}"
         else:
-            raise RuntimeError('Unrecognized layer: {}'.format(layer.__class__.__name__))
+            raise RuntimeError(f"Unrecognized layer: {layer.__class__.__name__}")
 
         model.add_module(name, layer)
 
         if name in content_layers:
             # add content loss:
             content_loss = ContentLoss(single_target=single_target, device=device)
-            model.add_module("content_loss_{}_{}".format(block, i), content_loss)
+            model.add_module(f"content_loss_{block}_{i}", content_loss)
             content_losses.append(content_loss)
 
         if name in style_layers:
             # add style loss:
             style_loss = StyleLoss(single_target=single_target, device=device)
-            model.add_module("style_loss_{}_{}".format(block, i), style_loss)
+            model.add_module(f"style_loss_{block}_{i}", style_loss)
             style_losses.append(style_loss)
 
         if output_layer_name is not None and name == output_layer_name:
             output_layer = OutputLayer(name)
-            model.add_module("output_layer_{}_{}".format(block, i), output_layer)
+            model.add_module(f"output_layer_{block}_{i}", output_layer)
 
     # now we trim off the layers after the last content and style losses
     for i in range(len(model) - 1, -1, -1):
-        if isinstance(model[i], ContentLoss) or isinstance(model[i], StyleLoss) or isinstance(model[i], OutputLayer):
+        if (
+            isinstance(model[i], ContentLoss)
+            or isinstance(model[i], StyleLoss)
+            or isinstance(model[i], OutputLayer)
+        ):
             break
 
-    model = model[:(i + 1)]
+    model = model[: (i + 1)]
     model.to(dtype=dtype)
 
     return model, style_losses, content_losses, output_layer

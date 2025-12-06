@@ -1,11 +1,15 @@
+import json
 import os
+from collections import OrderedDict
 
 import torch
-from transformers import T5EncoderModel, T5Tokenizer
-from diffusers import StableDiffusionPipeline, UNet2DConditionModel, PixArtSigmaPipeline, Transformer2DModel, PixArtTransformer2DModel
+from diffusers import (
+    PixArtSigmaPipeline,
+    StableDiffusionPipeline,
+    Transformer2DModel,
+)
 from safetensors.torch import load_file, save_file
-from collections import OrderedDict
-import json
+from transformers import T5EncoderModel, T5Tokenizer
 
 # model_path = "/home/jaret/Dev/models/hf/kl-f16-d42_sd15_v01_000527000"
 # te_path = "google/flan-t5-xl"
@@ -76,19 +80,23 @@ else:
     attn_processor_keys = list(unet.attn_processors.keys())
 
 for name in attn_processor_keys:
-    cross_attention_dim = None if name.endswith("attn1.processor") or name.endswith("attn.1") or name.endswith(
-        "attn1") else \
-        unet.config['cross_attention_dim']
+    cross_attention_dim = (
+        None
+        if name.endswith("attn1.processor")
+        or name.endswith("attn.1")
+        or name.endswith("attn1")
+        else unet.config["cross_attention_dim"]
+    )
     if name.startswith("mid_block"):
-        hidden_size = unet.config['block_out_channels'][-1]
+        hidden_size = unet.config["block_out_channels"][-1]
     elif name.startswith("up_blocks"):
         block_id = int(name[len("up_blocks.")])
-        hidden_size = list(reversed(unet.config['block_out_channels']))[block_id]
+        hidden_size = list(reversed(unet.config["block_out_channels"]))[block_id]
     elif name.startswith("down_blocks"):
         block_id = int(name[len("down_blocks.")])
-        hidden_size = unet.config['block_out_channels'][block_id]
+        hidden_size = unet.config["block_out_channels"][block_id]
     elif name.startswith("transformer"):
-        hidden_size = unet.config['cross_attention_dim']
+        hidden_size = unet.config["cross_attention_dim"]
     else:
         # they didnt have this, but would lead to undefined below
         raise ValueError(f"unknown attn processor name: {name}")
@@ -118,22 +126,25 @@ for name in attn_processor_keys:
         orig_weight_shape_k = list(unet_sd[layer_name + ".to_k.weight"].shape)
         new_weight_shape_k = list(te_aug_sd[te_aug_name + ".weight"].shape)
         orig_weight_shape_v = list(unet_sd[layer_name + ".to_v.weight"].shape)
-        new_weight_shape_v = list(te_aug_sd[te_aug_name.replace('to_k', 'to_v') + ".weight"].shape)
+        new_weight_shape_v = list(
+            te_aug_sd[te_aug_name.replace("to_k", "to_v") + ".weight"].shape
+        )
 
         unet_sd[layer_name + ".to_k.weight"] = te_aug_sd[te_aug_name + ".weight"]
-        unet_sd[layer_name + ".to_v.weight"] = te_aug_sd[te_aug_name.replace('to_k', 'to_v') + ".weight"]
+        unet_sd[layer_name + ".to_v.weight"] = te_aug_sd[
+            te_aug_name.replace("to_k", "to_v") + ".weight"
+        ]
 
         if new_cross_attn_dim is None:
             new_cross_attn_dim = unet_sd[layer_name + ".to_k.weight"].shape[1]
 
 
-
 if is_pixart:
     # copy the caption_projection weight
-    del unet_sd['caption_projection.linear_1.bias']
-    del unet_sd['caption_projection.linear_1.weight']
-    del unet_sd['caption_projection.linear_2.bias']
-    del unet_sd['caption_projection.linear_2.weight']
+    del unet_sd["caption_projection.linear_1.bias"]
+    del unet_sd["caption_projection.linear_1.weight"]
+    del unet_sd["caption_projection.linear_2.bias"]
+    del unet_sd["caption_projection.linear_2.weight"]
 
 print("Saving unmodified model")
 sd = sd.to("cpu", torch.float16)
@@ -156,19 +167,21 @@ meta["format"] = "pt"
 
 print("Patching")
 
-save_file(unet_sd, os.path.join(unet_folder, "diffusion_pytorch_model.safetensors"), meta)
+save_file(
+    unet_sd, os.path.join(unet_folder, "diffusion_pytorch_model.safetensors"), meta
+)
 
 # load the json file
-with open(os.path.join(unet_folder, "config.json"), 'r') as f:
+with open(os.path.join(unet_folder, "config.json")) as f:
     config = json.load(f)
 
-config['cross_attention_dim'] = new_cross_attn_dim
+config["cross_attention_dim"] = new_cross_attn_dim
 
 if is_pixart:
-    config['caption_channels'] = None
+    config["caption_channels"] = None
 
 # save it
-with open(os.path.join(unet_folder, "config.json"), 'w') as f:
+with open(os.path.join(unet_folder, "config.json"), "w") as f:
     json.dump(config, f, indent=2)
 
 print("Done")

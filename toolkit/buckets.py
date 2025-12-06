@@ -1,4 +1,4 @@
-from typing import Type, List, Union, TypedDict
+from typing import TypedDict
 
 
 class BucketResolution(TypedDict):
@@ -7,7 +7,7 @@ class BucketResolution(TypedDict):
 
 
 # resolutions SDXL was trained on with a 1024x1024 base resolution
-resolutions_1024: List[BucketResolution] = [
+resolutions_1024: list[BucketResolution] = [
     # SDXL Base resolution
     {"width": 1024, "height": 1024},
     # SDXL Resolutions, widescreen
@@ -56,7 +56,10 @@ resolutions_1024: List[BucketResolution] = [
     {"width": 128, "height": 8192},
 ]
 
-def get_bucket_sizes(resolution: int = 512, divisibility: int = 8) -> List[BucketResolution]:
+
+def get_bucket_sizes(
+    resolution: int = 512, divisibility: int = 8
+) -> list[BucketResolution]:
     # determine scaler form 1024 to resolution
     scaler = resolution / 1024
 
@@ -77,18 +80,17 @@ def get_bucket_sizes(resolution: int = 512, divisibility: int = 8) -> List[Bucke
 def get_resolution(width, height):
     num_pixels = width * height
     # determine same number of pixels for square image
-    square_resolution = int(num_pixels ** 0.5)
+    square_resolution = int(num_pixels**0.5)
     return square_resolution
 
 
 def get_bucket_for_image_size(
-        width: int,
-        height: int,
-        bucket_size_list: List[BucketResolution] = None,
-        resolution: Union[int, None] = None,
-        divisibility: int = 8
+    width: int,
+    height: int,
+    bucket_size_list: list[BucketResolution] = None,
+    resolution: int | None = None,
+    divisibility: int = 8,
 ) -> BucketResolution:
-
     if bucket_size_list is None and resolution is None:
         # get resolution from width and height
         resolution = get_resolution(width, height)
@@ -96,7 +98,9 @@ def get_bucket_for_image_size(
         # if real resolution is smaller, use that instead
         real_resolution = get_resolution(width, height)
         resolution = min(resolution, real_resolution)
-        bucket_size_list = get_bucket_sizes(resolution=resolution, divisibility=divisibility)
+        bucket_size_list = get_bucket_sizes(
+            resolution=resolution, divisibility=divisibility
+        )
 
     # Check for exact match first
     for bucket in bucket_size_list:
@@ -117,7 +121,9 @@ def get_bucket_for_image_size(
         new_width = int(width * scale)
         new_height = int(height * scale)
 
-        removed_pixels = (new_width - bucket["width"]) * new_height + (new_height - bucket["height"]) * new_width
+        removed_pixels = (new_width - bucket["width"]) * new_height + (
+            new_height - bucket["height"]
+        ) * new_width
 
         if removed_pixels < min_removed_pixels:
             min_removed_pixels = removed_pixels

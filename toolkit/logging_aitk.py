@@ -1,7 +1,9 @@
-from typing import OrderedDict, Optional
+from collections import OrderedDict
+
 from PIL import Image
 
 from toolkit.config_modules import LoggingConfig
+
 
 # Base logger class
 # This class does nothing, it's just a placeholder
@@ -12,13 +14,13 @@ class EmptyLogger:
     # start logging the training
     def start(self):
         pass
-    
+
     # collect the log to send
     def log(self, *args, **kwargs):
         pass
-    
+
     # send the log
-    def commit(self, step: Optional[int] = None):
+    def commit(self, step: int | None = None):
         pass
 
     # log image
@@ -28,6 +30,7 @@ class EmptyLogger:
     # finish logging
     def finish(self):
         pass
+
 
 # Wandb logger class
 # This class logs the data to wandb
@@ -41,20 +44,22 @@ class WandbLogger(EmptyLogger):
         try:
             import wandb
         except ImportError:
-            raise ImportError("Failed to import wandb. Please install wandb by running `pip install wandb`")
-        
+            raise ImportError(
+                "Failed to import wandb. Please install wandb by running `pip install wandb`"
+            )
+
         # send the whole config to wandb
         run = wandb.init(project=self.project, name=self.run_name, config=self.config)
         self.run = run
-        self._log = wandb.log # log function
-        self._image = wandb.Image # image object
+        self._log = wandb.log  # log function
+        self._image = wandb.Image  # image object
 
     def log(self, *args, **kwargs):
         # when commit is False, wandb increments the step,
         # but we don't want that to happen, so we set commit=False
         self._log(*args, **kwargs, commit=False)
 
-    def commit(self, step: Optional[int] = None):
+    def commit(self, step: int | None = None):
         # after overall one step is done, we commit the log
         # by log empty object with commit=True
         self._log({}, step=step, commit=True)
@@ -73,6 +78,7 @@ class WandbLogger(EmptyLogger):
 
     def finish(self):
         self.run.finish()
+
 
 # create logger based on the logging config
 def create_logger(logging_config: LoggingConfig, all_config: OrderedDict):

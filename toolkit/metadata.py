@@ -3,14 +3,15 @@ from collections import OrderedDict
 from io import BytesIO
 
 import safetensors
+from info import software_meta
 from safetensors import safe_open
 
-from info import software_meta
-from toolkit.train_tools import addnet_hash_legacy
-from toolkit.train_tools import addnet_hash_safetensors
+from toolkit.train_tools import addnet_hash_legacy, addnet_hash_safetensors
 
 
-def get_meta_for_safetensors(meta: OrderedDict, name=None, add_software_info=True) -> OrderedDict:
+def get_meta_for_safetensors(
+    meta: OrderedDict, name=None, add_software_info=True
+) -> OrderedDict:
     # stringify the meta and reparse OrderedDict to replace [name] with name
     meta_string = json.dumps(meta)
     if name is not None:
@@ -48,23 +49,23 @@ def add_model_hash_to_meta(state_dict, meta: OrderedDict) -> OrderedDict:
 
 
 def add_base_model_info_to_meta(
-        meta: OrderedDict,
-        base_model: str = None,
-        is_v1: bool = False,
-        is_v2: bool = False,
-        is_xl: bool = False,
+    meta: OrderedDict,
+    base_model: str = None,
+    is_v1: bool = False,
+    is_v2: bool = False,
+    is_xl: bool = False,
 ) -> OrderedDict:
     if base_model is not None:
-        meta['ss_base_model'] = base_model
+        meta["ss_base_model"] = base_model
     elif is_v2:
-        meta['ss_v2'] = True
-        meta['ss_base_model_version'] = 'sd_2.1'
+        meta["ss_v2"] = True
+        meta["ss_base_model_version"] = "sd_2.1"
 
     elif is_xl:
-        meta['ss_base_model_version'] = 'sdxl_1.0'
+        meta["ss_base_model_version"] = "sdxl_1.0"
     else:
         # default to v1.5
-        meta['ss_base_model_version'] = 'sd_1.5'
+        meta["ss_base_model_version"] = "sd_1.5"
     return meta
 
 

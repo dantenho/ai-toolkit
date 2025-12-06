@@ -24,12 +24,12 @@ class SrefImageEncoder(torch.nn.Module):
         self.intermediate_size = intermediate_size
         self.num_digits = num_digits
 
-        self.proj_in = nn.Linear(
-            input_features, intermediate_size, dtype=dtype)
+        self.proj_in = nn.Linear(input_features, intermediate_size, dtype=dtype)
         # (bs, num_digits, intermediate_size)
         self.conv_pool = nn.Conv1d(input_tokens, num_digits, 1, dtype=dtype)
         self.linear_pool = nn.Linear(
-            intermediate_size, 1, dtype=dtype)  # (bs, num_digits, 1)
+            intermediate_size, 1, dtype=dtype
+        )  # (bs, num_digits, 1)
         # do sigmoid for digits 0.0-1.0 = (0 to 10) Always floor when rounding digits so you get 0-9
         self.flatten = nn.Flatten()  # (bs, num_digits * intermediate_size)
 
@@ -39,7 +39,8 @@ class SrefImageEncoder(torch.nn.Module):
         self.fc2 = nn.Linear(intermediate_size, intermediate_size, dtype=dtype)
 
         self.proj_out = nn.Linear(
-            intermediate_size, output_features * output_tokens, dtype=dtype)
+            intermediate_size, output_features * output_tokens, dtype=dtype
+        )
 
     def forward(self, siglip_embeds) -> torch.Tensor:
         x = self.proj_in(siglip_embeds)

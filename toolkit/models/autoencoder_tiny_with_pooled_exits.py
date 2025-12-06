@@ -1,23 +1,23 @@
-from typing import Optional, Tuple, Union
-from diffusers import AutoencoderTiny
-from diffusers.models.autoencoders.vae import (
-    EncoderTiny,
-    get_activation,
-    AutoencoderTinyBlock,
-    DecoderOutput
-)
-from diffusers.utils.accelerate_utils import apply_forward_hook
-from diffusers.configuration_utils import register_to_config
 import torch
 import torch.nn as nn
+from diffusers import AutoencoderTiny
+from diffusers.configuration_utils import register_to_config
+from diffusers.models.autoencoders.vae import (
+    AutoencoderTinyBlock,
+    DecoderOutput,
+    EncoderTiny,
+    get_activation,
+)
+from diffusers.utils.accelerate_utils import apply_forward_hook
+
 
 class DecoderTinyWithPooledExits(nn.Module):
     def __init__(
         self,
         in_channels: int,
         out_channels: int,
-        num_blocks: Tuple[int, ...],
-        block_out_channels: Tuple[int, ...],
+        num_blocks: tuple[int, ...],
+        block_out_channels: tuple[int, ...],
         upsampling_scaling_factor: int,
         act_fn: str,
         upsample_fn: str,
@@ -33,7 +33,6 @@ class DecoderTinyWithPooledExits(nn.Module):
         layers.append(l)
 
         pooled_exits = []
-        
 
         for i, num_block in enumerate(num_blocks):
             is_final_block = i == (len(num_blocks) - 1)
@@ -88,7 +87,7 @@ class DecoderTinyWithPooledExits(nn.Module):
         for layer in self.ordered_layers:
             # see if is pooled exit
             try:
-                if hasattr(layer, '_is_pooled_exit') and layer._is_pooled_exit:
+                if hasattr(layer, "_is_pooled_exit") and layer._is_pooled_exit:
                     if pooled_outputs:
                         pooled_output = layer(x)
                         pooled_output_list.append(pooled_output)
@@ -114,14 +113,14 @@ class AutoencoderTinyWithPooledExits(AutoencoderTiny):
         self,
         in_channels: int = 3,
         out_channels: int = 3,
-        encoder_block_out_channels: Tuple[int, ...] = (64, 64, 64, 64),
-        decoder_block_out_channels: Tuple[int, ...] = (64, 64, 64, 64),
+        encoder_block_out_channels: tuple[int, ...] = (64, 64, 64, 64),
+        decoder_block_out_channels: tuple[int, ...] = (64, 64, 64, 64),
         act_fn: str = "relu",
         upsample_fn: str = "nearest",
         latent_channels: int = 4,
         upsampling_scaling_factor: int = 2,
-        num_encoder_blocks: Tuple[int, ...] = (1, 3, 3, 3),
-        num_decoder_blocks: Tuple[int, ...] = (3, 3, 3, 1),
+        num_encoder_blocks: tuple[int, ...] = (1, 3, 3, 3),
+        num_decoder_blocks: tuple[int, ...] = (3, 3, 3, 1),
         latent_magnitude: int = 3,
         latent_shift: float = 0.5,
         force_upcast: bool = False,
@@ -174,11 +173,14 @@ class AutoencoderTinyWithPooledExits(AutoencoderTiny):
 
         self.register_to_config(block_out_channels=decoder_block_out_channels)
         self.register_to_config(force_upcast=False)
-    
+
     @apply_forward_hook
     def decode_with_pooled_exits(
-        self, x: torch.Tensor, generator: Optional[torch.Generator] = None, return_dict: bool = False
-    ) -> Union[DecoderOutput, Tuple[torch.Tensor]]:
+        self,
+        x: torch.Tensor,
+        generator: torch.Generator | None = None,
+        return_dict: bool = False,
+    ) -> DecoderOutput | tuple[torch.Tensor]:
         output, pooled_outputs = self.decoder(x, pooled_outputs=True)
 
         if not return_dict:

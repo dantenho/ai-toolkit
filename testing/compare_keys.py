@@ -1,33 +1,27 @@
 import argparse
+import json
 import os
+from collections import OrderedDict
 
 import torch
-from diffusers.loaders import LoraLoaderMixin
 from safetensors.torch import load_file
-from collections import OrderedDict
-import json
+
 # this was just used to match the vae keys to the diffusers keys
 # you probably wont need this. Unless they change them.... again... again
 # on second thought, you probably will
 
-device = torch.device('cpu')
+device = torch.device("cpu")
 dtype = torch.float32
 
 parser = argparse.ArgumentParser()
 
 # require at lease one config file
 parser.add_argument(
-    'file_1',
-    nargs='+',
-    type=str,
-    help='Path to first safe tensor file'
+    "file_1", nargs="+", type=str, help="Path to first safe tensor file"
 )
 
 parser.add_argument(
-    'file_2',
-    nargs='+',
-    type=str,
-    help='Path to second safe tensor file'
+    "file_2", nargs="+", type=str, help="Path to second safe tensor file"
 )
 
 args = parser.parse_args()
@@ -65,7 +59,7 @@ keys_in_both.sort()
 json_data = {
     "both": keys_in_both,
     "not_in_state_dict_2": keys_not_in_state_dict_2,
-    "not_in_state_dict_1": keys_not_in_state_dict_1
+    "not_in_state_dict_1": keys_not_in_state_dict_1,
 }
 json_data = json.dumps(json_data, indent=4)
 
@@ -82,18 +76,22 @@ for key in keys_not_in_state_dict_2:
 # print(json_data)
 
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-json_save_path = os.path.join(project_root, 'config', 'keys.json')
-json_matched_save_path = os.path.join(project_root, 'config', 'matched.json')
-json_duped_save_path = os.path.join(project_root, 'config', 'duped.json')
+json_save_path = os.path.join(project_root, "config", "keys.json")
+json_matched_save_path = os.path.join(project_root, "config", "matched.json")
+json_duped_save_path = os.path.join(project_root, "config", "duped.json")
 state_dict_1_filename = os.path.basename(args.file_1[0])
 state_dict_2_filename = os.path.basename(args.file_2[0])
 # save key names for each in own file
-with open(os.path.join(project_root, 'config', f'{state_dict_1_filename}.json'), 'w') as f:
+with open(
+    os.path.join(project_root, "config", f"{state_dict_1_filename}.json"), "w"
+) as f:
     f.write(json.dumps(state_dict_1_keys, indent=4))
 
-with open(os.path.join(project_root, 'config', f'{state_dict_2_filename}.json'), 'w') as f:
+with open(
+    os.path.join(project_root, "config", f"{state_dict_2_filename}.json"), "w"
+) as f:
     f.write(json.dumps(state_dict_2_keys, indent=4))
 
 
-with open(json_save_path, 'w') as f:
+with open(json_save_path, "w") as f:
     f.write(json_data)

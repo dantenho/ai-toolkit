@@ -1,13 +1,13 @@
 import math
-from typing import Callable, Union
+from collections.abc import Callable
 
 import torch
+import torchvision
 from einops import rearrange
 from PIL import Image
 from torch import Tensor
 
 from .model import Flux2
-import torchvision
 
 
 def compress_time(t_ids: Tensor) -> Tensor:
@@ -52,7 +52,7 @@ def scatter_ids(x: Tensor, x_ids: Tensor) -> list[Tensor]:
 
 def encode_image_refs(
     ae,
-    img_ctx: Union[list[Image.Image], list[torch.Tensor]],
+    img_ctx: list[Image.Image] | list[torch.Tensor],
     scale=10,
     limit_pixels=1024**2,
 ):

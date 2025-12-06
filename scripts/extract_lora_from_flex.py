@@ -1,15 +1,22 @@
-import os
-from tqdm import tqdm
 import argparse
+import os
 from collections import OrderedDict
 
+from tqdm import tqdm
+
 parser = argparse.ArgumentParser(description="Extract LoRA from Flex")
-parser.add_argument("--base", type=str, default="ostris/Flex.1-alpha", help="Base model path")
+parser.add_argument(
+    "--base", type=str, default="ostris/Flex.1-alpha", help="Base model path"
+)
 parser.add_argument("--tuned", type=str, required=True, help="Tuned model path")
 parser.add_argument("--output", type=str, required=True, help="Output path for lora")
 parser.add_argument("--rank", type=int, default=32, help="LoRA rank for extraction")
 parser.add_argument("--gpu", type=int, default=0, help="GPU to process extraction")
-parser.add_argument("--full", action="store_true", help="Do a full transformer extraction, not just transformer blocks")
+parser.add_argument(
+    "--full",
+    action="store_true",
+    help="Do a full transformer extraction, not just transformer blocks",
+)
 
 args = parser.parse_args()
 
@@ -17,9 +24,9 @@ if True:
     # set cuda environment variable
     os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
     import torch
-    from safetensors.torch import load_file, save_file
-    from lycoris.utils import extract_linear, extract_conv, make_sparse
     from diffusers import FluxTransformer2DModel
+    from lycoris.utils import extract_conv, extract_linear, make_sparse
+    from safetensors.torch import save_file
 
 base = args.base
 tuned = args.tuned
@@ -32,6 +39,7 @@ state_dict_base = {}
 state_dict_tuned = {}
 
 output_dict = {}
+
 
 @torch.no_grad()
 def extract_diff(
@@ -53,7 +61,7 @@ def extract_diff(
         "GroupNorm",
         "GroupNorm32",
         "LoRACompatibleLinear",
-        "LoRACompatibleConv"
+        "LoRACompatibleConv",
     ]
     LORA_PREFIX_UNET = "transformer"
 
@@ -77,7 +85,7 @@ def extract_diff(
             lora_name = prefix + "." + name
             # lora_name = lora_name.replace(".", "_")
             layer = module.__class__.__name__
-            if 'transformer_blocks' not in lora_name and not args.full:
+            if "transformer_blocks" not in lora_name and not args.full:
                 continue
 
             if layer in {
@@ -88,7 +96,7 @@ def extract_diff(
                 "GroupNorm32",
                 "Embedding",
                 "LoRACompatibleLinear",
-                "LoRACompatibleConv"
+                "LoRACompatibleConv",
             }:
                 root_weight = module.weight
                 try:
@@ -220,10 +228,14 @@ def extract_diff(
 
 # find all the .safetensors files and load them
 print("Loading Base")
-base_model = FluxTransformer2DModel.from_pretrained(base, subfolder="transformer", torch_dtype=torch.bfloat16)
+base_model = FluxTransformer2DModel.from_pretrained(
+    base, subfolder="transformer", torch_dtype=torch.bfloat16
+)
 
 print("Loading Tuned")
-tuned_model = FluxTransformer2DModel.from_pretrained(tuned, subfolder="transformer", torch_dtype=torch.bfloat16)
+tuned_model = FluxTransformer2DModel.from_pretrained(
+    tuned, subfolder="transformer", torch_dtype=torch.bfloat16
+)
 
 output_dict = extract_diff(
     base_model,
@@ -238,7 +250,7 @@ output_dict = extract_diff(
 )
 
 meta = OrderedDict()
-meta['format'] = 'pt'
+meta["format"] = "pt"
 
 save_file(output_dict, output_path, metadata=meta)
 

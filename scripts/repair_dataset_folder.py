@@ -1,15 +1,16 @@
 import argparse
+import os
+
 from PIL import Image
 from PIL.ImageOps import exif_transpose
 from tqdm import tqdm
-import os
 
-parser = argparse.ArgumentParser(description='Process some images.')
+parser = argparse.ArgumentParser(description="Process some images.")
 parser.add_argument("input_folder", type=str, help="Path to folder containing images")
 
 args = parser.parse_args()
 
-img_types = ['.jpg', '.jpeg', '.png', '.webp']
+img_types = [".jpg", ".jpeg", ".png", ".webp"]
 
 # find all images in the input folder
 images = []
@@ -28,7 +29,7 @@ for img_path in images:
     filename = os.path.basename(img_path)
     filename_no_ext, file_extension = os.path.splitext(filename)
     # if it is jpg, ignore
-    if file_extension.lower() == '.jpg':
+    if file_extension.lower() == ".jpg":
         num_skipped += 1
         pbar.update(1)
 
@@ -42,16 +43,17 @@ for img_path in images:
         os.remove(img_path)
         num_deleted += 1
         pbar.update(1)
-        pbar.set_description(f"Repaired {num_repaired} images, Skipped {num_skipped}, Deleted {num_deleted}")
+        pbar.set_description(
+            f"Repaired {num_repaired} images, Skipped {num_skipped}, Deleted {num_deleted}"
+        )
         continue
-
 
     try:
         img = exif_transpose(img)
     except Exception as e:
         print(f"Error rotating {img_path}: {e}")
 
-    new_path = os.path.join(os.path.dirname(img_path), filename_no_ext + '.jpg')
+    new_path = os.path.join(os.path.dirname(img_path), filename_no_ext + ".jpg")
 
     img = img.convert("RGB")
     img.save(new_path, quality=95)
@@ -60,6 +62,8 @@ for img_path in images:
     num_repaired += 1
     pbar.update(1)
     # update pbar
-    pbar.set_description(f"Repaired {num_repaired} images, Skipped {num_skipped}, Deleted {num_deleted}")
+    pbar.set_description(
+        f"Repaired {num_repaired} images, Skipped {num_skipped}, Deleted {num_deleted}"
+    )
 
 print("Done")

@@ -1,27 +1,29 @@
 import inspect
 import weakref
+from functools import partial
+from typing import TYPE_CHECKING
+
 import torch
-from typing import TYPE_CHECKING, Tuple
-from toolkit.lora_special import LoRASpecialNetwork
 from diffusers import FluxTransformer2DModel
 from diffusers.models.embeddings import (
-    CombinedTimestepTextProjEmbeddings,
     CombinedTimestepGuidanceTextProjEmbeddings,
+    CombinedTimestepTextProjEmbeddings,
 )
-from functools import partial
-
+from toolkit.lora_special import LoRASpecialNetwork
 
 if TYPE_CHECKING:
-    from toolkit.stable_diffusion_model import StableDiffusion
-    from toolkit.config_modules import AdapterConfig, TrainConfig, ModelConfig
+    from extensions_built_in.diffusion_models.omnigen2.src.models.transformers import (
+        OmniGen2Transformer2DModel,
+    )
+    from toolkit.config_modules import AdapterConfig, ModelConfig, TrainConfig
     from toolkit.custom_adapter import CustomAdapter
-    from extensions_built_in.diffusion_models.omnigen2.src.models.transformers import OmniGen2Transformer2DModel
+    from toolkit.stable_diffusion_model import StableDiffusion
 
 
 def mean_flow_time_text_embed_forward(
     self: CombinedTimestepTextProjEmbeddings, timestep, pooled_projection
 ):
-    mean_flow_adapter: "MeanFlowAdapter" = self.mean_flow_adapter_ref()
+    mean_flow_adapter: MeanFlowAdapter = self.mean_flow_adapter_ref()
     # make zero timestep ending if none is passed
     if mean_flow_adapter.is_active and timestep.shape[0] == pooled_projection.shape[0]:
         timestep = torch.cat(
@@ -57,7 +59,7 @@ def mean_flow_time_text_guidance_embed_forward(
     guidance,
     pooled_projection,
 ):
-    mean_flow_adapter: "MeanFlowAdapter" = self.mean_flow_adapter_ref()
+    mean_flow_adapter: MeanFlowAdapter = self.mean_flow_adapter_ref()
     # make zero timestep ending if none is passed
     if mean_flow_adapter.is_active and timestep.shape[0] == pooled_projection.shape[0]:
         timestep = torch.cat(
@@ -107,22 +109,22 @@ def convert_flux_to_mean_flow(
         )
     else:
         raise ValueError(
-            "Unsupported time_text_embed type: {}".format(
-                type(transformer.time_text_embed)
-            )
+            f"Unsupported time_text_embed type: {type(transformer.time_text_embed)}"
         )
+
 
 def mean_flow_omnigen2_time_text_embed_forward(
     self, timestep: torch.Tensor, text_hidden_states: torch.Tensor, dtype: torch.dtype
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    mean_flow_adapter: "MeanFlowAdapter" = self.mean_flow_adapter_ref()
+) -> tuple[torch.Tensor, torch.Tensor]:
+    mean_flow_adapter: MeanFlowAdapter = self.mean_flow_adapter_ref()
     if mean_flow_adapter.is_active and timestep.shape[0] == text_hidden_states.shape[0]:
         timestep = torch.cat(
-            [timestep, torch.ones_like(timestep)], dim=0  # omnigen does reverse timesteps
+            [timestep, torch.ones_like(timestep)],
+            dim=0,  # omnigen does reverse timesteps
         )
     timestep_proj = self.time_proj(timestep).to(dtype=dtype)
     time_embed = self.timestep_embedder(timestep_proj)
-    
+
     # mean flow stuff
     if mean_flow_adapter.is_active:
         # todo make sure that timesteps is batched correctly, I think diffusers expects non batched timesteps
@@ -133,17 +135,18 @@ def mean_flow_omnigen2_time_text_embed_forward(
             torch.cat([time_embed_start, time_embed_end], dim=-1)
         )
         time_embed = time_embed.to(orig_dtype)
-    
+
     caption_embed = self.caption_embedder(text_hidden_states)
     return time_embed, caption_embed
 
 
 def convert_omnigen2_to_mean_flow(
-    transformer: 'OmniGen2Transformer2DModel',
+    transformer: "OmniGen2Transformer2DModel",
 ):
     transformer.time_caption_embed.forward = partial(
         mean_flow_omnigen2_time_text_embed_forward, transformer.time_caption_embed
     )
+
 
 class MeanFlowAdapter(torch.nn.Module):
     def __init__(
@@ -226,12 +229,10 @@ class MeanFlowAdapter(torch.nn.Module):
                 * transformer.config.attention_head_dim
             )
             convert_flux_to_mean_flow(transformer)
-        
+
         elif self.model_config.arch in ["omnigen2"]:
-            transformer: 'OmniGen2Transformer2DModel' = sd.unet
-            emb_dim = (
-                1024
-            )
+            transformer: OmniGen2Transformer2DModel = sd.unet
+            emb_dim = 1024
             convert_omnigen2_to_mean_flow(transformer)
         else:
             raise ValueError(f"Unsupported architecture: {self.model_config.arch}")
@@ -240,7 +241,7 @@ class MeanFlowAdapter(torch.nn.Module):
             emb_dim * 2,
             emb_dim,
         )
-        
+
         # make the model function as before adding this adapter by initializing the weights
         with torch.no_grad():
             self.mean_flow_timestep_embedder.weight.zero_()

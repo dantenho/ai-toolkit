@@ -1,9 +1,9 @@
+import math
 from dataclasses import dataclass, field
 
 import torch
 from einops import rearrange
 from torch import Tensor, nn
-import math
 
 
 @dataclass

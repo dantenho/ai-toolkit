@@ -1,8 +1,8 @@
 import math
 from functools import partial
 
-from torch import nn
 import torch
+from torch import nn
 
 
 class AuraFlowPatchEmbed(nn.Module):
@@ -21,7 +21,9 @@ class AuraFlowPatchEmbed(nn.Module):
         self.pos_embed_max_size = pos_embed_max_size
 
         self.proj = nn.Linear(patch_size * patch_size * in_channels, embed_dim)
-        self.pos_embed = nn.Parameter(torch.randn(1, pos_embed_max_size, embed_dim) * 0.1)
+        self.pos_embed = nn.Parameter(
+            torch.randn(1, pos_embed_max_size, embed_dim) * 0.1
+        )
 
         self.patch_size = patch_size
         self.height, self.width = height // patch_size, width // patch_size
@@ -67,22 +69,23 @@ class AuraFlowPatchEmbed(nn.Module):
 #         pos_encoding = pos_encoding[:, from_h:from_h + h, from_w:from_w + w]
 #         return x + pos_encoding.reshape(1, -1, self.positional_encoding.shape[-1])
 
-    # def patchify(self, x):
-    #     B, C, H, W = x.size()
-    #     pad_h = (self.patch_size - H % self.patch_size) % self.patch_size
-    #     pad_w = (self.patch_size - W % self.patch_size) % self.patch_size
-    #
-    #     x = torch.nn.functional.pad(x, (0, pad_w, 0, pad_h), mode='reflect')
-    #     x = x.view(
-    #         B,
-    #         C,
-    #         (H + 1) // self.patch_size,
-    #         self.patch_size,
-    #         (W + 1) // self.patch_size,
-    #         self.patch_size,
-    #     )
-    #     x = x.permute(0, 2, 4, 1, 3, 5).flatten(-3).flatten(1, 2)
-    #     return x
+# def patchify(self, x):
+#     B, C, H, W = x.size()
+#     pad_h = (self.patch_size - H % self.patch_size) % self.patch_size
+#     pad_w = (self.patch_size - W % self.patch_size) % self.patch_size
+#
+#     x = torch.nn.functional.pad(x, (0, pad_w, 0, pad_h), mode='reflect')
+#     x = x.view(
+#         B,
+#         C,
+#         (H + 1) // self.patch_size,
+#         self.patch_size,
+#         (W + 1) // self.patch_size,
+#         self.patch_size,
+#     )
+#     x = x.permute(0, 2, 4, 1, 3, 5).flatten(-3).flatten(1, 2)
+#     return x
+
 
 def patch_auraflow_pos_embed(pos_embed):
     # we need to hijack the forward and replace with a custom one. Self is the model
@@ -90,7 +93,9 @@ def patch_auraflow_pos_embed(pos_embed):
         batch_size, num_channels, height, width = latent.size()
 
         # add padding to the latent to make it match pos_embed
-        latent_size = height * width * num_channels / 16  # todo check where 16 comes from?
+        latent_size = (
+            height * width * num_channels / 16
+        )  # todo check where 16 comes from?
         pos_embed_size = self.pos_embed.shape[1]
         if latent_size < pos_embed_size:
             total_padding = int(pos_embed_size - math.floor(latent_size))
@@ -99,7 +104,7 @@ def patch_auraflow_pos_embed(pos_embed):
             pad_width = total_padding - pad_height
             # mirror padding on the right side
             padding = (0, pad_width, 0, pad_height)
-            latent = torch.nn.functional.pad(latent, padding, mode='reflect')
+            latent = torch.nn.functional.pad(latent, padding, mode="reflect")
         elif latent_size > pos_embed_size:
             amount_to_remove = latent_size - pos_embed_size
             latent = latent[:, :, :-amount_to_remove]

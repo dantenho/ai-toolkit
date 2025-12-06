@@ -3,31 +3,28 @@ import glob
 import os
 import time
 from collections import OrderedDict
-from typing import List, Optional
 
+import numpy as np
+import torch
 from PIL import Image
 from PIL.ImageOps import exif_transpose
-
+from safetensors.torch import load_file
 from toolkit.basic import flush
-from toolkit.models.RRDB import RRDBNet as ESRGAN, esrgan_safetensors_keys
-from safetensors.torch import save_file, load_file
-from torch.utils.data import DataLoader, ConcatDataset
-import torch
-from torch import nn
-from torchvision.transforms import transforms
-
-from jobs.process import BaseTrainProcess
 from toolkit.data_loader import AugmentedImageDataset
-from toolkit.esrgan_utils import convert_state_dict_to_basicsr, convert_basicsr_state_dict_to_save_format
-from toolkit.losses import ComparativeTotalVariation, get_gradient_penalty, PatternLoss
+from toolkit.losses import ComparativeTotalVariation, PatternLoss
 from toolkit.metadata import get_meta_for_safetensors
+from toolkit.models.RRDB import RRDBNet as ESRGAN
+from toolkit.models.RRDB import esrgan_safetensors_keys
 from toolkit.optimizer import get_optimizer
 from toolkit.style import get_style_model_and_losses
 from toolkit.train_tools import get_torch_dtype
-from diffusers import AutoencoderKL
+from torch import nn
+from torch.utils.data import ConcatDataset, DataLoader
+from torchvision.transforms import transforms
 from tqdm import tqdm
-import time
-import numpy as np
+
+from jobs.process import BaseTrainProcess
+
 from .models.vgg19_critic import Critic
 
 IMAGE_TRANSFORMS = transforms.Compose(
@@ -43,30 +40,30 @@ class TrainESRGANProcess(BaseTrainProcess):
         super().__init__(process_id, job, config)
         self.data_loader = None
         self.model: ESRGAN = None
-        self.device = self.get_conf('device', self.job.device)
-        self.pretrained_path = self.get_conf('pretrained_path', 'None')
-        self.datasets_objects = self.get_conf('datasets', required=True)
-        self.batch_size = self.get_conf('batch_size', 1, as_type=int)
-        self.resolution = self.get_conf('resolution', 256, as_type=int)
-        self.learning_rate = self.get_conf('learning_rate', 1e-6, as_type=float)
-        self.sample_every = self.get_conf('sample_every', None)
-        self.optimizer_type = self.get_conf('optimizer', 'adam')
-        self.epochs = self.get_conf('epochs', None, as_type=int)
-        self.max_steps = self.get_conf('max_steps', None, as_type=int)
-        self.save_every = self.get_conf('save_every', None)
-        self.upscale_sample = self.get_conf('upscale_sample', 4)
-        self.dtype = self.get_conf('dtype', 'float32')
-        self.sample_sources = self.get_conf('sample_sources', None)
-        self.log_every = self.get_conf('log_every', 100, as_type=int)
-        self.style_weight = self.get_conf('style_weight', 0, as_type=float)
-        self.content_weight = self.get_conf('content_weight', 0, as_type=float)
-        self.mse_weight = self.get_conf('mse_weight', 1e0, as_type=float)
-        self.zoom = self.get_conf('zoom', 4, as_type=int)
-        self.tv_weight = self.get_conf('tv_weight', 1e0, as_type=float)
-        self.critic_weight = self.get_conf('critic_weight', 1, as_type=float)
-        self.pattern_weight = self.get_conf('pattern_weight', 1, as_type=float)
-        self.optimizer_params = self.get_conf('optimizer_params', {})
-        self.augmentations = self.get_conf('augmentations', {})
+        self.device = self.get_conf("device", self.job.device)
+        self.pretrained_path = self.get_conf("pretrained_path", "None")
+        self.datasets_objects = self.get_conf("datasets", required=True)
+        self.batch_size = self.get_conf("batch_size", 1, as_type=int)
+        self.resolution = self.get_conf("resolution", 256, as_type=int)
+        self.learning_rate = self.get_conf("learning_rate", 1e-6, as_type=float)
+        self.sample_every = self.get_conf("sample_every", None)
+        self.optimizer_type = self.get_conf("optimizer", "adam")
+        self.epochs = self.get_conf("epochs", None, as_type=int)
+        self.max_steps = self.get_conf("max_steps", None, as_type=int)
+        self.save_every = self.get_conf("save_every", None)
+        self.upscale_sample = self.get_conf("upscale_sample", 4)
+        self.dtype = self.get_conf("dtype", "float32")
+        self.sample_sources = self.get_conf("sample_sources", None)
+        self.log_every = self.get_conf("log_every", 100, as_type=int)
+        self.style_weight = self.get_conf("style_weight", 0, as_type=float)
+        self.content_weight = self.get_conf("content_weight", 0, as_type=float)
+        self.mse_weight = self.get_conf("mse_weight", 1e0, as_type=float)
+        self.zoom = self.get_conf("zoom", 4, as_type=int)
+        self.tv_weight = self.get_conf("tv_weight", 1e0, as_type=float)
+        self.critic_weight = self.get_conf("critic_weight", 1, as_type=float)
+        self.pattern_weight = self.get_conf("pattern_weight", 1, as_type=float)
+        self.optimizer_params = self.get_conf("optimizer_params", {})
+        self.augmentations = self.get_conf("augmentations", {})
         self.torch_dtype = get_torch_dtype(self.dtype)
         if self.torch_dtype == torch.bfloat16:
             self.esrgan_dtype = torch.float32
@@ -79,12 +76,12 @@ class TrainESRGANProcess(BaseTrainProcess):
 
         # throw error if zoom if not divisible by 2
         if self.zoom % 2 != 0:
-            raise ValueError('zoom must be divisible by 2')
+            raise ValueError("zoom must be divisible by 2")
 
         self.step_num = 0
         self.epoch_num = 0
 
-        self.use_critic = self.get_conf('use_critic', False, as_type=bool)
+        self.use_critic = self.get_conf("use_critic", False, as_type=bool)
         self.critic = None
 
         if self.use_critic:
@@ -92,24 +89,26 @@ class TrainESRGANProcess(BaseTrainProcess):
                 device=self.device,
                 dtype=self.dtype,
                 process=self,
-                **self.get_conf('critic', {})  # pass any other params
+                **self.get_conf("critic", {}),  # pass any other params
             )
 
         if self.sample_every is not None and self.sample_sources is None:
-            raise ValueError('sample_every is specified but sample_sources is not')
+            raise ValueError("sample_every is specified but sample_sources is not")
 
         if self.epochs is None and self.max_steps is None:
-            raise ValueError('epochs or max_steps must be specified')
+            raise ValueError("epochs or max_steps must be specified")
 
         self.data_loaders = []
         # check datasets
         assert isinstance(self.datasets_objects, list)
         for dataset in self.datasets_objects:
-            if 'path' not in dataset:
-                raise ValueError('dataset must have a path')
+            if "path" not in dataset:
+                raise ValueError("dataset must have a path")
             # check if is dir
-            if not os.path.isdir(dataset['path']):
-                raise ValueError(f"dataset path does is not a directory: {dataset['path']}")
+            if not os.path.isdir(dataset["path"]):
+                raise ValueError(
+                    f"dataset path does is not a directory: {dataset['path']}"
+                )
 
         # make training folder
         if not os.path.exists(self.save_root):
@@ -124,34 +123,38 @@ class TrainESRGANProcess(BaseTrainProcess):
         self.add_meta(OrderedDict({"training_info": self.get_training_info()}))
 
     def get_training_info(self):
-        info = OrderedDict({
-            'step': self.step_num,
-            'epoch': self.epoch_num,
-        })
+        info = OrderedDict(
+            {
+                "step": self.step_num,
+                "epoch": self.epoch_num,
+            }
+        )
         return info
 
     def load_datasets(self):
         if self.data_loader is None:
-            print(f"Loading datasets")
+            print("Loading datasets")
             datasets = []
             for dataset in self.datasets_objects:
                 print(f" - Dataset: {dataset['path']}")
                 ds = copy.copy(dataset)
-                ds['resolution'] = self.resolution
+                ds["resolution"] = self.resolution
 
-                if 'augmentations' not in ds:
-                    ds['augmentations'] = self.augmentations
+                if "augmentations" not in ds:
+                    ds["augmentations"] = self.augmentations
 
                 # add the resize down augmentation
-                ds['augmentations'] = [{
-                    'method': 'Resize',
-                    'params': {
-                        'width': int(self.resolution // self.zoom),
-                        'height': int(self.resolution // self.zoom),
-                        # downscale interpolation, string will be evaluated
-                        'interpolation': 'cv2.INTER_AREA'
+                ds["augmentations"] = [
+                    {
+                        "method": "Resize",
+                        "params": {
+                            "width": int(self.resolution // self.zoom),
+                            "height": int(self.resolution // self.zoom),
+                            # downscale interpolation, string will be evaluated
+                            "interpolation": "cv2.INTER_AREA",
+                        },
                     }
-                }] + ds['augmentations']
+                ] + ds["augmentations"]
 
                 image_dataset = AugmentedImageDataset(ds)
                 datasets.append(image_dataset)
@@ -161,23 +164,29 @@ class TrainESRGANProcess(BaseTrainProcess):
                 concatenated_dataset,
                 batch_size=self.batch_size,
                 shuffle=True,
-                num_workers=6
+                num_workers=6,
             )
 
     def setup_vgg19(self):
         if self.vgg_19 is None:
-            self.vgg_19, self.style_losses, self.content_losses, self.vgg19_pool_4 = get_style_model_and_losses(
-                single_target=True,
-                device=self.device,
-                output_layer_name='pool_4',
-                dtype=self.torch_dtype
+            self.vgg_19, self.style_losses, self.content_losses, self.vgg19_pool_4 = (
+                get_style_model_and_losses(
+                    single_target=True,
+                    device=self.device,
+                    output_layer_name="pool_4",
+                    dtype=self.torch_dtype,
+                )
             )
             self.vgg_19.to(self.device, dtype=self.torch_dtype)
             self.vgg_19.requires_grad_(False)
 
             # we run random noise through first to get layer scalers to normalize the loss per layer
             # bs of 2 because we run pred and target through stacked
-            noise = torch.randn((2, 3, self.resolution, self.resolution), device=self.device, dtype=self.torch_dtype)
+            noise = torch.randn(
+                (2, 3, self.resolution, self.resolution),
+                device=self.device,
+                dtype=self.torch_dtype,
+            )
             self.vgg_19(noise)
             for style_loss in self.style_losses:
                 # get a scaler  to normalize to 1
@@ -189,7 +198,7 @@ class TrainESRGANProcess(BaseTrainProcess):
                 # if is nan, set to 1
                 if scaler != scaler:
                     scaler = 1
-                    print(f"Warning: content loss scaler is nan, setting to 1")
+                    print("Warning: content loss scaler is nan, setting to 1")
                 self.content_weight_scalers.append(scaler)
 
             self.print(f"Style weight scalers: {self.style_weight_scalers}")
@@ -199,7 +208,15 @@ class TrainESRGANProcess(BaseTrainProcess):
         if self.style_weight > 0:
             # scale all losses with loss scalers
             loss = torch.sum(
-                torch.stack([loss.loss * scaler for loss, scaler in zip(self.style_losses, self.style_weight_scalers)]))
+                torch.stack(
+                    [
+                        loss.loss * scaler
+                        for loss, scaler in zip(
+                            self.style_losses, self.style_weight_scalers
+                        )
+                    ]
+                )
+            )
             return loss
         else:
             return torch.tensor(0.0, device=self.device)
@@ -207,8 +224,16 @@ class TrainESRGANProcess(BaseTrainProcess):
     def get_content_loss(self):
         if self.content_weight > 0:
             # scale all losses with loss scalers
-            loss = torch.sum(torch.stack(
-                [loss.loss * scaler for loss, scaler in zip(self.content_losses, self.content_weight_scalers)]))
+            loss = torch.sum(
+                torch.stack(
+                    [
+                        loss.loss * scaler
+                        for loss, scaler in zip(
+                            self.content_losses, self.content_weight_scalers
+                        )
+                    ]
+                )
+            )
             return loss
         else:
             return torch.tensor(0.0, device=self.device)
@@ -232,10 +257,11 @@ class TrainESRGANProcess(BaseTrainProcess):
     def get_pattern_loss(self, pred, target):
         if self._pattern_loss is None:
             self._pattern_loss = PatternLoss(
-                pattern_size=self.zoom,
-                dtype=self.torch_dtype
+                pattern_size=self.zoom, dtype=self.torch_dtype
             ).to(self.device, dtype=self.torch_dtype)
-            self._pattern_loss = self._pattern_loss.to(self.device, dtype=self.torch_dtype)
+            self._pattern_loss = self._pattern_loss.to(
+                self.device, dtype=self.torch_dtype
+            )
         loss = torch.mean(self._pattern_loss(pred, target))
         return loss
 
@@ -243,14 +269,14 @@ class TrainESRGANProcess(BaseTrainProcess):
         if not os.path.exists(self.save_root):
             os.makedirs(self.save_root, exist_ok=True)
 
-        step_num = ''
+        step_num = ""
         if step is not None:
             # zeropad 9 digits
             step_num = f"_{str(step).zfill(9)}"
 
         self.update_training_metadata()
         # filename = f'{self.job.name}{step_num}.safetensors'
-        filename = f'{self.job.name}{step_num}.pth'
+        filename = f"{self.job.name}{step_num}.pth"
         # prepare meta
         save_meta = get_meta_for_safetensors(self.meta, self.job.name)
 
@@ -273,11 +299,11 @@ class TrainESRGANProcess(BaseTrainProcess):
         if self.use_critic:
             self.critic.save(step)
 
-    def sample(self, step=None, batch: Optional[List[torch.Tensor]] = None):
-        sample_folder = os.path.join(self.save_root, 'samples')
+    def sample(self, step=None, batch: list[torch.Tensor] | None = None):
+        sample_folder = os.path.join(self.save_root, "samples")
         if not os.path.exists(sample_folder):
             os.makedirs(sample_folder, exist_ok=True)
-        batch_sample_folder = os.path.join(self.save_root, 'samples_batch')
+        batch_sample_folder = os.path.join(self.save_root, "samples_batch")
 
         batch_targets = None
         batch_inputs = None
@@ -302,17 +328,25 @@ class TrainESRGANProcess(BaseTrainProcess):
 
             if isinstance(target_img, torch.Tensor):
                 # convert to pil
-                target_img = target_img.cpu().permute(0, 2, 3, 1).squeeze(0).float().numpy()
+                target_img = (
+                    target_img.cpu().permute(0, 2, 3, 1).squeeze(0).float().numpy()
+                )
                 target_img = Image.fromarray((target_img * 255).astype(np.uint8))
 
             # upscale to size * self.upscale_sample while maintaining pixels
             output = output.resize(
-                (self.resolution * self.upscale_sample, self.resolution * self.upscale_sample),
-                resample=Image.NEAREST
+                (
+                    self.resolution * self.upscale_sample,
+                    self.resolution * self.upscale_sample,
+                ),
+                resample=Image.NEAREST,
             )
             img = img.resize(
-                (self.resolution * self.upscale_sample, self.resolution * self.upscale_sample),
-                resample=Image.NEAREST
+                (
+                    self.resolution * self.upscale_sample,
+                    self.resolution * self.upscale_sample,
+                ),
+                resample=Image.NEAREST,
             )
 
             width, height = output.size
@@ -322,7 +356,7 @@ class TrainESRGANProcess(BaseTrainProcess):
             output = output.resize((width, height))
             img = img.resize((width, height))
 
-            output_img = Image.new('RGB', (width * 3, height))
+            output_img = Image.new("RGB", (width * 3, height))
 
             output_img.paste(img, (0, 0))
             output_img.paste(output, (width, 0))
@@ -333,24 +367,33 @@ class TrainESRGANProcess(BaseTrainProcess):
         with torch.no_grad():
             for i, img_url in enumerate(self.sample_sources):
                 img = exif_transpose(Image.open(img_url))
-                img = img.convert('RGB')
+                img = img.convert("RGB")
                 # crop if not square
                 if img.width != img.height:
                     min_dim = min(img.width, img.height)
                     img = img.crop((0, 0, min_dim, min_dim))
                 # resize
-                img = img.resize((self.resolution * self.zoom, self.resolution * self.zoom), resample=Image.BICUBIC)
+                img = img.resize(
+                    (self.resolution * self.zoom, self.resolution * self.zoom),
+                    resample=Image.BICUBIC,
+                )
 
                 target_image = img
                 # downscale the image input
-                img = img.resize((self.resolution, self.resolution), resample=Image.BICUBIC)
+                img = img.resize(
+                    (self.resolution, self.resolution), resample=Image.BICUBIC
+                )
 
                 # downscale the image input
 
-                img = IMAGE_TRANSFORMS(img).unsqueeze(0).to(self.device, dtype=self.esrgan_dtype)
+                img = (
+                    IMAGE_TRANSFORMS(img)
+                    .unsqueeze(0)
+                    .to(self.device, dtype=self.esrgan_dtype)
+                )
                 img = img
 
-                step_num = ''
+                step_num = ""
                 if step is not None:
                     # zero-pad 9 digits
                     step_num = f"_{str(step).zfill(9)}"
@@ -358,12 +401,16 @@ class TrainESRGANProcess(BaseTrainProcess):
                 # zero-pad 2 digits
                 i_str = str(i).zfill(2)
                 filename = f"{seconds_since_epoch}{step_num}_{i_str}.jpg"
-                process_and_save(img, target_image, os.path.join(sample_folder, filename))
+                process_and_save(
+                    img, target_image, os.path.join(sample_folder, filename)
+                )
 
             if batch is not None:
                 batch_targets = batch[0].detach()
                 batch_inputs = batch[1].detach()
-                batch_targets = torch.chunk(batch_targets, batch_targets.shape[0], dim=0)
+                batch_targets = torch.chunk(
+                    batch_targets, batch_targets.shape[0], dim=0
+                )
                 batch_inputs = torch.chunk(batch_inputs, batch_inputs.shape[0], dim=0)
 
                 for i in range(len(batch_inputs)):
@@ -374,7 +421,11 @@ class TrainESRGANProcess(BaseTrainProcess):
                     # zero-pad 2 digits
                     i_str = str(i).zfill(2)
                     filename = f"{seconds_since_epoch}{step_num}_{i_str}.jpg"
-                    process_and_save(batch_inputs[i], batch_targets[i], os.path.join(batch_sample_folder, filename))
+                    process_and_save(
+                        batch_inputs[i],
+                        batch_targets[i],
+                        os.path.join(batch_sample_folder, filename),
+                    )
 
         self.model.train()
 
@@ -391,29 +442,29 @@ class TrainESRGANProcess(BaseTrainProcess):
             path_to_load = latest_file
             # todo update step and epoch count
         elif self.pretrained_path is None:
-            self.print(f" - No checkpoint found, starting from scratch")
+            self.print(" - No checkpoint found, starting from scratch")
         else:
-            self.print(f" - No checkpoint found, loading pretrained model")
+            self.print(" - No checkpoint found, loading pretrained model")
             self.print(f" - path: {path_to_load}")
 
         if path_to_load is not None:
             self.print(f" - Loading pretrained checkpoint: {path_to_load}")
             # if ends with pth then assume pytorch checkpoint
-            if path_to_load.endswith('.pth') or path_to_load.endswith('.pt'):
+            if path_to_load.endswith(".pth") or path_to_load.endswith(".pt"):
                 state_dict = torch.load(path_to_load, map_location=self.device)
-            elif path_to_load.endswith('.safetensors'):
+            elif path_to_load.endswith(".safetensors"):
                 state_dict_raw = load_file(path_to_load)
                 # make ordered dict as most things need it
                 state_dict = OrderedDict()
                 for key in esrgan_safetensors_keys:
                     state_dict[key] = state_dict_raw[key]
             else:
-                raise Exception(f"Unknown file extension for checkpoint: {path_to_load}")
+                raise Exception(
+                    f"Unknown file extension for checkpoint: {path_to_load}"
+                )
 
         # todo determine architecture from checkpoint
-        self.model = ESRGAN(
-            state_dict
-        ).to(self.device, dtype=self.esrgan_dtype)
+        self.model = ESRGAN(state_dict).to(self.device, dtype=self.esrgan_dtype)
 
         # set the model to training mode
         self.model.train()
@@ -422,7 +473,7 @@ class TrainESRGANProcess(BaseTrainProcess):
     def run(self):
         super().run()
         self.load_datasets()
-        steps_per_step = (self.critic.num_critic_per_gen + 1)
+        steps_per_step = self.critic.num_critic_per_gen + 1
 
         max_step_epochs = self.max_steps // (len(self.data_loader) // steps_per_step)
         num_epochs = self.epochs
@@ -438,7 +489,7 @@ class TrainESRGANProcess(BaseTrainProcess):
         start_step = self.step_num
         self.first_step = start_step
 
-        self.print(f"Training ESRGAN model:")
+        self.print("Training ESRGAN model:")
         self.print(f" - Training folder: {self.training_folder}")
         self.print(f" - Batch size: {self.batch_size}")
         self.print(f" - Learning rate: {self.learning_rate}")
@@ -457,36 +508,35 @@ class TrainESRGANProcess(BaseTrainProcess):
             if self.use_critic:
                 self.critic.setup()
 
-        optimizer = get_optimizer(params, self.optimizer_type, self.learning_rate,
-                                  optimizer_params=self.optimizer_params)
+        optimizer = get_optimizer(
+            params,
+            self.optimizer_type,
+            self.learning_rate,
+            optimizer_params=self.optimizer_params,
+        )
 
         # setup scheduler
         # todo allow other schedulers
         scheduler = torch.optim.lr_scheduler.ConstantLR(
-            optimizer,
-            total_iters=num_steps,
-            factor=1,
-            verbose=False
+            optimizer, total_iters=num_steps, factor=1, verbose=False
         )
 
         # setup tqdm progress bar
-        self.progress_bar = tqdm(
-            total=num_steps,
-            desc='Training ESRGAN',
-            leave=True
-        )
+        self.progress_bar = tqdm(total=num_steps, desc="Training ESRGAN", leave=True)
 
-        blank_losses = OrderedDict({
-            "total": [],
-            "style": [],
-            "content": [],
-            "mse": [],
-            "kl": [],
-            "tv": [],
-            "ptn": [],
-            "crD": [],
-            "crG": [],
-        })
+        blank_losses = OrderedDict(
+            {
+                "total": [],
+                "style": [],
+                "content": [],
+                "mse": [],
+                "kl": [],
+                "tv": [],
+                "ptn": [],
+                "crD": [],
+                "crG": [],
+            }
+        )
         epoch_losses = copy.deepcopy(blank_losses)
         log_losses = copy.deepcopy(blank_losses)
         print("Generating baseline samples")
@@ -502,11 +552,23 @@ class TrainESRGANProcess(BaseTrainProcess):
                     break
                 with torch.no_grad():
                     is_critic_only_step = False
-                    if self.use_critic and 1 / (self.critic.num_critic_per_gen + 1) < np.random.uniform():
+                    if (
+                        self.use_critic
+                        and 1 / (self.critic.num_critic_per_gen + 1)
+                        < np.random.uniform()
+                    ):
                         is_critic_only_step = True
 
-                    targets = targets.to(self.device, dtype=self.esrgan_dtype).clamp(0, 1).detach()
-                    inputs = inputs.to(self.device, dtype=self.esrgan_dtype).clamp(0, 1).detach()
+                    targets = (
+                        targets.to(self.device, dtype=self.esrgan_dtype)
+                        .clamp(0, 1)
+                        .detach()
+                    )
+                    inputs = (
+                        inputs.to(self.device, dtype=self.esrgan_dtype)
+                        .clamp(0, 1)
+                        .detach()
+                    )
 
                 optimizer.zero_grad()
                 # dont do grads here for critic step
@@ -515,21 +577,27 @@ class TrainESRGANProcess(BaseTrainProcess):
                     pred = self.model(inputs)
 
                     pred = pred.to(self.device, dtype=self.torch_dtype).clamp(0, 1)
-                    targets = targets.to(self.device, dtype=self.torch_dtype).clamp(0, 1)
+                    targets = targets.to(self.device, dtype=self.torch_dtype).clamp(
+                        0, 1
+                    )
                     if torch.isnan(pred).any():
-                        raise ValueError('pred has nan values')
+                        raise ValueError("pred has nan values")
                     if torch.isnan(targets).any():
-                        raise ValueError('targets has nan values')
+                        raise ValueError("targets has nan values")
 
                     # Run through VGG19
-                    if self.style_weight > 0 or self.content_weight > 0 or self.use_critic:
+                    if (
+                        self.style_weight > 0
+                        or self.content_weight > 0
+                        or self.use_critic
+                    ):
                         stacked = torch.cat([pred, targets], dim=0)
                         # stacked = (stacked / 2 + 0.5).clamp(0, 1)
                         stacked = stacked.clamp(0, 1)
                         self.vgg_19(stacked)
                         # make sure we dont have nans
                         if torch.isnan(self.vgg19_pool_4.tensor).any():
-                            raise ValueError('vgg19_pool_4 has nan values')
+                            raise ValueError("vgg19_pool_4 has nan values")
 
                 if is_critic_only_step:
                     critic_d_loss = self.critic.step(self.vgg19_pool_4.tensor.detach())
@@ -548,16 +616,30 @@ class TrainESRGANProcess(BaseTrainProcess):
 
                 mse_loss = self.get_mse_loss(pred, targets) * self.mse_weight
                 tv_loss = self.get_tv_loss(pred, targets) * self.tv_weight
-                pattern_loss = self.get_pattern_loss(pred, targets) * self.pattern_weight
+                pattern_loss = (
+                    self.get_pattern_loss(pred, targets) * self.pattern_weight
+                )
                 if self.use_critic:
-                    critic_gen_loss = self.critic.get_critic_loss(self.vgg19_pool_4.tensor) * self.critic_weight
+                    critic_gen_loss = (
+                        self.critic.get_critic_loss(self.vgg19_pool_4.tensor)
+                        * self.critic_weight
+                    )
                 else:
-                    critic_gen_loss = torch.tensor(0.0, device=self.device, dtype=self.torch_dtype)
+                    critic_gen_loss = torch.tensor(
+                        0.0, device=self.device, dtype=self.torch_dtype
+                    )
 
-                loss = style_loss + content_loss + mse_loss + tv_loss + critic_gen_loss + pattern_loss
+                loss = (
+                    style_loss
+                    + content_loss
+                    + mse_loss
+                    + tv_loss
+                    + critic_gen_loss
+                    + pattern_loss
+                )
                 # make sure non nan
                 if torch.isnan(loss):
-                    raise ValueError('loss is nan')
+                    raise ValueError("loss is nan")
 
                 # Backward pass and optimization
                 loss.backward()
@@ -584,20 +666,23 @@ class TrainESRGANProcess(BaseTrainProcess):
                 if self.use_critic:
                     loss_string += f" crD: {critic_d_loss:.2e}"
 
-                if self.optimizer_type.startswith('dadaptation') or self.optimizer_type.startswith('prodigy'):
+                if self.optimizer_type.startswith(
+                    "dadaptation"
+                ) or self.optimizer_type.startswith("prodigy"):
                     learning_rate = (
-                            optimizer.param_groups[0]["d"] *
-                            optimizer.param_groups[0]["lr"]
+                        optimizer.param_groups[0]["d"] * optimizer.param_groups[0]["lr"]
                     )
                 else:
-                    learning_rate = optimizer.param_groups[0]['lr']
+                    learning_rate = optimizer.param_groups[0]["lr"]
 
-                lr_critic_string = ''
+                lr_critic_string = ""
                 if self.use_critic:
                     lr_critic = self.critic.get_lr()
                     lr_critic_string = f" lrC: {lr_critic:.1e}"
 
-                self.progress_bar.set_postfix_str(f"lr: {learning_rate:.1e}{lr_critic_string} {loss_string}")
+                self.progress_bar.set_postfix_str(
+                    f"lr: {learning_rate:.1e}{lr_critic_string} {loss_string}"
+                )
                 self.progress_bar.set_description(f"E: {epoch}")
                 self.progress_bar.update(1)
 
@@ -636,9 +721,13 @@ class TrainESRGANProcess(BaseTrainProcess):
                         if self.writer is not None:
                             # get avg loss
                             for key in log_losses:
-                                log_losses[key] = sum(log_losses[key]) / (len(log_losses[key]) + 1e-6)
+                                log_losses[key] = sum(log_losses[key]) / (
+                                    len(log_losses[key]) + 1e-6
+                                )
                                 # if log_losses[key] > 0:
-                                self.writer.add_scalar(f"loss/{key}", log_losses[key], self.step_num)
+                                self.writer.add_scalar(
+                                    f"loss/{key}", log_losses[key], self.step_num
+                                )
                         # reset log losses
                         log_losses = copy.deepcopy(blank_losses)
 
@@ -648,9 +737,13 @@ class TrainESRGANProcess(BaseTrainProcess):
                 eps = 1e-6
                 # get avg loss
                 for key in epoch_losses:
-                    epoch_losses[key] = sum(log_losses[key]) / (len(log_losses[key]) + eps)
+                    epoch_losses[key] = sum(log_losses[key]) / (
+                        len(log_losses[key]) + eps
+                    )
                     if epoch_losses[key] > 0:
-                        self.writer.add_scalar(f"epoch loss/{key}", epoch_losses[key], epoch)
+                        self.writer.add_scalar(
+                            f"epoch loss/{key}", epoch_losses[key], epoch
+                        )
             # reset epoch losses
             epoch_losses = copy.deepcopy(blank_losses)
 

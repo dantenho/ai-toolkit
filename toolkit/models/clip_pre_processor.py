@@ -4,20 +4,19 @@ import torch.nn as nn
 
 class UpsampleBlock(nn.Module):
     def __init__(
-            self,
-            in_channels: int,
-            out_channels: int,
+        self,
+        in_channels: int,
+        out_channels: int,
     ):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.conv_in = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1),
-            nn.GELU()
+            nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1), nn.GELU()
         )
         self.conv_up = nn.Sequential(
             nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2),
-            nn.GELU()
+            nn.GELU(),
         )
 
         self.conv_out = nn.Sequential(
@@ -33,10 +32,10 @@ class UpsampleBlock(nn.Module):
 
 class CLIPImagePreProcessor(nn.Module):
     def __init__(
-            self,
-            input_size=896,
-            clip_input_size=224,
-            downscale_factor: int = 16,
+        self,
+        input_size=896,
+        clip_input_size=224,
+        downscale_factor: int = 16,
     ):
         super().__init__()
         # make sure they are evenly divisible
@@ -47,10 +46,12 @@ class CLIPImagePreProcessor(nn.Module):
         self.clip_input_size = clip_input_size
         self.downscale_factor = downscale_factor
 
-        subpixel_channels = in_channels * downscale_factor ** 2  # 3 * 16 ** 2 = 768
+        subpixel_channels = in_channels * downscale_factor**2  # 3 * 16 ** 2 = 768
         channels = subpixel_channels
 
-        upscale_factor = downscale_factor / int((input_size / clip_input_size))  # 16 / (896 / 224) = 4
+        upscale_factor = downscale_factor / int(
+            input_size / clip_input_size
+        )  # 16 / (896 / 224) = 4
 
         num_upsample_blocks = int(upscale_factor // 2)  # 4 // 2 = 2
 
@@ -62,7 +63,7 @@ class CLIPImagePreProcessor(nn.Module):
         for _ in range(num_upsample_blocks):
             # determine the reshuffled channel count for this dimension
             output_downscale = current_downscale // 2
-            out_channels = in_channels * output_downscale ** 2
+            out_channels = in_channels * output_downscale**2
             # out_channels = current_channels // 2
             self.upsample_blocks.append(UpsampleBlock(current_channels, out_channels))
             current_channels = out_channels
@@ -73,33 +74,27 @@ class CLIPImagePreProcessor(nn.Module):
             # (bs, 192, 112, 112) -> (bs, 48, 224, 224)
 
         self.conv_out = nn.Conv2d(
-            current_channels,
-            out_channels=3,
-            kernel_size=3,
-            padding=1
+            current_channels, out_channels=3, kernel_size=3, padding=1
         )  # (bs, 48, 224, 224) -> (bs, 3, 224, 224)
 
         # do a pooling layer to downscale the input to 1/3 of the size
         # (bs, 3, 896, 896) -> (bs, 3, 224, 224)
         kernel_size = input_size // clip_input_size
         self.res_down = nn.AvgPool2d(
-            kernel_size=kernel_size,
-            stride=kernel_size
+            kernel_size=kernel_size, stride=kernel_size
         )  # (bs, 3, 896, 896) -> (bs, 3, 224, 224)
 
         # make a blending for output residual with near 0 weight
-        self.res_blend = nn.Parameter(torch.tensor(0.001))  # (bs, 3, 224, 224) -> (bs, 3, 224, 224)
+        self.res_blend = nn.Parameter(
+            torch.tensor(0.001)
+        )  # (bs, 3, 224, 224) -> (bs, 3, 224, 224)
 
-        self.unshuffle = nn.PixelUnshuffle(downscale_factor)  # (bs, 3, 896, 896) -> (bs, 768, 56, 56)
+        self.unshuffle = nn.PixelUnshuffle(
+            downscale_factor
+        )  # (bs, 3, 896, 896) -> (bs, 768, 56, 56)
 
         self.conv_in = nn.Sequential(
-            nn.Conv2d(
-                subpixel_channels,
-                channels,
-                kernel_size=3,
-                padding=1
-            ),
-            nn.GELU()
+            nn.Conv2d(subpixel_channels, channels, kernel_size=3, padding=1), nn.GELU()
         )  # (bs, 768, 56, 56) -> (bs, 768, 56, 56)
 
         # make 2 deep blocks
@@ -107,7 +102,9 @@ class CLIPImagePreProcessor(nn.Module):
     def forward(self, x):
         inputs = x
         # resize to input_size x input_size
-        x = nn.functional.interpolate(x, size=(self.input_size, self.input_size), mode='bicubic')
+        x = nn.functional.interpolate(
+            x, size=(self.input_size, self.input_size), mode="bicubic"
+        )
 
         res = self.res_down(inputs)
 

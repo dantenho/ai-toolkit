@@ -1,30 +1,30 @@
 import math
 import os
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 
 import huggingface_hub
 import torch
+import torch.nn.functional as F
+from optimum.quanto import QTensor, freeze
+from PIL import Image
+from safetensors.torch import load_file, save_file
+from toolkit.accelerator import unwrap_model
+from toolkit.basic import flush
 from toolkit.config_modules import GenerateImageConfig, ModelConfig
+from toolkit.dequantize import patch_dequantization_on_save
 from toolkit.memory_management.manager import MemoryManager
 from toolkit.metadata import get_meta_for_safetensors
 from toolkit.models.base_model import BaseModel
-from toolkit.basic import flush
 from toolkit.prompt_utils import PromptEmbeds
 from toolkit.samplers.custom_flowmatch_sampler import (
     CustomFlowMatchEulerDiscreteScheduler,
 )
-from toolkit.dequantize import patch_dequantization_on_save
-from toolkit.accelerator import unwrap_model
-from optimum.quanto import freeze, QTensor
-from toolkit.util.quantize import quantize, get_qtype, quantize_model
-
+from toolkit.util.quantize import get_qtype, quantize, quantize_model
 from transformers import AutoProcessor, Mistral3ForConditionalGeneration
+
+from .src.autoencoder import AutoEncoder, AutoEncoderParams
 from .src.model import Flux2, Flux2Params
 from .src.pipeline import Flux2Pipeline
-from .src.autoencoder import AutoEncoder, AutoEncoderParams
-from safetensors.torch import load_file, save_file
-from PIL import Image
-import torch.nn.functional as F
 
 if TYPE_CHECKING:
     from toolkit.data_transfer_object.data_loader import DataLoaderBatchDTO
@@ -455,7 +455,7 @@ class Flux2Model(BaseModel):
     def get_base_model_version(self):
         return "flux2"
 
-    def get_transformer_block_names(self) -> Optional[List[str]]:
+    def get_transformer_block_names(self) -> list[str] | None:
         return ["double_blocks", "single_blocks"]
 
     def convert_lora_weights_before_save(self, state_dict):
@@ -472,7 +472,7 @@ class Flux2Model(BaseModel):
             new_sd[new_key] = value
         return new_sd
 
-    def encode_images(self, image_list: List[torch.Tensor], device=None, dtype=None):
+    def encode_images(self, image_list: list[torch.Tensor], device=None, dtype=None):
         if device is None:
             device = self.vae_device_torch
         if dtype is None:

@@ -1,7 +1,6 @@
-from typing import List
 import torch
-from transformers import AutoTokenizer, UMT5EncoderModel
 from toolkit.models.loaders.comfy import get_comfy_path
+from transformers import AutoTokenizer, UMT5EncoderModel
 
 
 def get_umt5_encoder(
@@ -9,7 +8,7 @@ def get_umt5_encoder(
     tokenizer_subfolder: str = None,
     encoder_subfolder: str = None,
     torch_dtype: str = torch.bfloat16,
-    comfy_files: List[str] = [
+    comfy_files: list[str] = [
         "text_encoders/umt5_xxl_fp16.safetensors",
         "text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
     ],

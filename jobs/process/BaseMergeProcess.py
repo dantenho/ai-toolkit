@@ -2,25 +2,19 @@ import os
 from collections import OrderedDict
 
 from safetensors.torch import save_file
-
-from jobs.process.BaseProcess import BaseProcess
 from toolkit.metadata import get_meta_for_safetensors
 from toolkit.train_tools import get_torch_dtype
 
+from jobs.process.BaseProcess import BaseProcess
+
 
 class BaseMergeProcess(BaseProcess):
-
-    def __init__(
-            self,
-            process_id: int,
-            job,
-            config: OrderedDict
-    ):
+    def __init__(self, process_id: int, job, config: OrderedDict):
         super().__init__(process_id, job, config)
         self.process_id: int
         self.config: OrderedDict
-        self.output_path = self.get_conf('output_path', required=True)
-        self.dtype = self.get_conf('dtype', self.job.dtype)
+        self.output_path = self.get_conf("output_path", required=True)
+        self.dtype = self.get_conf("dtype", self.job.dtype)
         self.torch_dtype = get_torch_dtype(self.dtype)
 
     def run(self):

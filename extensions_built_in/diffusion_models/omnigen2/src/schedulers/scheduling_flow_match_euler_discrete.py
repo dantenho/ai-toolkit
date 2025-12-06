@@ -12,17 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import math
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-
 from diffusers.configuration_utils import ConfigMixin, register_to_config
-from diffusers.utils import BaseOutput, logging
 from diffusers.schedulers.scheduling_utils import SchedulerMixin
-
+from diffusers.utils import BaseOutput, logging
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
@@ -63,11 +59,11 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
 
     @register_to_config
     def __init__(
-        self,
-        num_train_timesteps: int = 1000,
-        dynamic_time_shift: bool = True
+        self, num_train_timesteps: int = 1000, dynamic_time_shift: bool = True
     ):
-        timesteps = torch.linspace(0, 1, num_train_timesteps + 1, dtype=torch.float32)[:-1]
+        timesteps = torch.linspace(0, 1, num_train_timesteps + 1, dtype=torch.float32)[
+            :-1
+        ]
 
         self.timesteps = timesteps
 
@@ -112,16 +108,16 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         pos = 1 if len(indices) > 1 else 0
 
         return indices[pos].item()
-    
+
     # def time_shift(self, mu: float, sigma: float, t: torch.Tensor):
     #     return math.exp(mu) / (math.exp(mu) + (1 / t - 1) ** sigma)
 
     def set_timesteps(
         self,
         num_inference_steps: int = None,
-        device: Union[str, torch.device] = None,
-        timesteps: Optional[List[float]] = None,
-        num_tokens: Optional[int] = None
+        device: str | torch.device = None,
+        timesteps: list[float] | None = None,
+        num_tokens: int | None = None,
     ):
         """
         Sets the discrete timesteps used for the diffusion chain (to be run before inference).
@@ -135,14 +131,18 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
 
         if timesteps is None:
             self.num_inference_steps = num_inference_steps
-            timesteps = np.linspace(0, 1, num_inference_steps + 1, dtype=np.float32)[:-1]
+            timesteps = np.linspace(0, 1, num_inference_steps + 1, dtype=np.float32)[
+                :-1
+            ]
             if self.config.dynamic_time_shift and num_tokens is not None:
-                m = np.sqrt(num_tokens) / 40 # when input resolution is 320 * 320, m = 1, when input resolution is 1024 * 1024, m = 3.2
+                m = (
+                    np.sqrt(num_tokens) / 40
+                )  # when input resolution is 320 * 320, m = 1, when input resolution is 1024 * 1024, m = 3.2
                 timesteps = timesteps / (m - m * timesteps + timesteps)
 
         timesteps = torch.from_numpy(timesteps).to(dtype=torch.float32, device=device)
         _timesteps = torch.cat([timesteps, torch.ones(1, device=timesteps.device)])
-        
+
         self.timesteps = timesteps
         self._timesteps = _timesteps
         self._step_index = None
@@ -159,11 +159,11 @@ class FlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
     def step(
         self,
         model_output: torch.FloatTensor,
-        timestep: Union[float, torch.FloatTensor],
+        timestep: float | torch.FloatTensor,
         sample: torch.FloatTensor,
-        generator: Optional[torch.Generator] = None,
+        generator: torch.Generator | None = None,
         return_dict: bool = True,
-    ) -> Union[FlowMatchEulerDiscreteSchedulerOutput, Tuple]:
+    ) -> FlowMatchEulerDiscreteSchedulerOutput | tuple:
         """
         Predict the sample from the previous timestep by reversing the SDE. This function propagates the diffusion
         process from the learned model outputs (most often the predicted noise).

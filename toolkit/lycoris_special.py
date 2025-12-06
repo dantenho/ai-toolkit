@@ -1,38 +1,40 @@
 import math
-import os
-from typing import Optional, Union, List, Type
 
 import torch
-from lycoris.kohya import LycorisNetwork, LoConModule
+from lycoris.kohya import LoConModule, LycorisNetwork
 from lycoris.modules.glora import GLoRAModule
 from torch import nn
-from transformers import CLIPTextModel
 from torch.nn import functional as F
-from toolkit.network_mixins import ToolkitNetworkMixin, ToolkitModuleMixin, ExtractableModuleMixin
+from transformers import CLIPTextModel
+
+from toolkit.network_mixins import (
+    ExtractableModuleMixin,
+    ToolkitModuleMixin,
+    ToolkitNetworkMixin,
+)
 
 # diffusers specific stuff
-LINEAR_MODULES = [
-    'Linear',
-    'LoRACompatibleLinear'
-]
-CONV_MODULES = [
-    'Conv2d',
-    'LoRACompatibleConv'
-]
+LINEAR_MODULES = ["Linear", "LoRACompatibleLinear"]
+CONV_MODULES = ["Conv2d", "LoRACompatibleConv"]
+
 
 class LoConSpecialModule(ToolkitModuleMixin, LoConModule, ExtractableModuleMixin):
     def __init__(
-            self,
-            lora_name, org_module: nn.Module,
-            multiplier=1.0,
-            lora_dim=4, alpha=1,
-            dropout=0., rank_dropout=0., module_dropout=0.,
-            use_cp=False,
-            network: 'LycorisSpecialNetwork' = None,
-            use_bias=False,
-            **kwargs,
+        self,
+        lora_name,
+        org_module: nn.Module,
+        multiplier=1.0,
+        lora_dim=4,
+        alpha=1,
+        dropout=0.0,
+        rank_dropout=0.0,
+        module_dropout=0.0,
+        use_cp=False,
+        network: "LycorisSpecialNetwork" = None,
+        use_bias=False,
+        **kwargs,
     ):
-        """ if alpha == 0 or None, alpha is rank (no scaling). """
+        """if alpha == 0 or None, alpha is rank (no scaling)."""
         # call super of super
         ToolkitModuleMixin.__init__(self, network=network)
         torch.nn.Module.__init__(self)
@@ -58,16 +60,20 @@ class LoConSpecialModule(ToolkitModuleMixin, LoConModule, ExtractableModuleMixin
             self.up_op = F.conv2d
             if use_cp and k_size != (1, 1):
                 self.lora_down = nn.Conv2d(in_dim, lora_dim, (1, 1), bias=False)
-                self.lora_mid = nn.Conv2d(lora_dim, lora_dim, k_size, stride, padding, bias=False)
+                self.lora_mid = nn.Conv2d(
+                    lora_dim, lora_dim, k_size, stride, padding, bias=False
+                )
                 self.cp = True
             else:
-                self.lora_down = nn.Conv2d(in_dim, lora_dim, k_size, stride, padding, bias=False)
+                self.lora_down = nn.Conv2d(
+                    in_dim, lora_dim, k_size, stride, padding, bias=False
+                )
             self.lora_up = nn.Conv2d(lora_dim, out_dim, (1, 1), bias=use_bias)
         elif orig_module_name in LINEAR_MODULES:
             self.isconv = False
             self.down_op = F.linear
             self.up_op = F.linear
-            if orig_module_name == 'GroupNorm':
+            if orig_module_name == "GroupNorm":
                 # RuntimeError: mat1 and mat2 shapes cannot be multiplied (56320x120 and 320x32)
                 in_dim = org_module.num_channels
                 out_dim = org_module.num_channels
@@ -91,7 +97,7 @@ class LoConSpecialModule(ToolkitModuleMixin, LoConModule, ExtractableModuleMixin
             alpha = alpha.detach().float().numpy()  # without casting, bf16 causes error
         alpha = lora_dim if alpha is None or alpha == 0 else alpha
         self.scale = alpha / self.lora_dim
-        self.register_buffer('alpha', torch.tensor(alpha))  # 定数として扱える
+        self.register_buffer("alpha", torch.tensor(alpha))  # 定数として扱える
 
         # same as microsoft's
         torch.nn.init.kaiming_uniform_(self.lora_down.weight, a=math.sqrt(5))
@@ -142,27 +148,28 @@ class LycorisSpecialNetwork(ToolkitNetworkMixin, LycorisNetwork):
         "time_embedding.linear_1",
         "time_embedding.linear_2",
     ]
+
     def __init__(
-            self,
-            text_encoder: Union[List[CLIPTextModel], CLIPTextModel],
-            unet,
-            multiplier: float = 1.0,
-            lora_dim: int = 4,
-            alpha: float = 1,
-            dropout: Optional[float] = None,
-            rank_dropout: Optional[float] = None,
-            module_dropout: Optional[float] = None,
-            conv_lora_dim: Optional[int] = None,
-            conv_alpha: Optional[float] = None,
-            use_cp: Optional[bool] = False,
-            network_module: Type[object] = LoConSpecialModule,
-            train_unet: bool = True,
-            train_text_encoder: bool = True,
-            use_text_encoder_1: bool = True,
-            use_text_encoder_2: bool = True,
-            use_bias: bool = False,
-            is_lorm: bool = False,
-            **kwargs,
+        self,
+        text_encoder: list[CLIPTextModel] | CLIPTextModel,
+        unet,
+        multiplier: float = 1.0,
+        lora_dim: int = 4,
+        alpha: float = 1,
+        dropout: float | None = None,
+        rank_dropout: float | None = None,
+        module_dropout: float | None = None,
+        conv_lora_dim: int | None = None,
+        conv_alpha: float | None = None,
+        use_cp: bool | None = False,
+        network_module: type[object] = LoConSpecialModule,
+        train_unet: bool = True,
+        train_text_encoder: bool = True,
+        use_text_encoder_1: bool = True,
+        use_text_encoder_2: bool = True,
+        use_bias: bool = False,
+        is_lorm: bool = False,
+        **kwargs,
     ) -> None:
         # call ToolkitNetworkMixin super
         ToolkitNetworkMixin.__init__(
@@ -170,7 +177,7 @@ class LycorisSpecialNetwork(ToolkitNetworkMixin, LycorisNetwork):
             train_text_encoder=train_text_encoder,
             train_unet=train_unet,
             is_lorm=is_lorm,
-            **kwargs
+            **kwargs,
         )
         # call the parent of the parent LycorisNetwork
         torch.nn.Module.__init__(self)
@@ -196,31 +203,31 @@ class LycorisSpecialNetwork(ToolkitNetworkMixin, LycorisNetwork):
 
         self.conv_lora_dim = int(conv_lora_dim)
         if self.conv_lora_dim and self.conv_lora_dim != self.lora_dim:
-            print('Apply different lora dim for conv layer')
-            print(f'Conv Dim: {conv_lora_dim}, Linear Dim: {lora_dim}')
+            print("Apply different lora dim for conv layer")
+            print(f"Conv Dim: {conv_lora_dim}, Linear Dim: {lora_dim}")
         elif self.conv_lora_dim == 0:
-            print('Disable conv layer')
+            print("Disable conv layer")
 
         self.alpha = alpha
         self.conv_alpha = float(conv_alpha)
         if self.conv_lora_dim and self.alpha != self.conv_alpha:
-            print('Apply different alpha value for conv layer')
-            print(f'Conv alpha: {conv_alpha}, Linear alpha: {alpha}')
+            print("Apply different alpha value for conv layer")
+            print(f"Conv alpha: {conv_alpha}, Linear alpha: {alpha}")
 
         if 1 >= dropout >= 0:
-            print(f'Use Dropout value: {dropout}')
+            print(f"Use Dropout value: {dropout}")
         self.dropout = dropout
         self.rank_dropout = rank_dropout
         self.module_dropout = module_dropout
 
         # create module instances
         def create_modules(
-                prefix,
-                root_module: torch.nn.Module,
-                target_replace_modules,
-                target_replace_names=[]
-        ) -> List[network_module]:
-            print('Create LyCORIS Module')
+            prefix,
+            root_module: torch.nn.Module,
+            target_replace_modules,
+            target_replace_names=[],
+        ) -> list[network_module]:
+            print("Create LyCORIS Module")
             loras = []
             # remove this
             named_modules = root_module.named_modules()
@@ -234,45 +241,65 @@ class LycorisSpecialNetwork(ToolkitNetworkMixin, LycorisNetwork):
                     else:
                         algo = network_module
                     for child_name, child_module in module.named_modules():
-                        lora_name = prefix + '.' + name + '.' + child_name
-                        lora_name = lora_name.replace('.', '_')
-                        if lora_name.startswith('lora_unet_input_blocks_1_0_emb_layers_1'):
+                        lora_name = prefix + "." + name + "." + child_name
+                        lora_name = lora_name.replace(".", "_")
+                        if lora_name.startswith(
+                            "lora_unet_input_blocks_1_0_emb_layers_1"
+                        ):
                             print(f"{lora_name}")
 
-                        if child_module.__class__.__name__ in LINEAR_MODULES and lora_dim > 0:
+                        if (
+                            child_module.__class__.__name__ in LINEAR_MODULES
+                            and lora_dim > 0
+                        ):
                             lora = algo(
-                                lora_name, child_module, self.multiplier,
-                                self.lora_dim, self.alpha,
-                                self.dropout, self.rank_dropout, self.module_dropout,
+                                lora_name,
+                                child_module,
+                                self.multiplier,
+                                self.lora_dim,
+                                self.alpha,
+                                self.dropout,
+                                self.rank_dropout,
+                                self.module_dropout,
                                 use_cp,
                                 network=self,
                                 parent=module,
                                 use_bias=use_bias,
-                                **kwargs
+                                **kwargs,
                             )
                         elif child_module.__class__.__name__ in CONV_MODULES:
                             k_size, *_ = child_module.kernel_size
                             if k_size == 1 and lora_dim > 0:
                                 lora = algo(
-                                    lora_name, child_module, self.multiplier,
-                                    self.lora_dim, self.alpha,
-                                    self.dropout, self.rank_dropout, self.module_dropout,
-                                    use_cp,
-                                    network=self,
-                                    parent=module,
-                                use_bias=use_bias,
-                                    **kwargs
-                                )
-                            elif conv_lora_dim > 0:
-                                lora = algo(
-                                    lora_name, child_module, self.multiplier,
-                                    self.conv_lora_dim, self.conv_alpha,
-                                    self.dropout, self.rank_dropout, self.module_dropout,
+                                    lora_name,
+                                    child_module,
+                                    self.multiplier,
+                                    self.lora_dim,
+                                    self.alpha,
+                                    self.dropout,
+                                    self.rank_dropout,
+                                    self.module_dropout,
                                     use_cp,
                                     network=self,
                                     parent=module,
                                     use_bias=use_bias,
-                                    **kwargs
+                                    **kwargs,
+                                )
+                            elif conv_lora_dim > 0:
+                                lora = algo(
+                                    lora_name,
+                                    child_module,
+                                    self.multiplier,
+                                    self.conv_lora_dim,
+                                    self.conv_alpha,
+                                    self.dropout,
+                                    self.rank_dropout,
+                                    self.module_dropout,
+                                    use_cp,
+                                    network=self,
+                                    parent=module,
+                                    use_bias=use_bias,
+                                    **kwargs,
                                 )
                             else:
                                 continue
@@ -284,42 +311,57 @@ class LycorisSpecialNetwork(ToolkitNetworkMixin, LycorisNetwork):
                         algo = self.NAME_ALGO_MAP[name]
                     else:
                         algo = network_module
-                    lora_name = prefix + '.' + name
-                    lora_name = lora_name.replace('.', '_')
-                    if module.__class__.__name__ == 'Linear' and lora_dim > 0:
+                    lora_name = prefix + "." + name
+                    lora_name = lora_name.replace(".", "_")
+                    if module.__class__.__name__ == "Linear" and lora_dim > 0:
                         lora = algo(
-                            lora_name, module, self.multiplier,
-                            self.lora_dim, self.alpha,
-                            self.dropout, self.rank_dropout, self.module_dropout,
+                            lora_name,
+                            module,
+                            self.multiplier,
+                            self.lora_dim,
+                            self.alpha,
+                            self.dropout,
+                            self.rank_dropout,
+                            self.module_dropout,
                             use_cp,
                             parent=module,
                             network=self,
                             use_bias=use_bias,
-                            **kwargs
+                            **kwargs,
                         )
-                    elif module.__class__.__name__ == 'Conv2d':
+                    elif module.__class__.__name__ == "Conv2d":
                         k_size, *_ = module.kernel_size
                         if k_size == 1 and lora_dim > 0:
                             lora = algo(
-                                lora_name, module, self.multiplier,
-                                self.lora_dim, self.alpha,
-                                self.dropout, self.rank_dropout, self.module_dropout,
+                                lora_name,
+                                module,
+                                self.multiplier,
+                                self.lora_dim,
+                                self.alpha,
+                                self.dropout,
+                                self.rank_dropout,
+                                self.module_dropout,
                                 use_cp,
                                 network=self,
                                 parent=module,
                                 use_bias=use_bias,
-                                **kwargs
+                                **kwargs,
                             )
                         elif conv_lora_dim > 0:
                             lora = algo(
-                                lora_name, module, self.multiplier,
-                                self.conv_lora_dim, self.conv_alpha,
-                                self.dropout, self.rank_dropout, self.module_dropout,
+                                lora_name,
+                                module,
+                                self.multiplier,
+                                self.conv_lora_dim,
+                                self.conv_alpha,
+                                self.dropout,
+                                self.rank_dropout,
+                                self.module_dropout,
                                 use_cp,
                                 network=self,
                                 parent=module,
                                 use_bias=use_bias,
-                                **kwargs
+                                **kwargs,
                             )
                         else:
                             continue
@@ -329,7 +371,7 @@ class LycorisSpecialNetwork(ToolkitNetworkMixin, LycorisNetwork):
             return loras
 
         if network_module == GLoRAModule:
-            print('GLoRA enabled, only train transformer')
+            print("GLoRA enabled, only train transformer")
             # only train transformer (for GLoRA)
             LycorisSpecialNetwork.UNET_TARGET_REPLACE_MODULE = [
                 "Transformer2DModel",
@@ -351,15 +393,23 @@ class LycorisSpecialNetwork(ToolkitNetworkMixin, LycorisNetwork):
                     continue
                 if not use_text_encoder_2 and i == 1:
                     continue
-                self.text_encoder_loras.extend(create_modules(
-                    LycorisSpecialNetwork.LORA_PREFIX_TEXT_ENCODER + (f'{i + 1}' if use_index else ''),
-                    te,
-                    LycorisSpecialNetwork.TEXT_ENCODER_TARGET_REPLACE_MODULE
-                ))
-        print(f"create LyCORIS for Text Encoder: {len(self.text_encoder_loras)} modules.")
+                self.text_encoder_loras.extend(
+                    create_modules(
+                        LycorisSpecialNetwork.LORA_PREFIX_TEXT_ENCODER
+                        + (f"{i + 1}" if use_index else ""),
+                        te,
+                        LycorisSpecialNetwork.TEXT_ENCODER_TARGET_REPLACE_MODULE,
+                    )
+                )
+        print(
+            f"create LyCORIS for Text Encoder: {len(self.text_encoder_loras)} modules."
+        )
         if self.train_unet:
-            self.unet_loras = create_modules(LycorisSpecialNetwork.LORA_PREFIX_UNET, unet,
-                                             LycorisSpecialNetwork.UNET_TARGET_REPLACE_MODULE)
+            self.unet_loras = create_modules(
+                LycorisSpecialNetwork.LORA_PREFIX_UNET,
+                unet,
+                LycorisSpecialNetwork.UNET_TARGET_REPLACE_MODULE,
+            )
         else:
             self.unet_loras = []
         print(f"create LyCORIS for U-Net: {len(self.unet_loras)} modules.")
@@ -369,5 +419,7 @@ class LycorisSpecialNetwork(ToolkitNetworkMixin, LycorisNetwork):
         # assertion
         names = set()
         for lora in self.text_encoder_loras + self.unet_loras:
-            assert lora.lora_name not in names, f"duplicated lora name: {lora.lora_name}"
+            assert lora.lora_name not in names, (
+                f"duplicated lora name: {lora.lora_name}"
+            )
             names.add(lora.lora_name)

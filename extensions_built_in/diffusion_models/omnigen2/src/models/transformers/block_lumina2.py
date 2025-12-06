@@ -1,4 +1,3 @@
-
 # Copyright 2024 Alpha-VLLM Authors and The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,36 +13,41 @@
 # limitations under the License.
 
 import warnings
-from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
-
 from diffusers.models.embeddings import Timesteps
-from ..embeddings import TimestepEmbedding
 
 from ...utils.import_utils import is_flash_attn_available, is_triton_available
+from ..embeddings import TimestepEmbedding
 
 if is_triton_available():
     from ...ops.triton.layer_norm import RMSNorm
 else:
     from torch.nn import RMSNorm
-    warnings.warn("Cannot import triton, install triton to use fused RMSNorm for better performance")
-    
+
+    warnings.warn(
+        "Cannot import triton, install triton to use fused RMSNorm for better performance"
+    )
+
 if is_flash_attn_available():
     from flash_attn.ops.activations import swiglu
 else:
     from .components import swiglu
-    warnings.warn("Cannot import flash_attn, install flash_attn to use fused SwiGLU for better performance")
+
+    warnings.warn(
+        "Cannot import flash_attn, install flash_attn to use fused SwiGLU for better performance"
+    )
 
 # try:
 #     from flash_attn.ops.activations import swiglu as fused_swiglu
 #     FUSEDSWIGLU_AVALIBLE = True
 # except ImportError:
-    
+
 #     FUSEDSWIGLU_AVALIBLE = False
 #     warnings.warn("Cannot import apex RMSNorm, switch to vanilla implementation")
-        
+
+
 class LuminaRMSNormZero(nn.Module):
     """
     Norm layer adaptive RMS normalization zero.
@@ -65,19 +69,19 @@ class LuminaRMSNormZero(nn.Module):
             4 * embedding_dim,
             bias=True,
         )
-        
+
         self.norm = RMSNorm(embedding_dim, eps=norm_eps)
 
     def forward(
         self,
         x: torch.Tensor,
-        emb: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        emb: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         emb = self.linear(self.silu(emb))
         scale_msa, gate_msa, scale_mlp, gate_mlp = emb.chunk(4, dim=1)
         x = self.norm(x) * (1 + scale_msa[:, None])
         return x, gate_msa, scale_mlp, gate_mlp
-    
+
 
 class LuminaLayerNormContinuous(nn.Module):
     def __init__(
@@ -93,7 +97,7 @@ class LuminaLayerNormContinuous(nn.Module):
         eps=1e-5,
         bias=True,
         norm_type="layer_norm",
-        out_dim: Optional[int] = None,
+        out_dim: int | None = None,
     ):
         super().__init__()
 
@@ -104,7 +108,9 @@ class LuminaLayerNormContinuous(nn.Module):
         if norm_type == "layer_norm":
             self.norm = nn.LayerNorm(embedding_dim, eps, elementwise_affine, bias)
         elif norm_type == "rms_norm":
-            self.norm = RMSNorm(embedding_dim, eps=eps, elementwise_affine=elementwise_affine)
+            self.norm = RMSNorm(
+                embedding_dim, eps=eps, elementwise_affine=elementwise_affine
+            )
         else:
             raise ValueError(f"unknown norm_type {norm_type}")
 
@@ -126,7 +132,7 @@ class LuminaLayerNormContinuous(nn.Module):
             x = self.linear_2(x)
 
         return x
-    
+
 
 class LuminaFeedForward(nn.Module):
     r"""
@@ -147,12 +153,12 @@ class LuminaFeedForward(nn.Module):
         self,
         dim: int,
         inner_dim: int,
-        multiple_of: Optional[int] = 256,
-        ffn_dim_multiplier: Optional[float] = None,
+        multiple_of: int | None = 256,
+        ffn_dim_multiplier: float | None = None,
     ):
         super().__init__()
         self.swiglu = swiglu
-        
+
         # custom hidden_size factor multiplier
         if ffn_dim_multiplier is not None:
             inner_dim = int(ffn_dim_multiplier * inner_dim)
@@ -191,7 +197,10 @@ class Lumina2CombinedTimestepCaptionEmbedding(nn.Module):
         super().__init__()
 
         self.time_proj = Timesteps(
-            num_channels=frequency_embedding_size, flip_sin_to_cos=True, downscale_freq_shift=0.0, scale=timestep_scale
+            num_channels=frequency_embedding_size,
+            flip_sin_to_cos=True,
+            downscale_freq_shift=0.0,
+            scale=timestep_scale,
         )
 
         self.timestep_embedder = TimestepEmbedding(
@@ -202,7 +211,7 @@ class Lumina2CombinedTimestepCaptionEmbedding(nn.Module):
             RMSNorm(text_feat_dim, eps=norm_eps),
             nn.Linear(text_feat_dim, hidden_size, bias=True),
         )
-        
+
         self._initialize_weights()
 
     def _initialize_weights(self):
@@ -210,8 +219,11 @@ class Lumina2CombinedTimestepCaptionEmbedding(nn.Module):
         nn.init.zeros_(self.caption_embedder[1].bias)
 
     def forward(
-        self, timestep: torch.Tensor, text_hidden_states: torch.Tensor, dtype: torch.dtype
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        self,
+        timestep: torch.Tensor,
+        text_hidden_states: torch.Tensor,
+        dtype: torch.dtype,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         timestep_proj = self.time_proj(timestep).to(dtype=dtype)
         time_embed = self.timestep_embedder(timestep_proj)
         caption_embed = self.caption_embedder(text_hidden_states)

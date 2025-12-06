@@ -12,16 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import math
 import warnings
-from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import PIL.Image
 import torch
-
-from diffusers.image_processor import PipelineImageInput, VaeImageProcessor, is_valid_image_imagelist
 from diffusers.configuration_utils import register_to_config
+from diffusers.image_processor import (
+    PipelineImageInput,
+    VaeImageProcessor,
+    is_valid_image_imagelist,
+)
+
 
 class OmniGen2ImageProcessor(VaeImageProcessor):
     """
@@ -51,8 +53,8 @@ class OmniGen2ImageProcessor(VaeImageProcessor):
         do_resize: bool = True,
         vae_scale_factor: int = 16,
         resample: str = "lanczos",
-        max_pixels: Optional[int] = None,
-        max_side_length: Optional[int] = None,
+        max_pixels: int | None = None,
+        max_side_length: int | None = None,
         do_normalize: bool = True,
         do_binarize: bool = False,
         do_convert_grayscale: bool = False,
@@ -71,12 +73,12 @@ class OmniGen2ImageProcessor(VaeImageProcessor):
 
     def get_new_height_width(
         self,
-        image: Union[PIL.Image.Image, np.ndarray, torch.Tensor],
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        max_pixels: Optional[int] = None,
-        max_side_length: Optional[int] = None,
-    ) -> Tuple[int, int]:
+        image: PIL.Image.Image | np.ndarray | torch.Tensor,
+        height: int | None = None,
+        width: int | None = None,
+        max_pixels: int | None = None,
+        max_side_length: int | None = None,
+    ) -> tuple[int, int]:
         r"""
         Returns the height and width of the image, downscaled to the next integer multiple of `vae_scale_factor`.
 
@@ -111,36 +113,45 @@ class OmniGen2ImageProcessor(VaeImageProcessor):
                 width = image.shape[3]
             else:
                 width = image.shape[2]
-        
+
         if max_side_length is None:
             max_side_length = self.max_side_length
-        
+
         if max_pixels is None:
             max_pixels = self.max_pixels
-        
+
         ratio = 1.0
         if max_side_length is not None:
             if height > width:
                 max_side_length_ratio = max_side_length / height
             else:
                 max_side_length_ratio = max_side_length / width
-        
+
         cur_pixels = height * width
         max_pixels_ratio = (max_pixels / cur_pixels) ** 0.5
-        ratio = min(max_pixels_ratio, max_side_length_ratio, 1.0) # do not upscale input image
+        ratio = min(
+            max_pixels_ratio, max_side_length_ratio, 1.0
+        )  # do not upscale input image
 
-        new_height, new_width = int(height * ratio) // self.config.vae_scale_factor * self.config.vae_scale_factor, int(width * ratio) // self.config.vae_scale_factor * self.config.vae_scale_factor
+        new_height, new_width = (
+            int(height * ratio)
+            // self.config.vae_scale_factor
+            * self.config.vae_scale_factor,
+            int(width * ratio)
+            // self.config.vae_scale_factor
+            * self.config.vae_scale_factor,
+        )
         return new_height, new_width
 
     def preprocess(
         self,
         image: PipelineImageInput,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        max_pixels: Optional[int] = None,
-        max_side_length: Optional[int] = None,
+        height: int | None = None,
+        width: int | None = None,
+        max_pixels: int | None = None,
+        max_side_length: int | None = None,
         resize_mode: str = "default",  # "default", "fill", "crop"
-        crops_coords: Optional[Tuple[int, int, int, int]] = None,
+        crops_coords: tuple[int, int, int, int] | None = None,
     ) -> torch.Tensor:
         """
         Preprocess the image input.
@@ -172,7 +183,11 @@ class OmniGen2ImageProcessor(VaeImageProcessor):
         supported_formats = (PIL.Image.Image, np.ndarray, torch.Tensor)
 
         # Expand the missing dimension for 3-dimensional pytorch tensor or numpy array that represents grayscale image
-        if self.config.do_convert_grayscale and isinstance(image, (torch.Tensor, np.ndarray)) and image.ndim == 3:
+        if (
+            self.config.do_convert_grayscale
+            and isinstance(image, (torch.Tensor, np.ndarray))
+            and image.ndim == 3
+        ):
             if isinstance(image, torch.Tensor):
                 # if image is a pytorch tensor could have 2 possible shapes:
                 #    1. batch x height x width: we should insert the channel dimension at position 1
@@ -189,14 +204,22 @@ class OmniGen2ImageProcessor(VaeImageProcessor):
                 else:
                     image = np.expand_dims(image, axis=-1)
 
-        if isinstance(image, list) and isinstance(image[0], np.ndarray) and image[0].ndim == 4:
+        if (
+            isinstance(image, list)
+            and isinstance(image[0], np.ndarray)
+            and image[0].ndim == 4
+        ):
             warnings.warn(
                 "Passing `image` as a list of 4d np.ndarray is deprecated."
                 "Please concatenate the list along the batch dimension and pass it as a single 4d np.ndarray",
                 FutureWarning,
             )
             image = np.concatenate(image, axis=0)
-        if isinstance(image, list) and isinstance(image[0], torch.Tensor) and image[0].ndim == 4:
+        if (
+            isinstance(image, list)
+            and isinstance(image[0], torch.Tensor)
+            and image[0].ndim == 4
+        ):
             warnings.warn(
                 "Passing `image` as a list of 4d torch.Tensor is deprecated."
                 "Please concatenate the list along the batch dimension and pass it as a single 4d torch.Tensor",
@@ -215,8 +238,13 @@ class OmniGen2ImageProcessor(VaeImageProcessor):
             if crops_coords is not None:
                 image = [i.crop(crops_coords) for i in image]
             if self.config.do_resize:
-                height, width = self.get_new_height_width(image[0], height, width, max_pixels, max_side_length)
-                image = [self.resize(i, height, width, resize_mode=resize_mode) for i in image]
+                height, width = self.get_new_height_width(
+                    image[0], height, width, max_pixels, max_side_length
+                )
+                image = [
+                    self.resize(i, height, width, resize_mode=resize_mode)
+                    for i in image
+                ]
             if self.config.do_convert_rgb:
                 image = [self.convert_to_rgb(i) for i in image]
             elif self.config.do_convert_grayscale:
@@ -225,16 +253,26 @@ class OmniGen2ImageProcessor(VaeImageProcessor):
             image = self.numpy_to_pt(image)  # to pt
 
         elif isinstance(image[0], np.ndarray):
-            image = np.concatenate(image, axis=0) if image[0].ndim == 4 else np.stack(image, axis=0)
+            image = (
+                np.concatenate(image, axis=0)
+                if image[0].ndim == 4
+                else np.stack(image, axis=0)
+            )
 
             image = self.numpy_to_pt(image)
 
-            height, width = self.get_new_height_width(image, height, width, max_pixels, max_side_length)
+            height, width = self.get_new_height_width(
+                image, height, width, max_pixels, max_side_length
+            )
             if self.config.do_resize:
                 image = self.resize(image, height, width)
 
         elif isinstance(image[0], torch.Tensor):
-            image = torch.cat(image, axis=0) if image[0].ndim == 4 else torch.stack(image, axis=0)
+            image = (
+                torch.cat(image, axis=0)
+                if image[0].ndim == 4
+                else torch.stack(image, axis=0)
+            )
 
             if self.config.do_convert_grayscale and image.ndim == 3:
                 image = image.unsqueeze(1)
@@ -244,7 +282,9 @@ class OmniGen2ImageProcessor(VaeImageProcessor):
             if channel == self.config.vae_latent_channels:
                 return image
 
-            height, width = self.get_new_height_width(image, height, width, max_pixels, max_side_length)
+            height, width = self.get_new_height_width(
+                image, height, width, max_pixels, max_side_length
+            )
             if self.config.do_resize:
                 image = self.resize(image, height, width)
 

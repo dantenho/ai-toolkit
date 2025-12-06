@@ -35,7 +35,7 @@ def reshape_tensor(x, heads):
 class PerceiverAttention(nn.Module):
     def __init__(self, *, dim, dim_head=64, heads=8):
         super().__init__()
-        self.scale = dim_head ** -0.5
+        self.scale = dim_head**-0.5
         self.dim_head = dim_head
         self.heads = heads
         inner_dim = dim_head * heads
@@ -70,7 +70,9 @@ class PerceiverAttention(nn.Module):
 
         # attention
         scale = 1 / math.sqrt(math.sqrt(self.dim_head))
-        weight = (q * scale) @ (k * scale).transpose(-2, -1)  # More stable with f16 than dividing afterwards
+        weight = (q * scale) @ (k * scale).transpose(
+            -2, -1
+        )  # More stable with f16 than dividing afterwards
         weight = torch.softmax(weight.float(), dim=-1).type(weight.dtype)
         out = weight @ v
 
@@ -81,24 +83,26 @@ class PerceiverAttention(nn.Module):
 
 class Resampler(nn.Module):
     def __init__(
-            self,
-            dim=1024,
-            depth=8,
-            dim_head=64,
-            heads=16,
-            num_queries=8,
-            embedding_dim=768,
-            output_dim=1024,
-            ff_mult=4,
-            max_seq_len: int = 257,  # CLIP tokens + CLS token
-            apply_pos_emb: bool = False,
-            num_latents_mean_pooled: int = 0,
-            # number of latents derived from mean pooled representation of the sequence
+        self,
+        dim=1024,
+        depth=8,
+        dim_head=64,
+        heads=16,
+        num_queries=8,
+        embedding_dim=768,
+        output_dim=1024,
+        ff_mult=4,
+        max_seq_len: int = 257,  # CLIP tokens + CLS token
+        apply_pos_emb: bool = False,
+        num_latents_mean_pooled: int = 0,
+        # number of latents derived from mean pooled representation of the sequence
     ):
         super().__init__()
-        self.pos_emb = nn.Embedding(max_seq_len, embedding_dim) if apply_pos_emb else None
+        self.pos_emb = (
+            nn.Embedding(max_seq_len, embedding_dim) if apply_pos_emb else None
+        )
 
-        self.latents = nn.Parameter(torch.randn(1, num_queries, dim) / dim ** 0.5)
+        self.latents = nn.Parameter(torch.randn(1, num_queries, dim) / dim**0.5)
 
         self.proj_in = nn.Linear(embedding_dim, dim)
 
@@ -137,7 +141,11 @@ class Resampler(nn.Module):
         x = self.proj_in(x)
 
         if self.to_latents_from_mean_pooled_seq:
-            meanpooled_seq = masked_mean(x, dim=1, mask=torch.ones(x.shape[:2], device=x.device, dtype=torch.bool))
+            meanpooled_seq = masked_mean(
+                x,
+                dim=1,
+                mask=torch.ones(x.shape[:2], device=x.device, dtype=torch.bool),
+            )
             meanpooled_latents = self.to_latents_from_mean_pooled_seq(meanpooled_seq)
             latents = torch.cat((meanpooled_latents, latents), dim=-2)
 

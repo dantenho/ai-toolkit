@@ -1,5 +1,6 @@
-import sys
 import os
+import sys
+
 from toolkit.accelerator import get_accelerator
 
 
@@ -11,7 +12,7 @@ def print_acc(*args, **kwargs):
 class Logger:
     def __init__(self, filename):
         self.terminal = sys.stdout
-        self.log = open(filename, 'a')
+        self.log = open(filename, "a")
 
     def write(self, message):
         self.terminal.write(message)

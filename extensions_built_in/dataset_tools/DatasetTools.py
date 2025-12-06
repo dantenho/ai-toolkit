@@ -1,5 +1,6 @@
-from collections import OrderedDict
 import gc
+from collections import OrderedDict
+
 import torch
 from jobs.process import BaseExtensionProcess
 
@@ -10,7 +11,6 @@ def flush():
 
 
 class DatasetTools(BaseExtensionProcess):
-
     def __init__(self, process_id: int, job, config: OrderedDict):
         super().__init__(process_id, job, config)
 

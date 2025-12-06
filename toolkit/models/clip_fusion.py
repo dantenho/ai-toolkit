@@ -1,20 +1,12 @@
 import torch
 import torch.nn as nn
-
 from toolkit.models.zipper_resampler import ContextualAlphaMask
 
 
 # Conv1d MLP
 # MLP that can alternately be used as a conv1d on dim 1
 class MLPC(nn.Module):
-    def __init__(
-            self,
-            in_dim,
-            out_dim,
-            hidden_dim,
-            do_conv=False,
-            use_residual=True
-    ):
+    def __init__(self, in_dim, out_dim, hidden_dim, do_conv=False, use_residual=True):
         super().__init__()
         self.do_conv = do_conv
         if use_residual:
@@ -47,13 +39,13 @@ class MLPC(nn.Module):
 
 class ZipperBlock(nn.Module):
     def __init__(
-            self,
-            in_size,
-            in_tokens,
-            out_size,
-            out_tokens,
-            hidden_size,
-            hidden_tokens,
+        self,
+        in_size,
+        in_tokens,
+        out_size,
+        out_tokens,
+        hidden_size,
+        hidden_tokens,
     ):
         super().__init__()
         self.in_size = in_size
@@ -69,7 +61,7 @@ class ZipperBlock(nn.Module):
             out_dim=self.out_tokens,
             hidden_dim=self.hidden_tokens,
             do_conv=True,  # no need to permute
-            use_residual=False
+            use_residual=False,
         )
 
         # permute to (batch_size, out_tokens, out_size)
@@ -79,7 +71,7 @@ class ZipperBlock(nn.Module):
             in_dim=self.in_size,
             out_dim=self.out_size,
             hidden_dim=self.hidden_size,
-            use_residual=False
+            use_residual=False,
         )
 
     def forward(self, x):
@@ -88,21 +80,17 @@ class ZipperBlock(nn.Module):
         return x
 
 
-
-
-
-
 # CLIPFusionModule
 # Fuses any size of vision and text embeddings into a single embedding.
 # remaps tokens and vectors.
 class CLIPFusionModule(nn.Module):
     def __init__(
-            self,
-            text_hidden_size: int = 768,
-            text_tokens: int = 77,
-            vision_hidden_size: int = 1024,
-            vision_tokens: int = 257,
-            num_blocks: int = 1,
+        self,
+        text_hidden_size: int = 768,
+        text_tokens: int = 77,
+        vision_hidden_size: int = 1024,
+        vision_tokens: int = 257,
+        num_blocks: int = 1,
     ):
         super(CLIPFusionModule, self).__init__()
 
@@ -117,19 +105,22 @@ class CLIPFusionModule(nn.Module):
             out_size=self.text_hidden_size,
             out_tokens=self.text_tokens,
             hidden_size=self.vision_hidden_size * 2,
-            hidden_tokens=self.vision_tokens * 2
+            hidden_tokens=self.vision_tokens * 2,
         )
 
-        self.zipper_blocks = torch.nn.ModuleList([
-            ZipperBlock(
-                in_size=self.text_hidden_size * 2,
-                in_tokens=self.text_tokens,
-                out_size=self.text_hidden_size,
-                out_tokens=self.text_tokens,
-                hidden_size=self.text_hidden_size * 2,
-                hidden_tokens=self.text_tokens * 2
-            ) for i in range(num_blocks)
-        ])
+        self.zipper_blocks = torch.nn.ModuleList(
+            [
+                ZipperBlock(
+                    in_size=self.text_hidden_size * 2,
+                    in_tokens=self.text_tokens,
+                    out_size=self.text_hidden_size,
+                    out_tokens=self.text_tokens,
+                    hidden_size=self.text_hidden_size * 2,
+                    hidden_tokens=self.text_tokens * 2,
+                )
+                for i in range(num_blocks)
+            ]
+        )
 
         self.ctx_alpha = ContextualAlphaMask(
             dim=self.text_hidden_size,

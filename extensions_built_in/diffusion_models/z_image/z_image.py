@@ -1,25 +1,23 @@
 import os
-from typing import List, Optional
 
 import huggingface_hub
 import torch
 import yaml
+from diffusers import AutoencoderKL
+from optimum.quanto import freeze
+from safetensors.torch import load_file
+from toolkit.accelerator import unwrap_model
+from toolkit.basic import flush
 from toolkit.config_modules import GenerateImageConfig, ModelConfig, NetworkConfig
 from toolkit.lora_special import LoRASpecialNetwork
+from toolkit.memory_management import MemoryManager
 from toolkit.models.base_model import BaseModel
-from toolkit.basic import flush
 from toolkit.prompt_utils import PromptEmbeds
 from toolkit.samplers.custom_flowmatch_sampler import (
     CustomFlowMatchEulerDiscreteScheduler,
 )
-from toolkit.accelerator import unwrap_model
-from optimum.quanto import freeze
-from toolkit.util.quantize import quantize, get_qtype, quantize_model
-from toolkit.memory_management import MemoryManager
-from safetensors.torch import load_file
-
+from toolkit.util.quantize import get_qtype, quantize, quantize_model
 from transformers import AutoTokenizer, Qwen3ForCausalLM
-from diffusers import AutoencoderKL
 
 try:
     from diffusers import ZImagePipeline
@@ -193,7 +191,7 @@ class ZImageModel(BaseModel):
                 ignore_modules=[
                     transformer.x_pad_token,
                     transformer.cap_pad_token,
-                ]
+                ],
             )
 
         if self.model_config.low_vram:
@@ -383,7 +381,7 @@ class ZImageModel(BaseModel):
     def get_base_model_version(self):
         return "zimage"
 
-    def get_transformer_block_names(self) -> Optional[List[str]]:
+    def get_transformer_block_names(self) -> list[str] | None:
         return ["layers"]
 
     def convert_lora_weights_before_save(self, state_dict):

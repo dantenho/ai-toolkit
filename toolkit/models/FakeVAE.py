@@ -1,8 +1,5 @@
-from diffusers import AutoencoderKL
-from typing import Optional, Union
 import torch
 import torch.nn as nn
-import numpy as np
 from diffusers.models.autoencoders.autoencoder_kl import AutoencoderKLOutput
 from diffusers.models.autoencoders.vae import DecoderOutput
 
@@ -83,7 +80,7 @@ class FakeVAE(nn.Module):
 
     def _decode(
         self, z: torch.FloatTensor, return_dict: bool = True
-    ) -> Union[DecoderOutput, torch.FloatTensor]:
+    ) -> DecoderOutput | torch.FloatTensor:
         dec = z
 
         if not return_dict:
@@ -94,7 +91,7 @@ class FakeVAE(nn.Module):
     # @apply_forward_hook
     def decode(
         self, z: torch.FloatTensor, return_dict: bool = True
-    ) -> Union[DecoderOutput, torch.FloatTensor]:
+    ) -> DecoderOutput | torch.FloatTensor:
         decoded = self._decode(z).sample
 
         if not return_dict:
@@ -125,8 +122,8 @@ class FakeVAE(nn.Module):
         sample: torch.FloatTensor,
         sample_posterior: bool = False,
         return_dict: bool = True,
-        generator: Optional[torch.Generator] = None,
-    ) -> Union[DecoderOutput, torch.FloatTensor]:
+        generator: torch.Generator | None = None,
+    ) -> DecoderOutput | torch.FloatTensor:
         dec = sample
 
         if not return_dict:

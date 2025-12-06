@@ -1,8 +1,10 @@
-from typing import Optional, Tuple, Callable, Dict, Any, Union, List
+from collections.abc import Callable
+from typing import Any
 
 import torch
-from diffusers.pipelines.stable_diffusion_xl import StableDiffusionXLPipelineOutput
-from diffusers.pipelines.stable_diffusion_xl.pipeline_stable_diffusion_xl import rescale_noise_cfg
+from diffusers.pipelines.stable_diffusion_xl.pipeline_stable_diffusion_xl import (
+    rescale_noise_cfg,
+)
 
 from toolkit.lora_special import LoRASpecialNetwork
 from toolkit.pipelines import CustomStableDiffusionXLPipeline
@@ -10,37 +12,37 @@ from toolkit.pipelines import CustomStableDiffusionXLPipeline
 
 class TransferStableDiffusionXLPipeline(CustomStableDiffusionXLPipeline):
     def transfer_diffuse(
-            self,
-            prompt: Union[str, List[str]] = None,
-            prompt_2: Optional[Union[str, List[str]]] = None,
-            height: Optional[int] = None,
-            width: Optional[int] = None,
-            num_inference_steps: int = 50,
-            denoising_end: Optional[float] = None,
-            guidance_scale: float = 5.0,
-            negative_prompt: Optional[Union[str, List[str]]] = None,
-            negative_prompt_2: Optional[Union[str, List[str]]] = None,
-            num_images_per_prompt: Optional[int] = 1,
-            eta: float = 0.0,
-            generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
-            latents: Optional[torch.FloatTensor] = None,
-            prompt_embeds: Optional[torch.FloatTensor] = None,
-            negative_prompt_embeds: Optional[torch.FloatTensor] = None,
-            pooled_prompt_embeds: Optional[torch.FloatTensor] = None,
-            negative_pooled_prompt_embeds: Optional[torch.FloatTensor] = None,
-            output_type: Optional[str] = "pil",
-            return_dict: bool = True,
-            callback: Optional[Callable[[int, int, torch.FloatTensor], None]] = None,
-            callback_steps: int = 1,
-            cross_attention_kwargs: Optional[Dict[str, Any]] = None,
-            guidance_rescale: float = 0.0,
-            original_size: Optional[Tuple[int, int]] = None,
-            crops_coords_top_left: Tuple[int, int] = (0, 0),
-            target_size: Optional[Tuple[int, int]] = None,
-            target_unet: Optional[torch.nn.Module] = None,
-            pre_condition_callback = None,
-            each_step_callback = None,
-            network: Optional[LoRASpecialNetwork] = None,
+        self,
+        prompt: str | list[str] = None,
+        prompt_2: str | list[str] | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        num_inference_steps: int = 50,
+        denoising_end: float | None = None,
+        guidance_scale: float = 5.0,
+        negative_prompt: str | list[str] | None = None,
+        negative_prompt_2: str | list[str] | None = None,
+        num_images_per_prompt: int | None = 1,
+        eta: float = 0.0,
+        generator: torch.Generator | list[torch.Generator] | None = None,
+        latents: torch.FloatTensor | None = None,
+        prompt_embeds: torch.FloatTensor | None = None,
+        negative_prompt_embeds: torch.FloatTensor | None = None,
+        pooled_prompt_embeds: torch.FloatTensor | None = None,
+        negative_pooled_prompt_embeds: torch.FloatTensor | None = None,
+        output_type: str | None = "pil",
+        return_dict: bool = True,
+        callback: Callable[[int, int, torch.FloatTensor], None] | None = None,
+        callback_steps: int = 1,
+        cross_attention_kwargs: dict[str, Any] | None = None,
+        guidance_rescale: float = 0.0,
+        original_size: tuple[int, int] | None = None,
+        crops_coords_top_left: tuple[int, int] = (0, 0),
+        target_size: tuple[int, int] | None = None,
+        target_unet: torch.nn.Module | None = None,
+        pre_condition_callback=None,
+        each_step_callback=None,
+        network: LoRASpecialNetwork | None = None,
     ):
         r"""
         Function invoked when calling the pipeline for generation.
@@ -187,7 +189,9 @@ class TransferStableDiffusionXLPipeline(CustomStableDiffusionXLPipeline):
 
         # 3. Encode input prompt
         text_encoder_lora_scale = (
-            cross_attention_kwargs.get("scale", None) if cross_attention_kwargs is not None else None
+            cross_attention_kwargs.get("scale", None)
+            if cross_attention_kwargs is not None
+            else None
         )
         (
             prompt_embeds,
@@ -238,36 +242,56 @@ class TransferStableDiffusionXLPipeline(CustomStableDiffusionXLPipeline):
 
         if do_classifier_free_guidance:
             prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds], dim=0)
-            add_text_embeds = torch.cat([negative_pooled_prompt_embeds, add_text_embeds], dim=0)
+            add_text_embeds = torch.cat(
+                [negative_pooled_prompt_embeds, add_text_embeds], dim=0
+            )
             add_time_ids = torch.cat([add_time_ids, add_time_ids], dim=0)
 
         prompt_embeds = prompt_embeds.to(device)
         add_text_embeds = add_text_embeds.to(device)
-        add_time_ids = add_time_ids.to(device).repeat(batch_size * num_images_per_prompt, 1)
+        add_time_ids = add_time_ids.to(device).repeat(
+            batch_size * num_images_per_prompt, 1
+        )
 
         # 8. Denoising loop
-        num_warmup_steps = max(len(timesteps) - num_inference_steps * self.scheduler.order, 0)
+        num_warmup_steps = max(
+            len(timesteps) - num_inference_steps * self.scheduler.order, 0
+        )
 
         # 7.1 Apply denoising_end
-        if denoising_end is not None and type(denoising_end) == float and denoising_end > 0 and denoising_end < 1:
+        if (
+            denoising_end is not None
+            and type(denoising_end) == float
+            and denoising_end > 0
+            and denoising_end < 1
+        ):
             discrete_timestep_cutoff = int(
                 round(
                     self.scheduler.config.num_train_timesteps
                     - (denoising_end * self.scheduler.config.num_train_timesteps)
                 )
             )
-            num_inference_steps = len(list(filter(lambda ts: ts >= discrete_timestep_cutoff, timesteps)))
+            num_inference_steps = len(
+                list(filter(lambda ts: ts >= discrete_timestep_cutoff, timesteps))
+            )
             timesteps = timesteps[:num_inference_steps]
 
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
                 # expand the latents if we are doing classifier free guidance
-                latent_model_input = torch.cat([latents] * 2) if do_classifier_free_guidance else latents
+                latent_model_input = (
+                    torch.cat([latents] * 2) if do_classifier_free_guidance else latents
+                )
 
-                latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+                latent_model_input = self.scheduler.scale_model_input(
+                    latent_model_input, t
+                )
 
                 # predict the noise residual
-                added_cond_kwargs = {"text_embeds": add_text_embeds, "time_ids": add_time_ids}
+                added_cond_kwargs = {
+                    "text_embeds": add_text_embeds,
+                    "time_ids": add_time_ids,
+                }
                 noise_pred = self.unet(
                     latent_model_input,
                     t,
@@ -277,9 +301,11 @@ class TransferStableDiffusionXLPipeline(CustomStableDiffusionXLPipeline):
                     return_dict=False,
                 )[0]
 
-                conditioned_noise_pred, conditioned_latent_model_input = pre_condition_callback(
-                    noise_pred.clone().detach(),
-                    latent_model_input.clone().detach(),
+                conditioned_noise_pred, conditioned_latent_model_input = (
+                    pre_condition_callback(
+                        noise_pred.clone().detach(),
+                        latent_model_input.clone().detach(),
+                    )
                 )
 
                 # start grad
@@ -299,18 +325,25 @@ class TransferStableDiffusionXLPipeline(CustomStableDiffusionXLPipeline):
                 # perform guidance
                 if do_classifier_free_guidance:
                     noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
-                    noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
+                    noise_pred = noise_pred_uncond + guidance_scale * (
+                        noise_pred_text - noise_pred_uncond
+                    )
 
                 if do_classifier_free_guidance and guidance_rescale > 0.0:
                     # Based on 3.4. in https://arxiv.org/pdf/2305.08891.pdf
-                    noise_pred = rescale_noise_cfg(noise_pred, noise_pred_text, guidance_rescale=guidance_rescale)
+                    noise_pred = rescale_noise_cfg(
+                        noise_pred, noise_pred_text, guidance_rescale=guidance_rescale
+                    )
 
                 # compute the previous noisy sample x_t -> x_t-1
-                latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
+                latents = self.scheduler.step(
+                    noise_pred, t, latents, **extra_step_kwargs, return_dict=False
+                )[0]
 
                 # call the callback, if provided
-                if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
+                if i == len(timesteps) - 1 or (
+                    (i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0
+                ):
                     progress_bar.update()
                     if callback is not None and i % callback_steps == 0:
                         callback(i, t, latents)
-

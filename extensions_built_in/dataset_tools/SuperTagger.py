@@ -1,22 +1,27 @@
 import copy
+import gc
 import json
 import os
-from collections import OrderedDict
-import gc
 import traceback
+from collections import OrderedDict
+
 import torch
+from jobs.process import BaseExtensionProcess
 from PIL import Image, ImageOps
 from tqdm import tqdm
 
-from .tools.dataset_tools_config_modules import RAW_DIR, TRAIN_DIR, Step, ImgInfo
+from .tools.caption import (
+    default_long_prompt,
+    default_replacements,
+    default_short_prompt,
+)
+from .tools.dataset_tools_config_modules import RAW_DIR, TRAIN_DIR, ImgInfo, Step
 from .tools.fuyu_utils import FuyuImageProcessor
-from .tools.image_tools import load_image, ImageProcessor, resize_to_max
+from .tools.image_tools import ImageProcessor, load_image, resize_to_max
 from .tools.llava_utils import LLaVAImageProcessor
-from .tools.caption import default_long_prompt, default_short_prompt, default_replacements
-from jobs.process import BaseExtensionProcess
 from .tools.sync_tools import get_img_paths
 
-img_ext = ['.jpg', '.jpeg', '.png', '.webp']
+img_ext = [".jpg", ".jpeg", ".png", ".webp"]
 
 
 def flush():
@@ -28,21 +33,26 @@ VERSION = 2
 
 
 class SuperTagger(BaseExtensionProcess):
-
     def __init__(self, process_id: int, job, config: OrderedDict):
         super().__init__(process_id, job, config)
-        parent_dir = config.get('parent_dir', None)
-        self.dataset_paths: list[str] = config.get('dataset_paths', [])
-        self.device = config.get('device', 'cuda')
-        self.steps: list[Step] = config.get('steps', [])
-        self.caption_method = config.get('caption_method', 'llava:default')
-        self.caption_prompt = config.get('caption_prompt', default_long_prompt)
-        self.caption_short_prompt = config.get('caption_short_prompt', default_short_prompt)
-        self.force_reprocess_img = config.get('force_reprocess_img', False)
-        self.caption_replacements = config.get('caption_replacements', default_replacements)
-        self.caption_short_replacements = config.get('caption_short_replacements', default_replacements)
+        parent_dir = config.get("parent_dir", None)
+        self.dataset_paths: list[str] = config.get("dataset_paths", [])
+        self.device = config.get("device", "cuda")
+        self.steps: list[Step] = config.get("steps", [])
+        self.caption_method = config.get("caption_method", "llava:default")
+        self.caption_prompt = config.get("caption_prompt", default_long_prompt)
+        self.caption_short_prompt = config.get(
+            "caption_short_prompt", default_short_prompt
+        )
+        self.force_reprocess_img = config.get("force_reprocess_img", False)
+        self.caption_replacements = config.get(
+            "caption_replacements", default_replacements
+        )
+        self.caption_short_replacements = config.get(
+            "caption_short_replacements", default_replacements
+        )
         self.master_dataset_dict = OrderedDict()
-        self.dataset_master_config_file = config.get('dataset_master_config_file', None)
+        self.dataset_master_config_file = config.get("dataset_master_config_file", None)
         if parent_dir is not None and len(self.dataset_paths) == 0:
             # find all folders in the patent_dataset_path
             self.dataset_paths = [
@@ -61,9 +71,9 @@ class SuperTagger(BaseExtensionProcess):
         self.image_processor: ImageProcessor = self.get_image_processor()
 
     def get_image_processor(self):
-        if self.caption_method.startswith('llava'):
+        if self.caption_method.startswith("llava"):
             return LLaVAImageProcessor(device=self.device)
-        elif self.caption_method.startswith('fuyu'):
+        elif self.caption_method.startswith("fuyu"):
             return FuyuImageProcessor(device=self.device)
         else:
             raise ValueError(f"Unknown caption method: {self.caption_method}")
@@ -78,7 +88,7 @@ class SuperTagger(BaseExtensionProcess):
 
         # check if json exists, if it does load it as image info
         if os.path.exists(json_path):
-            with open(json_path, 'r') as f:
+            with open(json_path) as f:
                 img_info = ImgInfo(**json.load(f))
         else:
             img_info = ImgInfo()
@@ -107,7 +117,7 @@ class SuperTagger(BaseExtensionProcess):
 
         # go through the needed steps
         for step in copy.deepcopy(img_info.state.steps_to_complete):
-            if step == 'caption':
+            if step == "caption":
                 # load image
                 if image is None:
                     image = load_image(img_path)
@@ -115,16 +125,16 @@ class SuperTagger(BaseExtensionProcess):
                     caption_image = resize_to_max(image, 1024, 1024)
 
                 if not self.image_processor.is_loaded:
-                    print('Loading Model. Takes a while, especially the first time')
+                    print("Loading Model. Takes a while, especially the first time")
                     self.image_processor.load_model()
 
                 img_info.caption = self.image_processor.generate_caption(
                     image=caption_image,
                     prompt=self.caption_prompt,
-                    replacements=self.caption_replacements
+                    replacements=self.caption_replacements,
                 )
                 img_info.mark_step_complete(step)
-            elif step == 'caption_short':
+            elif step == "caption_short":
                 # load image
                 if image is None:
                     image = load_image(img_path)
@@ -133,19 +143,21 @@ class SuperTagger(BaseExtensionProcess):
                     caption_image = resize_to_max(image, 1024, 1024)
 
                 if not self.image_processor.is_loaded:
-                    print('Loading Model. Takes a while, especially the first time')
+                    print("Loading Model. Takes a while, especially the first time")
                     self.image_processor.load_model()
                 img_info.caption_short = self.image_processor.generate_caption(
                     image=caption_image,
                     prompt=self.caption_short_prompt,
-                    replacements=self.caption_short_replacements
+                    replacements=self.caption_short_replacements,
                 )
                 img_info.mark_step_complete(step)
-            elif step == 'contrast_stretch':
+            elif step == "contrast_stretch":
                 # load image
                 if image is None:
                     image = load_image(img_path)
-                image = ImageOps.autocontrast(image, cutoff=(0.1, 0), preserve_tone=True)
+                image = ImageOps.autocontrast(
+                    image, cutoff=(0.1, 0), preserve_tone=True
+                )
                 did_update_image = True
                 img_info.mark_step_complete(step)
             else:
@@ -156,7 +168,7 @@ class SuperTagger(BaseExtensionProcess):
             image.save(train_img_path)
 
         if img_info.is_dirty:
-            with open(json_path, 'w') as f:
+            with open(json_path, "w") as f:
                 json.dump(img_info.to_dict(), f, indent=4)
 
         if self.dataset_master_config_file:
@@ -174,7 +186,7 @@ class SuperTagger(BaseExtensionProcess):
                 imgs_to_process.append(raw_image_path)
 
         if len(imgs_to_process) == 0:
-            print(f"No images to process")
+            print("No images to process")
         else:
             print(f"Found {len(imgs_to_process)} to process")
 
@@ -189,7 +201,7 @@ class SuperTagger(BaseExtensionProcess):
 
         if self.dataset_master_config_file is not None:
             # save it as json
-            with open(self.dataset_master_config_file, 'w') as f:
+            with open(self.dataset_master_config_file, "w") as f:
                 json.dump(self.master_dataset_dict, f, indent=4)
 
         del self.image_processor

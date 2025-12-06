@@ -15,9 +15,11 @@ from torch import nn
 
 def timestep_embedding(t, dim, max_period=10000):
     half = dim // 2
-    freqs = torch.exp(-math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half).to(
-        device=t.device
-    )
+    freqs = torch.exp(
+        -math.log(max_period)
+        * torch.arange(start=0, end=half, dtype=torch.float32)
+        / half
+    ).to(device=t.device)
     args = t[:, None].float() * freqs[None]
     embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
 
@@ -111,7 +113,9 @@ class Attention(nn.Module):
 
                 token_length = q.shape[2]
                 if self.dynamic_softmax_temperature:
-                    ratio = math.sqrt(math.log(token_length) / math.log(1040.0))  # 1024 + 16
+                    ratio = math.sqrt(
+                        math.log(token_length) / math.log(1040.0)
+                    )  # 1024 + 16
                     k = k * ratio
             q, k = self.qk_norm(q, k)
 
@@ -177,7 +181,9 @@ class DiTBlock(nn.Module):
             nn.Linear(mlp_hidden, hidden_size),
         )
 
-        self.adaLN_modulation = nn.Sequential(nn.SiLU(), nn.Linear(hidden_size, 9 * hidden_size, bias=True))
+        self.adaLN_modulation = nn.Sequential(
+            nn.SiLU(), nn.Linear(hidden_size, 9 * hidden_size, bias=True)
+        )
 
         self.adaLN_modulation[-1].weight.data.zero_()
         self.adaLN_modulation[-1].bias.data.zero_()
@@ -228,7 +234,9 @@ class DiTBlock(nn.Module):
 class PatchEmbed(nn.Module):
     def __init__(self, patch_size=16, in_channels=3, embed_dim=768):
         super().__init__()
-        self.patch_proj = nn.Conv2d(in_channels, embed_dim, kernel_size=patch_size, stride=patch_size)
+        self.patch_proj = nn.Conv2d(
+            in_channels, embed_dim, kernel_size=patch_size, stride=patch_size
+        )
         self.patch_size = patch_size
 
     def forward(self, x):
@@ -241,7 +249,9 @@ class PatchEmbed(nn.Module):
 class TwoDimRotary(torch.nn.Module):
     def __init__(self, dim, base=10000, h=256, w=256):
         super().__init__()
-        self.inv_freq = torch.FloatTensor([1.0 / (base ** (i / dim)) for i in range(0, dim, 2)])
+        self.inv_freq = torch.FloatTensor(
+            [1.0 / (base ** (i / dim)) for i in range(0, dim, 2)]
+        )
         self.h = h
         self.w = w
 
@@ -264,8 +274,8 @@ class TwoDimRotary(torch.nn.Module):
             this_hw = x.shape[1]
             this_h, this_w = int(this_hw**0.5), int(this_hw**0.5)
 
-        cos = self.freqs_hw_cos[0 : this_h, 0 : this_w]
-        sin = self.freqs_hw_sin[0 : this_h, 0 : this_w]
+        cos = self.freqs_hw_cos[0:this_h, 0:this_w]
+        sin = self.freqs_hw_sin[0:this_h, 0:this_w]
 
         cos = cos.clone().reshape(this_h * this_w, -1)
         sin = sin.clone().reshape(this_h * this_w, -1)
@@ -274,14 +284,18 @@ class TwoDimRotary(torch.nn.Module):
         if extend_with_register_tokens > 0:
             cos = torch.cat(
                 [
-                    torch.ones(extend_with_register_tokens, cos.shape[1]).to(cos.device),
+                    torch.ones(extend_with_register_tokens, cos.shape[1]).to(
+                        cos.device
+                    ),
                     cos,
                 ],
                 0,
             )
             sin = torch.cat(
                 [
-                    torch.zeros(extend_with_register_tokens, sin.shape[1]).to(sin.device),
+                    torch.zeros(extend_with_register_tokens, sin.shape[1]).to(
+                        sin.device
+                    ),
                     sin,
                 ],
                 0,
@@ -304,7 +318,7 @@ def apply_rotary_emb(x, cos, sin):
 
 class DiT(ModelMixin, ConfigMixin, FromOriginalModelMixin, PeftAdapterMixin):  # type: ignore[misc]
     _supports_gradient_checkpointing = True
-    
+
     @register_to_config
     def __init__(
         self,
@@ -327,7 +341,9 @@ class DiT(ModelMixin, ConfigMixin, FromOriginalModelMixin, PeftAdapterMixin):  #
         self.patch_embed = PatchEmbed(patch_size, in_channels, hidden_size)
 
         if use_rope:
-            self.rope = TwoDimRotary(hidden_size // (2 * num_heads), base=rope_base, h=512, w=512)
+            self.rope = TwoDimRotary(
+                hidden_size // (2 * num_heads), base=rope_base, h=512, w=512
+            )
         else:
             self.positional_embedding = nn.Parameter(torch.zeros(1, 2048, hidden_size))
 
@@ -354,7 +370,9 @@ class DiT(ModelMixin, ConfigMixin, FromOriginalModelMixin, PeftAdapterMixin):  #
             ]
         )
 
-        self.final_modulation = nn.Sequential(nn.SiLU(), nn.Linear(hidden_size, 2 * hidden_size, bias=True))
+        self.final_modulation = nn.Sequential(
+            nn.SiLU(), nn.Linear(hidden_size, 2 * hidden_size, bias=True)
+        )
 
         self.final_norm = RMSNorm(hidden_size, trainable=train_bias_and_rms)
         self.final_proj = nn.Linear(hidden_size, patch_size * patch_size * in_channels)
@@ -397,7 +415,9 @@ class DiT(ModelMixin, ConfigMixin, FromOriginalModelMixin, PeftAdapterMixin):  #
             x = x + self.positional_embedding.repeat(b, 1, 1)[:, : x.shape[1], :]
             cos, sin = None, None
 
-        t_emb = timestep_embedding(timesteps * 1000, self.config.hidden_size).to(x.device, dtype=x.dtype)
+        t_emb = timestep_embedding(timesteps * 1000, self.config.hidden_size).to(
+            x.device, dtype=x.dtype
+        )
         t_emb = self.time_embed(t_emb)
 
         v_0 = None
@@ -405,12 +425,7 @@ class DiT(ModelMixin, ConfigMixin, FromOriginalModelMixin, PeftAdapterMixin):  #
         for _idx, block in enumerate(self.blocks):
             if torch.is_grad_enabled() and self.gradient_checkpointing:
                 x, v = self._gradient_checkpointing_func(
-                    block,
-                    x,
-                    context,
-                    t_emb,
-                    v_0,
-                    (cos, sin)
+                    block, x, context, t_emb, v_0, (cos, sin)
                 )
             else:
                 x, v = block(x, context, t_emb, v_0, (cos, sin))

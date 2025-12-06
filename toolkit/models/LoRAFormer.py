@@ -1,13 +1,9 @@
 import math
 import weakref
+from typing import TYPE_CHECKING, Any
 
 import torch
 import torch.nn as nn
-from typing import TYPE_CHECKING, List, Dict, Any
-from toolkit.models.clip_fusion import ZipperBlock
-from toolkit.models.zipper_resampler import ZipperModule, ZipperResampler
-import sys
-from collections import OrderedDict
 
 if TYPE_CHECKING:
     from toolkit.lora_special import LoRAModule
@@ -22,7 +18,7 @@ class TransformerBlock(nn.Module):
         self.feed_forward = nn.Sequential(
             nn.Linear(d_model, dim_feedforward),
             nn.ReLU(),
-            nn.Linear(dim_feedforward, d_model)
+            nn.Linear(dim_feedforward, d_model),
         )
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
@@ -46,12 +42,12 @@ class TransformerBlock(nn.Module):
 
 class InstantLoRAMidModule(torch.nn.Module):
     def __init__(
-            self,
-            index: int,
-            lora_module: 'LoRAModule',
-            instant_lora_module: 'InstantLoRAModule',
-            up_shape: list = None,
-            down_shape: list = None,
+        self,
+        index: int,
+        lora_module: "LoRAModule",
+        instant_lora_module: "InstantLoRAModule",
+        up_shape: list = None,
+        down_shape: list = None,
     ):
         super(InstantLoRAMidModule, self).__init__()
         self.up_shape = up_shape
@@ -96,7 +92,6 @@ class InstantLoRAMidModule(torch.nn.Module):
         x = torch.cat(x_out, dim=0)
         return x
 
-
     def up_forward(self, x, *args, **kwargs):
         self.embed = self.instant_lora_module_ref().img_embeds[self.index]
         up_size = math.prod(self.up_shape)
@@ -138,14 +133,15 @@ class InstantLoRAMidModule(torch.nn.Module):
 # dim_feedforward = 4096  # Adjust as needed
 # latent_dim = 1695744
 
+
 class LoRAFormer(torch.nn.Module):
     def __init__(
-            self,
-            num_blocks,
-            d_model=1024,
-            nhead=16,
-            dim_feedforward=4096,
-            sd: 'StableDiffusion'=None,
+        self,
+        num_blocks,
+        d_model=1024,
+        nhead=16,
+        dim_feedforward=4096,
+        sd: "StableDiffusion" = None,
     ):
         super(LoRAFormer, self).__init__()
         # self.linear = torch.nn.Linear(2, 1)
@@ -153,7 +149,7 @@ class LoRAFormer(torch.nn.Module):
         self.dim = sd.network.lora_dim
 
         # stores the projection vector. Grabbed by modules
-        self.img_embeds: List[torch.Tensor] = None
+        self.img_embeds: list[torch.Tensor] = None
 
         # disable merging in. It is slower on inference
         self.sd_ref().network.can_merge_in = False
@@ -169,8 +165,8 @@ class LoRAFormer(torch.nn.Module):
 
         for idx, lora_module in enumerate(lora_modules):
             module_dict = lora_module.state_dict()
-            down_shape = list(module_dict['lora_down.weight'].shape)
-            up_shape = list(module_dict['lora_up.weight'].shape)
+            down_shape = list(module_dict["lora_down.weight"].shape)
+            up_shape = list(module_dict["lora_up.weight"].shape)
 
             self.weight_mapping.append([lora_module.lora_name, [down_shape, up_shape]])
 
@@ -178,15 +174,10 @@ class LoRAFormer(torch.nn.Module):
             output_size += module_size
             self.embed_lengths.append(module_size)
 
-
             # add a new mid module that will take the original forward and add a vector to it
             # this will be used to add the vector to the original forward
             instant_module = InstantLoRAMidModule(
-                idx,
-                lora_module,
-                self,
-                up_shape=up_shape,
-                down_shape=down_shape
+                idx, lora_module, self, up_shape=up_shape, down_shape=down_shape
             )
 
             self.ilora_modules.append(instant_module)
@@ -195,15 +186,16 @@ class LoRAFormer(torch.nn.Module):
             lora_module.lora_down.forward = instant_module.down_forward
             lora_module.lora_up.forward = instant_module.up_forward
 
-
         self.output_size = output_size
 
         self.latent = nn.Parameter(torch.randn(1, output_size))
         self.latent_proj = nn.Linear(output_size, d_model)
-        self.blocks = nn.ModuleList([
-            TransformerBlock(d_model, nhead, dim_feedforward)
-            for _ in range(num_blocks)
-        ])
+        self.blocks = nn.ModuleList(
+            [
+                TransformerBlock(d_model, nhead, dim_feedforward)
+                for _ in range(num_blocks)
+            ]
+        )
         self.final_proj = nn.Linear(d_model, output_size)
 
         self.migrate_weight_mapping()
@@ -230,7 +222,6 @@ class LoRAFormer(torch.nn.Module):
         #     print("No keymap found. Using default names")
         #     return
 
-
     def forward(self, img_embeds):
         # expand token rank if only rank 2
         if len(img_embeds.shape) == 2:
@@ -247,11 +238,10 @@ class LoRAFormer(torch.nn.Module):
         # get all the slices
         start = 0
         for length in self.embed_lengths:
-            self.img_embeds.append(img_embeds[:, start:start+length])
+            self.img_embeds.append(img_embeds[:, start : start + length])
             start += length
 
-
-    def get_additional_save_metadata(self) -> Dict[str, Any]:
+    def get_additional_save_metadata(self) -> dict[str, Any]:
         # save the weight mapping
         return {
             "weight_mapping": self.weight_mapping,
@@ -261,4 +251,3 @@ class LoRAFormer(torch.nn.Module):
             "vision_tokens": self.vision_tokens,
             "output_size": self.output_size,
         }
-

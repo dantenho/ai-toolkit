@@ -13,6 +13,7 @@ class DatasetToolsExtension(Extension):
     def get_process(cls):
         # import your process class here so it is only loaded when needed and return it
         from .DatasetTools import DatasetTools
+
         return DatasetTools
 
 
@@ -24,9 +25,10 @@ class SyncFromCollectionExtension(Extension):
     def get_process(cls):
         # import your process class here so it is only loaded when needed and return it
         from .SyncFromCollection import SyncFromCollection
+
         return SyncFromCollection
-    
-    
+
+
 class SuperTaggerExtension(Extension):
     uid = "super_tagger"
     name = "Super Tagger"
@@ -35,9 +37,12 @@ class SuperTaggerExtension(Extension):
     def get_process(cls):
         # import your process class here so it is only loaded when needed and return it
         from .SuperTagger import SuperTagger
+
         return SuperTagger
 
 
 AI_TOOLKIT_EXTENSIONS = [
-    SyncFromCollectionExtension, DatasetToolsExtension, SuperTaggerExtension
+    SyncFromCollectionExtension,
+    DatasetToolsExtension,
+    SuperTaggerExtension,
 ]

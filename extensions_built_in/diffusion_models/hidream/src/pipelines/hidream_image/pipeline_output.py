@@ -1,9 +1,7 @@
 from dataclasses import dataclass
-from typing import List, Union
 
 import numpy as np
 import PIL.Image
-
 from diffusers.utils import BaseOutput
 
 
@@ -18,4 +16,4 @@ class HiDreamImagePipelineOutput(BaseOutput):
             num_channels)`. PIL images or numpy array present the denoised images of the diffusion pipeline.
     """
 
-    images: Union[List[PIL.Image.Image], np.ndarray]
+    images: list[PIL.Image.Image] | np.ndarray

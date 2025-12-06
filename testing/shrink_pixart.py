@@ -1,6 +1,7 @@
+from collections import OrderedDict
+
 import torch
 from safetensors.torch import load_file, save_file
-from collections import OrderedDict
 
 model_path = "/home/jaret/Dev/models/hf/PixArt-Sigma-XL-2-1024_tiny/transformer/diffusion_pytorch_model_orig.safetensors"
 output_path = "/home/jaret/Dev/models/hf/PixArt-Sigma-XL-2-1024_tiny/transformer/diffusion_pytorch_model.safetensors"
@@ -17,17 +18,29 @@ for key, value in state_dict.items():
     if not key.startswith("transformer_blocks."):
         new_state_dict[key] = value
 
-block_names = ['transformer_blocks.{idx}.attn1.to_k.bias', 'transformer_blocks.{idx}.attn1.to_k.weight',
-               'transformer_blocks.{idx}.attn1.to_out.0.bias', 'transformer_blocks.{idx}.attn1.to_out.0.weight',
-               'transformer_blocks.{idx}.attn1.to_q.bias', 'transformer_blocks.{idx}.attn1.to_q.weight',
-               'transformer_blocks.{idx}.attn1.to_v.bias', 'transformer_blocks.{idx}.attn1.to_v.weight',
-               'transformer_blocks.{idx}.attn2.to_k.bias', 'transformer_blocks.{idx}.attn2.to_k.weight',
-               'transformer_blocks.{idx}.attn2.to_out.0.bias', 'transformer_blocks.{idx}.attn2.to_out.0.weight',
-               'transformer_blocks.{idx}.attn2.to_q.bias', 'transformer_blocks.{idx}.attn2.to_q.weight',
-               'transformer_blocks.{idx}.attn2.to_v.bias', 'transformer_blocks.{idx}.attn2.to_v.weight',
-               'transformer_blocks.{idx}.ff.net.0.proj.bias', 'transformer_blocks.{idx}.ff.net.0.proj.weight',
-               'transformer_blocks.{idx}.ff.net.2.bias', 'transformer_blocks.{idx}.ff.net.2.weight',
-               'transformer_blocks.{idx}.scale_shift_table']
+block_names = [
+    "transformer_blocks.{idx}.attn1.to_k.bias",
+    "transformer_blocks.{idx}.attn1.to_k.weight",
+    "transformer_blocks.{idx}.attn1.to_out.0.bias",
+    "transformer_blocks.{idx}.attn1.to_out.0.weight",
+    "transformer_blocks.{idx}.attn1.to_q.bias",
+    "transformer_blocks.{idx}.attn1.to_q.weight",
+    "transformer_blocks.{idx}.attn1.to_v.bias",
+    "transformer_blocks.{idx}.attn1.to_v.weight",
+    "transformer_blocks.{idx}.attn2.to_k.bias",
+    "transformer_blocks.{idx}.attn2.to_k.weight",
+    "transformer_blocks.{idx}.attn2.to_out.0.bias",
+    "transformer_blocks.{idx}.attn2.to_out.0.weight",
+    "transformer_blocks.{idx}.attn2.to_q.bias",
+    "transformer_blocks.{idx}.attn2.to_q.weight",
+    "transformer_blocks.{idx}.attn2.to_v.bias",
+    "transformer_blocks.{idx}.attn2.to_v.weight",
+    "transformer_blocks.{idx}.ff.net.0.proj.bias",
+    "transformer_blocks.{idx}.ff.net.0.proj.weight",
+    "transformer_blocks.{idx}.ff.net.2.bias",
+    "transformer_blocks.{idx}.ff.net.2.weight",
+    "transformer_blocks.{idx}.scale_shift_table",
+]
 
 # New block idx 0, 1, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 27
 
@@ -39,12 +52,16 @@ for i in range(28):
             try:
                 new_state_dict_key = name.format(idx=current_idx - 1)
                 old_state_dict_key = name.format(idx=i)
-                new_state_dict[new_state_dict_key] = (new_state_dict[new_state_dict_key] * 0.5) + (state_dict[old_state_dict_key] * 0.5)
+                new_state_dict[new_state_dict_key] = (
+                    new_state_dict[new_state_dict_key] * 0.5
+                ) + (state_dict[old_state_dict_key] * 0.5)
             except KeyError:
                 raise KeyError(f"KeyError: {name.format(idx=current_idx)}")
     else:
         for name in block_names:
-            new_state_dict[name.format(idx=current_idx)] = state_dict[name.format(idx=i)]
+            new_state_dict[name.format(idx=current_idx)] = state_dict[
+                name.format(idx=i)
+            ]
         current_idx += 1
 
 

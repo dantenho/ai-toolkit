@@ -1,13 +1,14 @@
-from collections import OrderedDict
-import os
-import sqlite3
 import asyncio
 import concurrent.futures
-from extensions_built_in.sd_trainer.SDTrainer import SDTrainer
-from typing import Literal, Optional
+import os
+import signal
+import sqlite3
 import threading
 import time
-import signal
+from collections import OrderedDict
+from typing import Literal
+
+from extensions_built_in.sd_trainer.SDTrainer import SDTrainer
 
 AITK_Status = Literal["running", "stopped", "error", "completed"]
 
@@ -17,12 +18,11 @@ class UITrainer(SDTrainer):
         super(UITrainer, self).__init__(process_id, job, config, **kwargs)
         self.sqlite_db_path = self.config.get("sqlite_db_path", "./aitk_db.db")
         if not os.path.exists(self.sqlite_db_path):
-            raise Exception(
-                f"SQLite database not found at {self.sqlite_db_path}")
+            raise Exception(f"SQLite database not found at {self.sqlite_db_path}")
         print(f"Using SQLite database at {self.sqlite_db_path}")
         self.job_id = os.environ.get("AITK_JOB_ID", None)
         self.job_id = self.job_id.strip() if self.job_id is not None else None
-        print(f"Job ID: \"{self.job_id}\"")
+        print(f'Job ID: "{self.job_id}"')
         if self.job_id is None:
             raise Exception("AITK_JOB_ID not set")
         self.is_stopping = False
@@ -34,7 +34,7 @@ class UITrainer(SDTrainer):
         self._run_async_operation(self._update_status("running", "Starting"))
         self._stop_watcher_started = False
         # self.start_stop_watcher(interval_sec=2.0)
-    
+
     def start_stop_watcher(self, interval_sec: float = 5.0):
         """
         Start a daemon thread that periodically checks should_stop()
@@ -109,19 +109,19 @@ class UITrainer(SDTrainer):
         def _check_stop():
             with self._db_connect() as conn:
                 cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT stop FROM Job WHERE id = ?", (self.job_id,))
+                cursor.execute("SELECT stop FROM Job WHERE id = ?", (self.job_id,))
                 stop = cursor.fetchone()
                 return False if stop is None else stop[0] == 1
 
         return _check_stop()
-    
+
     def should_return_to_queue(self):
         def _check_return_to_queue():
             with self._db_connect() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT return_to_queue FROM Job WHERE id = ?", (self.job_id,))
+                    "SELECT return_to_queue FROM Job WHERE id = ?", (self.job_id,)
+                )
                 return_to_queue = cursor.fetchone()
                 return False if return_to_queue is None else return_to_queue[0] == 1
 
@@ -129,13 +129,11 @@ class UITrainer(SDTrainer):
 
     def maybe_stop(self):
         if self.should_stop():
-            self._run_async_operation(
-                self._update_status("stopped", "Job stopped"))
+            self._run_async_operation(self._update_status("stopped", "Job stopped"))
             self.is_stopping = True
             raise Exception("Job stopped")
         if self.should_return_to_queue():
-            self._run_async_operation(
-                self._update_status("queued", "Job queued"))
+            self._run_async_operation(self._update_status("queued", "Job queued"))
             self.is_stopping = True
             raise Exception("Job returning to queue")
 
@@ -156,8 +154,7 @@ class UITrainer(SDTrainer):
 
                     # Use parameterized query for both the column name and value
                     update_query = f"UPDATE Job SET {key} = ? WHERE id = ?"
-                    cursor.execute(
-                        update_query, (value_to_insert, self.job_id))
+                    cursor.execute(update_query, (value_to_insert, self.job_id))
                 finally:
                     cursor.execute("COMMIT")
 
@@ -173,7 +170,7 @@ class UITrainer(SDTrainer):
         if self.accelerator.is_main_process:
             self._run_async_operation(self._update_key(key, value))
 
-    async def _update_status(self, status: AITK_Status, info: Optional[str] = None):
+    async def _update_status(self, status: AITK_Status, info: str | None = None):
         if not self.accelerator.is_main_process:
             return
 
@@ -185,19 +182,19 @@ class UITrainer(SDTrainer):
                     if info is not None:
                         cursor.execute(
                             "UPDATE Job SET status = ?, info = ? WHERE id = ?",
-                            (status, info, self.job_id)
+                            (status, info, self.job_id),
                         )
                     else:
                         cursor.execute(
                             "UPDATE Job SET status = ? WHERE id = ?",
-                            (status, self.job_id)
+                            (status, self.job_id),
                         )
                 finally:
                     cursor.execute("COMMIT")
 
         await self._execute_db_operation(_do_update)
 
-    def update_status(self, status: AITK_Status, info: Optional[str] = None):
+    def update_status(self, status: AITK_Status, info: str | None = None):
         """Non-blocking update of status."""
         if self.accelerator.is_main_process:
             self._run_async_operation(self._update_status(status, info))
@@ -209,7 +206,7 @@ class UITrainer(SDTrainer):
 
         try:
             await asyncio.gather(*self._async_tasks)
-        except Exception as e:
+        except Exception:
             pass
         finally:
             # Clear the task list after completion
@@ -233,8 +230,7 @@ class UITrainer(SDTrainer):
             iters_per_sec = 1 / seconds_per_iter
             self.update_db_key("speed_string", f"{iters_per_sec:.2f} iter/sec")
         else:
-            self.update_db_key(
-                "speed_string", f"{seconds_per_iter:.2f} sec/iter")
+            self.update_db_key("speed_string", f"{seconds_per_iter:.2f} sec/iter")
 
     def done_hook(self):
         super(UITrainer, self).done_hook()
@@ -276,8 +272,7 @@ class UITrainer(SDTrainer):
     def sample_step_hook(self, img_num, total_imgs):
         super().sample_step_hook(img_num, total_imgs)
         self.maybe_stop()
-        self.update_status(
-            "running", f"Generating images - {img_num + 1}/{total_imgs}")
+        self.update_status("running", f"Generating images - {img_num + 1}/{total_imgs}")
 
     def sample(self, step=None, is_first=False):
         self.maybe_stop()

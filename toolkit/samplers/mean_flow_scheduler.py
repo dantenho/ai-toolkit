@@ -1,11 +1,9 @@
-from typing import Union
-from diffusers import FlowMatchEulerDiscreteScheduler
-import torch
-from toolkit.timestep_weighing.default_weighing_scheme import default_weighing_scheme
-
 from dataclasses import dataclass
-from typing import Optional, Tuple
+
+import torch
+from diffusers import FlowMatchEulerDiscreteScheduler
 from diffusers.utils import BaseOutput
+from toolkit.timestep_weighing.default_weighing_scheme import default_weighing_scheme
 
 
 @dataclass
@@ -67,7 +65,7 @@ class MeanFlowScheduler(FlowMatchEulerDiscreteScheduler):
         return noisy_model_input
 
     def scale_model_input(
-        self, sample: torch.Tensor, timestep: Union[float, torch.Tensor]
+        self, sample: torch.Tensor, timestep: float | torch.Tensor
     ) -> torch.Tensor:
         return sample
 
@@ -79,12 +77,11 @@ class MeanFlowScheduler(FlowMatchEulerDiscreteScheduler):
     def step(
         self,
         model_output: torch.FloatTensor,
-        timestep: Union[float, torch.FloatTensor],
+        timestep: float | torch.FloatTensor,
         sample: torch.FloatTensor,
         return_dict: bool = True,
-        **kwargs: Optional[dict],
-    ) -> Union[FlowMatchEulerDiscreteSchedulerOutput, Tuple]:
-
+        **kwargs: dict | None,
+    ) -> FlowMatchEulerDiscreteSchedulerOutput | tuple:
         # single euler step (Eq. 5 ⇒ x₀ = x₁ − uθ)
         output = sample - model_output
         if not return_dict:

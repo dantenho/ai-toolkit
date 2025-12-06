@@ -2,7 +2,7 @@
 import logging
 import math
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
 import torch
@@ -13,8 +13,6 @@ from PIL import Image
 from torch import FloatTensor
 from tqdm.auto import tqdm
 from transformers import T5EncoderModel, T5TokenizerFast
-
-
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +35,7 @@ class FLitePipelineOutput(BaseOutput):
             num_channels)`. PIL images or numpy array present the denoised images of the diffusion pipeline.
     """
 
-    images: Union[List[Image.Image], np.ndarray]
+    images: list[Image.Image] | np.ndarray
 
 
 class FLitePipeline(DiffusionPipeline):
@@ -46,22 +44,30 @@ class FLitePipeline(DiffusionPipeline):
     This model inherits from [`DiffusionPipeline`].
     """
 
-    model_cpu_offload_seq = "text_encoder->dit_model->vae" 
+    model_cpu_offload_seq = "text_encoder->dit_model->vae"
 
     dit_model: torch.nn.Module
     vae: AutoencoderKL
     text_encoder: T5EncoderModel
     tokenizer: T5TokenizerFast
-    _progress_bar_config: Dict[str, Any]
+    _progress_bar_config: dict[str, Any]
 
     def __init__(
-        self, dit_model: torch.nn.Module, vae: AutoencoderKL, text_encoder: T5EncoderModel, tokenizer: T5TokenizerFast
+        self,
+        dit_model: torch.nn.Module,
+        vae: AutoencoderKL,
+        text_encoder: T5EncoderModel,
+        tokenizer: T5TokenizerFast,
     ):
         super().__init__()
         # Register all modules for the pipeline
         # Access DiffusionPipeline's register_modules directly to avoid mypy error
         DiffusionPipeline.register_modules(
-            self, dit_model=dit_model, vae=vae, text_encoder=text_encoder, tokenizer=tokenizer
+            self,
+            dit_model=dit_model,
+            vae=vae,
+            text_encoder=text_encoder,
+            tokenizer=tokenizer,
         )
 
         # Move models to channels last for better performance
@@ -99,13 +105,13 @@ class FLitePipeline(DiffusionPipeline):
 
     def encode_prompt(
         self,
-        prompt: Union[str, List[str]],
-        negative_prompt: Optional[Union[str, List[str]]] = None,
-        device: Optional[torch.device] = None,
-        dtype: Optional[torch.dtype] = None,
+        prompt: str | list[str],
+        negative_prompt: str | list[str] | None = None,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
         max_sequence_length: int = 512,
         return_index: int = -8,
-    ) -> Tuple[FloatTensor, FloatTensor]:
+    ) -> tuple[FloatTensor, FloatTensor]:
         """Encodes the prompt and negative prompt."""
         if isinstance(prompt, str):
             prompt = [prompt]
@@ -119,11 +125,17 @@ class FLitePipeline(DiffusionPipeline):
             return_tensors="pt",
         )
         text_input_ids = text_inputs.input_ids.to(device)
-        prompt_embeds = self.text_encoder(text_input_ids, return_dict=True, output_hidden_states=True)
+        prompt_embeds = self.text_encoder(
+            text_input_ids, return_dict=True, output_hidden_states=True
+        )
         prompt_embeds_tensor = prompt_embeds.hidden_states[return_index]
         if return_index != -1:
-            prompt_embeds_tensor = self.text_encoder.encoder.final_layer_norm(prompt_embeds_tensor)
-            prompt_embeds_tensor = self.text_encoder.encoder.dropout(prompt_embeds_tensor)
+            prompt_embeds_tensor = self.text_encoder.encoder.final_layer_norm(
+                prompt_embeds_tensor
+            )
+            prompt_embeds_tensor = self.text_encoder.encoder.dropout(
+                prompt_embeds_tensor
+            )
 
         dtype = dtype or next(self.text_encoder.parameters()).dtype
         prompt_embeds_tensor = prompt_embeds_tensor.to(dtype=dtype, device=device)
@@ -135,7 +147,10 @@ class FLitePipeline(DiffusionPipeline):
             if isinstance(negative_prompt, str):
                 negative_prompt = [negative_prompt]
             negative_result = self.encode_prompt(
-                prompt=negative_prompt, device=device, dtype=dtype, return_index=return_index
+                prompt=negative_prompt,
+                device=device,
+                dtype=dtype,
+                return_index=return_index,
             )
             negative_embeds = negative_result[0]
 
@@ -159,19 +174,19 @@ class FLitePipeline(DiffusionPipeline):
     @torch.no_grad()
     def __call__(
         self,
-        prompt: Union[str, List[str]]=None,
-        prompt_embeds: Optional[FloatTensor] = None,
-        height: Optional[int] = 1024,
-        width: Optional[int] = 1024,
+        prompt: str | list[str] = None,
+        prompt_embeds: FloatTensor | None = None,
+        height: int | None = 1024,
+        width: int | None = 1024,
         num_inference_steps: int = 30,
         guidance_scale: float = 6.0,
-        negative_prompt: Optional[Union[str, List[str]]] = None,
-        negative_prompt_embeds: Optional[FloatTensor] = None,
+        negative_prompt: str | list[str] | None = None,
+        negative_prompt_embeds: FloatTensor | None = None,
         num_images_per_prompt: int = 1,
-        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
-        dtype: Optional[torch.dtype] = None,
-        alpha: Optional[float] = None,
-        apg_config: Optional[APGConfig] = None,
+        generator: torch.Generator | list[torch.Generator] | None = None,
+        dtype: torch.dtype | None = None,
+        alpha: float | None = None,
+        apg_config: APGConfig | None = None,
         **kwargs,
     ):
         """Generate images from text prompt."""
@@ -192,7 +207,10 @@ class FLitePipeline(DiffusionPipeline):
 
         if prompt_embeds is None or negative_prompt_embeds is None:
             prompt_embeds, negative_embeds = self.encode_prompt(
-                prompt=prompt, negative_prompt=negative_prompt, device=self.text_encoder.device, dtype=dtype,
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                device=self.text_encoder.device,
+                dtype=dtype,
                 return_index=self.return_index,
             )
         else:
@@ -200,7 +218,9 @@ class FLitePipeline(DiffusionPipeline):
 
         # Repeat embeddings for num_images_per_prompt
         prompt_embeds = prompt_embeds.repeat_interleave(num_images_per_prompt, dim=0)
-        negative_embeds = negative_embeds.repeat_interleave(num_images_per_prompt, dim=0)
+        negative_embeds = negative_embeds.repeat_interleave(
+            num_images_per_prompt, dim=0
+        )
 
         # 3. Initialize latents
         latent_height = height // self.vae_scale_factor
@@ -208,9 +228,16 @@ class FLitePipeline(DiffusionPipeline):
 
         if isinstance(generator, list):
             if len(generator) != batch_size:
-                raise ValueError(f"Got {len(generator)} generators for {batch_size} samples")
+                raise ValueError(
+                    f"Got {len(generator)} generators for {batch_size} samples"
+                )
 
-        latents = randn_tensor((batch_size, 16, latent_height, latent_width), generator=generator, device=device, dtype=dtype)
+        latents = randn_tensor(
+            (batch_size, 16, latent_height, latent_width),
+            generator=generator,
+            device=device,
+            dtype=dtype,
+        )
         acc_latents = latents.clone()
 
         # 4. Calculate alpha if not provided
@@ -220,10 +247,10 @@ class FLitePipeline(DiffusionPipeline):
 
         # 6. Sampling loop
         self.dit_model.eval()
-        
+
         # Check if guidance is needed
         do_classifier_free_guidance = guidance_scale >= 1.0
-        
+
         for i in self.progress_bar(range(num_inference_steps, 0, -1)):
             # Calculate timesteps
             t = i / num_inference_steps
@@ -232,10 +259,10 @@ class FLitePipeline(DiffusionPipeline):
             t = t * alpha / (1 + (alpha - 1) * t)
             t_next = t_next * alpha / (1 + (alpha - 1) * t_next)
             dt = t - t_next
-            
+
             # Create tensor with proper device
             t_tensor = torch.tensor([t] * batch_size, device=device, dtype=dtype)
-            
+
             if do_classifier_free_guidance:
                 # Duplicate latents for both conditional and unconditional inputs
                 latents_input = torch.cat([latents] * 2)
@@ -243,13 +270,13 @@ class FLitePipeline(DiffusionPipeline):
                 context_input = torch.cat([negative_embeds, prompt_embeds])
                 # Duplicate timesteps for the batch
                 t_input = torch.cat([t_tensor] * 2)
-                
+
                 # Get model predictions in a single pass
                 model_outputs = self.dit_model(latents_input, context_input, t_input)
-                
+
                 # Split outputs back into unconditional and conditional predictions
                 uncond_output, cond_output = model_outputs.chunk(2)
-                
+
                 if apg_config.enabled:
                     # Augmented Parallel Guidance
                     dy = cond_output
@@ -259,29 +286,45 @@ class FLitePipeline(DiffusionPipeline):
                     orthogonal_direction = dd - parallel_direction
                     # Scale orthogonal component
                     orthogonal_std = orthogonal_direction.std()
-                    orthogonal_scale = min(1, apg_config.orthogonal_threshold / orthogonal_std)
+                    orthogonal_scale = min(
+                        1, apg_config.orthogonal_threshold / orthogonal_std
+                    )
                     orthogonal_direction = orthogonal_direction * orthogonal_scale
                     model_output = dy + (guidance_scale - 1) * orthogonal_direction
                 else:
                     # Standard classifier-free guidance
-                    model_output = uncond_output + guidance_scale * (cond_output - uncond_output)
+                    model_output = uncond_output + guidance_scale * (
+                        cond_output - uncond_output
+                    )
             else:
                 # If no guidance needed, just run the model normally
                 model_output = self.dit_model(latents, prompt_embeds, t_tensor)
-            
+
             # Update latents
             acc_latents = acc_latents + dt * model_output.to(device)
             latents = acc_latents.clone()
 
         # 7. Decode latents
         # These checks handle the case where mypy doesn't recognize these attributes
-        scaling_factor = getattr(self.vae.config, "scaling_factor", 0.18215) if hasattr(self.vae, "config") else 0.18215
-        shift_factor = getattr(self.vae.config, "shift_factor", 0) if hasattr(self.vae, "config") else 0
+        scaling_factor = (
+            getattr(self.vae.config, "scaling_factor", 0.18215)
+            if hasattr(self.vae, "config")
+            else 0.18215
+        )
+        shift_factor = (
+            getattr(self.vae.config, "shift_factor", 0)
+            if hasattr(self.vae, "config")
+            else 0
+        )
 
         latents = latents / scaling_factor + shift_factor
 
         vae_dtype = self.vae.dtype if hasattr(self.vae, "dtype") else dtype
-        decoded_images = self.vae.decode(latents.to(vae_dtype)).sample if hasattr(self.vae, "decode") else latents
+        decoded_images = (
+            self.vae.decode(latents.to(vae_dtype)).sample
+            if hasattr(self.vae, "decode")
+            else latents
+        )
 
         # Offload all models
         try:
@@ -289,6 +332,7 @@ class FLitePipeline(DiffusionPipeline):
         except AttributeError as e:
             if "OptimizedModule" in str(e):
                 import warnings
+
                 warnings.warn(
                     "Encountered 'OptimizedModule' error when offloading models. "
                     "This issue might be fixed in the future by: "
@@ -296,7 +340,7 @@ class FLitePipeline(DiffusionPipeline):
                 )
             else:
                 raise
-            
+
         # 8. Post-process images
         images = (decoded_images / 2 + 0.5).clamp(0, 1)
         # Convert to PIL Images
@@ -305,4 +349,4 @@ class FLitePipeline(DiffusionPipeline):
 
         return FLitePipelineOutput(
             images=pil_images,
-        ) 
+        )

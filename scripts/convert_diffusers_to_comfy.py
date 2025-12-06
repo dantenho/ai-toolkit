@@ -17,27 +17,33 @@
 
 
 import argparse
-from datetime import date
 import json
 import os
+from collections import OrderedDict
+from datetime import date
 from pathlib import Path
+
 import safetensors
 import safetensors.torch
 import torch
 import tqdm
-from collections import OrderedDict
-
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument("diffusers_path", type=str,
-                    help="Path to the original Flux diffusers folder.")
-parser.add_argument("quantized_state_dict_path", type=str,
-                    help="Path to the ComfyUI all in one template file.")
-parser.add_argument("flux_path", type=str,
-                    help="Output path for the Flux safetensors file.")
-parser.add_argument("--do_8_bit", action="store_true",
-                    help="Use 8-bit weights instead of bf16.")
+parser.add_argument(
+    "diffusers_path", type=str, help="Path to the original Flux diffusers folder."
+)
+parser.add_argument(
+    "quantized_state_dict_path",
+    type=str,
+    help="Path to the ComfyUI all in one template file.",
+)
+parser.add_argument(
+    "flux_path", type=str, help="Output path for the Flux safetensors file."
+)
+parser.add_argument(
+    "--do_8_bit", action="store_true", help="Use 8-bit weights instead of bf16."
+)
 args = parser.parse_args()
 
 flux_path = Path(args.flux_path)
@@ -54,17 +60,17 @@ if not diffusers_path.exists():
     exit()
 
 original_json_path = Path.joinpath(
-    diffusers_path, "diffusion_pytorch_model.safetensors.index.json")
+    diffusers_path, "diffusion_pytorch_model.safetensors.index.json"
+)
 if not original_json_path.exists():
     print(f"Error: Missing transformer index json: {original_json_path}")
     exit()
 
 if not os.path.exists(quantized_state_dict_path):
-    print(
-        f"Error: Missing quantized state dict file: {args.quantized_state_dict_path}")
+    print(f"Error: Missing quantized state dict file: {args.quantized_state_dict_path}")
     exit()
 
-with open(original_json_path, "r", encoding="utf-8") as f:
+with open(original_json_path, encoding="utf-8") as f:
     original_json = json.load(f)
 
 diffusers_map = {
@@ -252,15 +258,18 @@ def is_in_diffusers_map(k):
     return False
 
 
-diffusers = {k: Path.joinpath(diffusers_path, v)
-             for k, v in original_json["weight_map"].items() if is_in_diffusers_map(k)}
+diffusers = {
+    k: Path.joinpath(diffusers_path, v)
+    for k, v in original_json["weight_map"].items()
+    if is_in_diffusers_map(k)
+}
 
 original_safetensors = set(diffusers.values())
 
 # determine the number of transformer blocks
 transformer_blocks = 0
 single_transformer_blocks = 0
-for key in diffusers.keys():
+for key in diffusers:
     print(key)
     if key.startswith("transformer_blocks."):
         print(key)
@@ -280,8 +289,10 @@ for file in original_safetensors:
         print(f"Error: Missing transformer safetensors file: {file}")
         exit()
 
-original_safetensors = {f: safetensors.safe_open(
-    f, framework="pt", device="cpu") for f in original_safetensors}
+original_safetensors = {
+    f: safetensors.safe_open(f, framework="pt", device="cpu")
+    for f in original_safetensors
+}
 
 
 def swap_scale_shift(weight):
@@ -298,28 +309,30 @@ for b in range(transformer_blocks):
             block_prefix = f"transformer_blocks.{b}."
             found = True
             for weight in weights:
-                if not (f"{block_prefix}{weight}" in diffusers):
+                if f"{block_prefix}{weight}" not in diffusers:
                     found = False
             if found:
                 flux_values[key.replace("()", f"{b}")] = [
-                    f"{block_prefix}{weight}" for weight in weights]
+                    f"{block_prefix}{weight}" for weight in weights
+                ]
 for b in range(single_transformer_blocks):
     for key, weights in diffusers_map.items():
         if key.startswith("single_blocks."):
             block_prefix = f"single_transformer_blocks.{b}."
             found = True
             for weight in weights:
-                if not (f"{block_prefix}{weight}" in diffusers):
+                if f"{block_prefix}{weight}" not in diffusers:
                     found = False
             if found:
                 flux_values[key.replace("()", f"{b}")] = [
-                    f"{block_prefix}{weight}" for weight in weights]
+                    f"{block_prefix}{weight}" for weight in weights
+                ]
 
 for key, weights in diffusers_map.items():
     if not (key.startswith("double_blocks.") or key.startswith("single_blocks.")):
         found = True
         for weight in weights:
-            if not (f"{weight}" in diffusers):
+            if f"{weight}" not in diffusers:
                 found = False
         if found:
             flux_values[key] = [f"{weight}" for weight in weights]
@@ -328,26 +341,28 @@ flux = {}
 
 for key, values in tqdm.tqdm(flux_values.items()):
     if len(values) == 1:
-        flux[key] = original_safetensors[diffusers[values[0]]
-                                         ].get_tensor(values[0]).to("cpu")
+        flux[key] = (
+            original_safetensors[diffusers[values[0]]].get_tensor(values[0]).to("cpu")
+        )
     else:
         flux[key] = torch.cat(
             [
-                original_safetensors[diffusers[value]
-                                     ].get_tensor(value).to("cpu")
+                original_safetensors[diffusers[value]].get_tensor(value).to("cpu")
                 for value in values
             ]
         )
 
 if "norm_out.linear.weight" in diffusers:
     flux["final_layer.adaLN_modulation.1.weight"] = swap_scale_shift(
-        original_safetensors[diffusers["norm_out.linear.weight"]].get_tensor(
-            "norm_out.linear.weight").to("cpu")
+        original_safetensors[diffusers["norm_out.linear.weight"]]
+        .get_tensor("norm_out.linear.weight")
+        .to("cpu")
     )
 if "norm_out.linear.bias" in diffusers:
     flux["final_layer.adaLN_modulation.1.bias"] = swap_scale_shift(
-        original_safetensors[diffusers["norm_out.linear.bias"]].get_tensor(
-            "norm_out.linear.bias").to("cpu")
+        original_safetensors[diffusers["norm_out.linear.bias"]]
+        .get_tensor("norm_out.linear.bias")
+        .to("cpu")
     )
 
 
@@ -380,12 +395,11 @@ def stochastic_round_to(tensor, dtype=torch.float8_e4m3fn):
 
 
 # set all the keys to bf16
-for key in flux.keys():
+for key in flux:
     if do_8_bit:
-        flux[key] = stochastic_round_to(
-            flux[key], torch.float8_e4m3fn).to('cpu')
+        flux[key] = stochastic_round_to(flux[key], torch.float8_e4m3fn).to("cpu")
     else:
-        flux[key] = flux[key].clone().to('cpu', torch.bfloat16)
+        flux[key] = flux[key].clone().to("cpu", torch.bfloat16)
 
 # load the quantized state dict
 quantized_state_dict = safetensors.torch.load_file(quantized_state_dict_path)
@@ -406,15 +420,15 @@ for key, value in flux.items():
 
 
 meta = OrderedDict()
-meta['format'] = 'pt'
+meta["format"] = "pt"
 # date format like 2024-08-01 YYYY-MM-DD
-meta['modelspec.date'] = date.today().strftime("%Y-%m-%d")
-meta['modelspec.title'] = "Flex.1-alpha"
-meta['modelspec.author'] = "Ostris, LLC"
-meta['modelspec.license'] = "Apache-2.0"
-meta['modelspec.implementation'] = "https://github.com/black-forest-labs/flux"
-meta['modelspec.architecture'] = "Flex.1-alpha"
-meta['modelspec.description'] = "Flex.1-alpha"
+meta["modelspec.date"] = date.today().strftime("%Y-%m-%d")
+meta["modelspec.title"] = "Flex.1-alpha"
+meta["modelspec.author"] = "Ostris, LLC"
+meta["modelspec.license"] = "Apache-2.0"
+meta["modelspec.implementation"] = "https://github.com/black-forest-labs/flux"
+meta["modelspec.architecture"] = "Flex.1-alpha"
+meta["modelspec.description"] = "Flex.1-alpha"
 
 
 os.makedirs(os.path.dirname(flux_path), exist_ok=True)

@@ -11,13 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List, Optional, Tuple, Union
 
 import torch
-from torch import nn
-
-
 from diffusers.models.activations import get_activation
+from torch import nn
 
 
 class TimestepEmbedding(nn.Module):
@@ -27,7 +24,7 @@ class TimestepEmbedding(nn.Module):
         time_embed_dim: int,
         act_fn: str = "silu",
         out_dim: int = None,
-        post_act_fn: Optional[str] = None,
+        post_act_fn: str | None = None,
         cond_proj_dim=None,
         sample_proj_bias=True,
     ):
@@ -54,13 +51,13 @@ class TimestepEmbedding(nn.Module):
             self.post_act = get_activation(post_act_fn)
 
         self.initialize_weights()
-        
+
     def initialize_weights(self):
         nn.init.normal_(self.linear_1.weight, std=0.02)
         nn.init.zeros_(self.linear_1.bias)
         nn.init.normal_(self.linear_2.weight, std=0.02)
         nn.init.zeros_(self.linear_2.bias)
-        
+
     def forward(self, sample, condition=None):
         if condition is not None:
             sample = sample + self.cond_proj(condition)
@@ -78,10 +75,10 @@ class TimestepEmbedding(nn.Module):
 
 def apply_rotary_emb(
     x: torch.Tensor,
-    freqs_cis: Union[torch.Tensor, Tuple[torch.Tensor]],
+    freqs_cis: torch.Tensor | tuple[torch.Tensor],
     use_real: bool = True,
     use_real_unbind_dim: int = -1,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Apply rotary embeddings to input tensors using the given frequency tensor. This function applies rotary embeddings
     to the given query or key 'x' tensors using the provided frequency tensor 'freqs_cis'. The input tensors are
@@ -104,14 +101,20 @@ def apply_rotary_emb(
 
         if use_real_unbind_dim == -1:
             # Used for flux, cogvideox, hunyuan-dit
-            x_real, x_imag = x.reshape(*x.shape[:-1], -1, 2).unbind(-1)  # [B, S, H, D//2]
+            x_real, x_imag = x.reshape(*x.shape[:-1], -1, 2).unbind(
+                -1
+            )  # [B, S, H, D//2]
             x_rotated = torch.stack([-x_imag, x_real], dim=-1).flatten(3)
         elif use_real_unbind_dim == -2:
             # Used for Stable Audio, OmniGen and CogView4
-            x_real, x_imag = x.reshape(*x.shape[:-1], 2, -1).unbind(-2)  # [B, S, H, D//2]
+            x_real, x_imag = x.reshape(*x.shape[:-1], 2, -1).unbind(
+                -2
+            )  # [B, S, H, D//2]
             x_rotated = torch.cat([-x_imag, x_real], dim=-1)
         else:
-            raise ValueError(f"`use_real_unbind_dim={use_real_unbind_dim}` but should be -1 or -2.")
+            raise ValueError(
+                f"`use_real_unbind_dim={use_real_unbind_dim}` but should be -1 or -2."
+            )
 
         out = (x.float() * cos + x_rotated.float() * sin).to(x.dtype)
 
@@ -119,7 +122,9 @@ def apply_rotary_emb(
     else:
         # used for lumina
         # x_rotated = torch.view_as_complex(x.float().reshape(*x.shape[:-1], -1, 2))
-        x_rotated = torch.view_as_complex(x.float().reshape(*x.shape[:-1], x.shape[-1] // 2, 2))
+        x_rotated = torch.view_as_complex(
+            x.float().reshape(*x.shape[:-1], x.shape[-1] // 2, 2)
+        )
         freqs_cis = freqs_cis.unsqueeze(2)
         x_out = torch.view_as_real(x_rotated * freqs_cis).flatten(3)
 

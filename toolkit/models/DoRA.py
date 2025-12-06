@@ -1,28 +1,24 @@
-#based off https://github.com/catid/dora/blob/main/dora.py
-import math
+# based off https://github.com/catid/dora/blob/main/dora.py
+
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import TYPE_CHECKING, Union, List
-
 from optimum.quanto import QBytesTensor, QTensor
-
-from toolkit.network_mixins import ToolkitModuleMixin, ExtractableModuleMixin
+from toolkit.network_mixins import ExtractableModuleMixin, ToolkitModuleMixin
 
 if TYPE_CHECKING:
     from toolkit.lora_special import LoRASpecialNetwork
 
 # diffusers specific stuff
 LINEAR_MODULES = [
-    'Linear',
-    'LoRACompatibleLinear'
+    "Linear",
+    "LoRACompatibleLinear",
     # 'GroupNorm',
 ]
-CONV_MODULES = [
-    'Conv2d',
-    'LoRACompatibleConv'
-]
+CONV_MODULES = ["Conv2d", "LoRACompatibleConv"]
+
 
 def transpose(weight, fan_in_fan_out):
     if not fan_in_fan_out:
@@ -32,21 +28,22 @@ def transpose(weight, fan_in_fan_out):
         return torch.nn.Parameter(weight.T)
     return weight.T
 
+
 class DoRAModule(ToolkitModuleMixin, ExtractableModuleMixin, torch.nn.Module):
     # def __init__(self, d_in, d_out, rank=4, weight=None, bias=None):
     def __init__(
-            self,
-            lora_name,
-            org_module: torch.nn.Module,
-            multiplier=1.0,
-            lora_dim=4,
-            alpha=1,
-            dropout=None,
-            rank_dropout=None,
-            module_dropout=None,
-            network: 'LoRASpecialNetwork' = None,
-            use_bias: bool = False,
-            **kwargs
+        self,
+        lora_name,
+        org_module: torch.nn.Module,
+        multiplier=1.0,
+        lora_dim=4,
+        alpha=1,
+        dropout=None,
+        rank_dropout=None,
+        module_dropout=None,
+        network: "LoRASpecialNetwork" = None,
+        use_bias: bool = False,
+        **kwargs,
     ):
         self.can_merge_in = False
         """if alpha == 0 or None, alpha is rank (no scaling)."""
@@ -66,7 +63,7 @@ class DoRAModule(ToolkitModuleMixin, ExtractableModuleMixin, torch.nn.Module):
         self.scale = alpha / self.lora_dim
         # self.register_buffer("alpha", torch.tensor(alpha))  # 定数として扱える eng: treat as constant
 
-        self.multiplier: Union[float, List[float]] = multiplier
+        self.multiplier: float | list[float] = multiplier
         # wrap the original module so it doesn't get weights updated
         self.org_module = [org_module]
         self.dropout = dropout
@@ -87,12 +84,14 @@ class DoRAModule(ToolkitModuleMixin, ExtractableModuleMixin, torch.nn.Module):
         # self.lora_B[adapter_name] = nn.Linear(r, self.out_features, bias=False)
         self.lora_down = nn.Linear(d_in, self.lora_dim, bias=False)  # lora_A
         # self.lora_down.weight.data = torch.zeros_like(self.lora_down.weight.data)
-        self.lora_down.weight.data = torch.randn_like(self.lora_down.weight.data) * std_dev
+        self.lora_down.weight.data = (
+            torch.randn_like(self.lora_down.weight.data) * std_dev
+        )
 
         # m = Magnitude column-wise across output dimension
         weight = self.get_orig_weight()
         weight = weight.to(self.lora_up.weight.device, dtype=self.lora_up.weight.dtype)
-        lora_weight  = self.lora_up.weight @ self.lora_down.weight
+        lora_weight = self.lora_up.weight @ self.lora_down.weight
         weight_norm = self._get_weight_norm(weight, lora_weight)
         self.magnitude = nn.Parameter(weight_norm.detach().clone(), requires_grad=True)
 
@@ -109,7 +108,7 @@ class DoRAModule(ToolkitModuleMixin, ExtractableModuleMixin, torch.nn.Module):
             return weight.data.detach()
 
     def get_orig_bias(self):
-        if hasattr(self.org_module[0], 'bias') and self.org_module[0].bias is not None:
+        if hasattr(self.org_module[0], "bias") and self.org_module[0].bias is not None:
             return self.org_module[0].bias.data.detach()
         return None
 
@@ -143,4 +142,6 @@ class DoRAModule(ToolkitModuleMixin, ExtractableModuleMixin, torch.nn.Module):
         # during backpropagation"
         weight_norm = weight_norm.detach()
         dora_weight = transpose(weight + scaled_lora_weight, False)
-        return (self.magnitude / weight_norm - 1).view(1, -1) * F.linear(x.to(dora_weight.dtype), dora_weight)
+        return (self.magnitude / weight_norm - 1).view(1, -1) * F.linear(
+            x.to(dora_weight.dtype), dora_weight
+        )

@@ -1,46 +1,56 @@
 import copy
-import json
 import math
-import weakref
-import os
 import re
-import sys
-from typing import List, Optional, Dict, Type, Union
+import weakref
+from typing import TYPE_CHECKING
+
 import torch
-from diffusers import UNet2DConditionModel, PixArtTransformer2DModel, AuraFlowTransformer2DModel, WanTransformer3DModel
+from diffusers import (
+    AuraFlowTransformer2DModel,
+    PixArtTransformer2DModel,
+    UNet2DConditionModel,
+    WanTransformer3DModel,
+)
 from transformers import CLIPTextModel
+
+from toolkit.kohya_lora import LoRANetwork
+from toolkit.models.DoRA import DoRAModule
 from toolkit.models.lokr import LokrModule
 
 from .config_modules import NetworkConfig
 from .lorm import count_parameters
-from .network_mixins import ToolkitNetworkMixin, ToolkitModuleMixin, ExtractableModuleMixin
-
-from toolkit.kohya_lora import LoRANetwork
-from toolkit.models.DoRA import DoRAModule
-from typing import TYPE_CHECKING
+from .network_mixins import (
+    ExtractableModuleMixin,
+    ToolkitModuleMixin,
+    ToolkitNetworkMixin,
+)
 
 if TYPE_CHECKING:
     from toolkit.stable_diffusion_model import StableDiffusion
 
-RE_UPDOWN = re.compile(r"(up|down)_blocks_(\d+)_(resnets|upsamplers|downsamplers|attentions)_(\d+)_")
+RE_UPDOWN = re.compile(
+    r"(up|down)_blocks_(\d+)_(resnets|upsamplers|downsamplers|attentions)_(\d+)_"
+)
 
 
 # diffusers specific stuff
 LINEAR_MODULES = [
-    'Linear',
-    'LoRACompatibleLinear',
-    'QLinear',
+    "Linear",
+    "LoRACompatibleLinear",
+    "QLinear",
     # 'GroupNorm',
 ]
 CONV_MODULES = [
-    'Conv2d',
-    'LoRACompatibleConv',
-    'QConv2d',
+    "Conv2d",
+    "LoRACompatibleConv",
+    "QConv2d",
 ]
+
 
 class IdentityModule(torch.nn.Module):
     def forward(self, x):
         return x
+
 
 class LoRAModule(ToolkitModuleMixin, ExtractableModuleMixin, torch.nn.Module):
     """
@@ -48,19 +58,19 @@ class LoRAModule(ToolkitModuleMixin, ExtractableModuleMixin, torch.nn.Module):
     """
 
     def __init__(
-            self,
-            lora_name,
-            org_module: torch.nn.Module,
-            multiplier=1.0,
-            lora_dim=4,
-            alpha=1,
-            dropout=None,
-            rank_dropout=None,
-            module_dropout=None,
-            network: 'LoRASpecialNetwork' = None,
-            use_bias: bool = False,
-            is_ara: bool = False,
-            **kwargs
+        self,
+        lora_name,
+        org_module: torch.nn.Module,
+        multiplier=1.0,
+        lora_dim=4,
+        alpha=1,
+        dropout=None,
+        rank_dropout=None,
+        module_dropout=None,
+        network: "LoRASpecialNetwork" = None,
+        use_bias: bool = False,
+        is_ara: bool = False,
+        **kwargs,
     ):
         self.can_merge_in = True
         """if alpha == 0 or None, alpha is rank (no scaling)."""
@@ -69,7 +79,7 @@ class LoRAModule(ToolkitModuleMixin, ExtractableModuleMixin, torch.nn.Module):
         self.lora_name = lora_name
         self.orig_module_ref = weakref.ref(org_module)
         self.scalar = torch.tensor(1.0, device=org_module.weight.device)
-        
+
         # if is ara lora module, mark it on the layer so memory manager can handle it
         if is_ara:
             org_module.ara_lora_ref = weakref.ref(self)
@@ -97,11 +107,17 @@ class LoRAModule(ToolkitModuleMixin, ExtractableModuleMixin, torch.nn.Module):
             stride = org_module.stride
             padding = org_module.padding
             if self.full_rank:
-                self.lora_down = torch.nn.Conv2d(in_dim, out_dim, kernel_size, stride, padding, bias=False)
+                self.lora_down = torch.nn.Conv2d(
+                    in_dim, out_dim, kernel_size, stride, padding, bias=False
+                )
                 self.lora_up = IdentityModule()
             else:
-                self.lora_down = torch.nn.Conv2d(in_dim, self.lora_dim, kernel_size, stride, padding, bias=False)
-                self.lora_up = torch.nn.Conv2d(self.lora_dim, out_dim, (1, 1), (1, 1), bias=use_bias)
+                self.lora_down = torch.nn.Conv2d(
+                    in_dim, self.lora_dim, kernel_size, stride, padding, bias=False
+                )
+                self.lora_up = torch.nn.Conv2d(
+                    self.lora_dim, out_dim, (1, 1), (1, 1), bias=use_bias
+                )
         else:
             if self.full_rank:
                 self.lora_down = torch.nn.Linear(in_dim, out_dim, bias=False)
@@ -121,7 +137,7 @@ class LoRAModule(ToolkitModuleMixin, ExtractableModuleMixin, torch.nn.Module):
         if not self.full_rank:
             torch.nn.init.zeros_(self.lora_up.weight)
 
-        self.multiplier: Union[float, List[float]] = multiplier
+        self.multiplier: float | list[float] = multiplier
         # wrap the original module so it doesn't get weights updated
         self.org_module = [org_module]
         self.dropout = dropout
@@ -153,53 +169,53 @@ class LoRASpecialNetwork(ToolkitNetworkMixin, LoRANetwork):
     LORA_PREFIX_TEXT_ENCODER2 = "lora_te2"
 
     def __init__(
-            self,
-            text_encoder: Union[List[CLIPTextModel], CLIPTextModel],
-            unet,
-            multiplier: float = 1.0,
-            lora_dim: int = 4,
-            alpha: float = 1,
-            dropout: Optional[float] = None,
-            rank_dropout: Optional[float] = None,
-            module_dropout: Optional[float] = None,
-            conv_lora_dim: Optional[int] = None,
-            conv_alpha: Optional[float] = None,
-            block_dims: Optional[List[int]] = None,
-            block_alphas: Optional[List[float]] = None,
-            conv_block_dims: Optional[List[int]] = None,
-            conv_block_alphas: Optional[List[float]] = None,
-            modules_dim: Optional[Dict[str, int]] = None,
-            modules_alpha: Optional[Dict[str, int]] = None,
-            module_class: Type[object] = LoRAModule,
-            varbose: Optional[bool] = False,
-            train_text_encoder: Optional[bool] = True,
-            use_text_encoder_1: bool = True,
-            use_text_encoder_2: bool = True,
-            train_unet: Optional[bool] = True,
-            is_sdxl=False,
-            is_v2=False,
-            is_v3=False,
-            is_pixart: bool = False,
-            is_auraflow: bool = False,
-            is_flux: bool = False,
-            is_lumina2: bool = False,
-            use_bias: bool = False,
-            is_lorm: bool = False,
-            ignore_if_contains = None,
-            only_if_contains = None,
-            parameter_threshold: float = 0.0,
-            attn_only: bool = False,
-            target_lin_modules=LoRANetwork.UNET_TARGET_REPLACE_MODULE,
-            target_conv_modules=LoRANetwork.UNET_TARGET_REPLACE_MODULE_CONV2D_3X3,
-            network_type: str = "lora",
-            full_train_in_out: bool = False,
-            transformer_only: bool = False,
-            peft_format: bool = False,
-            is_assistant_adapter: bool = False,
-            is_transformer: bool = False,
-            base_model: 'StableDiffusion' = None,
-            is_ara: bool = False,
-            **kwargs
+        self,
+        text_encoder: list[CLIPTextModel] | CLIPTextModel,
+        unet,
+        multiplier: float = 1.0,
+        lora_dim: int = 4,
+        alpha: float = 1,
+        dropout: float | None = None,
+        rank_dropout: float | None = None,
+        module_dropout: float | None = None,
+        conv_lora_dim: int | None = None,
+        conv_alpha: float | None = None,
+        block_dims: list[int] | None = None,
+        block_alphas: list[float] | None = None,
+        conv_block_dims: list[int] | None = None,
+        conv_block_alphas: list[float] | None = None,
+        modules_dim: dict[str, int] | None = None,
+        modules_alpha: dict[str, int] | None = None,
+        module_class: type[object] = LoRAModule,
+        varbose: bool | None = False,
+        train_text_encoder: bool | None = True,
+        use_text_encoder_1: bool = True,
+        use_text_encoder_2: bool = True,
+        train_unet: bool | None = True,
+        is_sdxl=False,
+        is_v2=False,
+        is_v3=False,
+        is_pixart: bool = False,
+        is_auraflow: bool = False,
+        is_flux: bool = False,
+        is_lumina2: bool = False,
+        use_bias: bool = False,
+        is_lorm: bool = False,
+        ignore_if_contains=None,
+        only_if_contains=None,
+        parameter_threshold: float = 0.0,
+        attn_only: bool = False,
+        target_lin_modules=LoRANetwork.UNET_TARGET_REPLACE_MODULE,
+        target_conv_modules=LoRANetwork.UNET_TARGET_REPLACE_MODULE_CONV2D_3X3,
+        network_type: str = "lora",
+        full_train_in_out: bool = False,
+        transformer_only: bool = False,
+        peft_format: bool = False,
+        is_assistant_adapter: bool = False,
+        is_transformer: bool = False,
+        base_model: "StableDiffusion" = None,
+        is_ara: bool = False,
+        **kwargs,
     ) -> None:
         """
         LoRA network: すごく引数が多いが、パターンは以下の通り
@@ -218,7 +234,7 @@ class LoRASpecialNetwork(ToolkitNetworkMixin, LoRANetwork):
             is_sdxl=is_sdxl,
             is_v2=is_v2,
             is_lorm=is_lorm,
-            **kwargs
+            **kwargs,
         )
         if ignore_if_contains is None:
             ignore_if_contains = []
@@ -228,7 +244,7 @@ class LoRASpecialNetwork(ToolkitNetworkMixin, LoRANetwork):
         if base_model is not None:
             self.base_model_ref = weakref.ref(base_model)
 
-        self.only_if_contains: Union[List, None] = only_if_contains
+        self.only_if_contains: list | None = only_if_contains
 
         self.lora_dim = lora_dim
         self.alpha = alpha
@@ -260,11 +276,10 @@ class LoRASpecialNetwork(ToolkitNetworkMixin, LoRANetwork):
         elif self.network_type.lower() == "lokr":
             self.module_class = LokrModule
             module_class = LokrModule
-        self.network_config: NetworkConfig = kwargs.get("network_config", None)
+        self.network_config: NetworkConfig = kwargs.get("network_config")
 
         self.peft_format = peft_format
         self.is_transformer = is_transformer
-        
 
         # always do peft for flux only for now
         if self.is_flux or self.is_v3 or self.is_lumina2 or is_transformer:
@@ -282,11 +297,12 @@ class LoRASpecialNetwork(ToolkitNetworkMixin, LoRANetwork):
         self.full_train_in_out = full_train_in_out
 
         if modules_dim is not None:
-            print(f"create LoRA network from weights")
+            print("create LoRA network from weights")
         elif block_dims is not None:
-            print(f"create LoRA network from block_dims")
+            print("create LoRA network from block_dims")
             print(
-                f"neuron dropout: p={self.dropout}, rank dropout: p={self.rank_dropout}, module dropout: p={self.module_dropout}")
+                f"neuron dropout: p={self.dropout}, rank dropout: p={self.rank_dropout}, module dropout: p={self.module_dropout}"
+            )
             print(f"block_dims: {block_dims}")
             print(f"block_alphas: {block_alphas}")
             if conv_block_dims is not None:
@@ -295,23 +311,32 @@ class LoRASpecialNetwork(ToolkitNetworkMixin, LoRANetwork):
         else:
             print(f"create LoRA network. base dim (rank): {lora_dim}, alpha: {alpha}")
             print(
-                f"neuron dropout: p={self.dropout}, rank dropout: p={self.rank_dropout}, module dropout: p={self.module_dropout}")
+                f"neuron dropout: p={self.dropout}, rank dropout: p={self.rank_dropout}, module dropout: p={self.module_dropout}"
+            )
             if self.conv_lora_dim is not None:
                 print(
-                    f"apply LoRA to Conv2d with kernel size (3,3). dim (rank): {self.conv_lora_dim}, alpha: {self.conv_alpha}")
+                    f"apply LoRA to Conv2d with kernel size (3,3). dim (rank): {self.conv_lora_dim}, alpha: {self.conv_alpha}"
+                )
 
         # create module instances
         def create_modules(
-                is_unet: bool,
-                text_encoder_idx: Optional[int],  # None, 1, 2
-                root_module: torch.nn.Module,
-                target_replace_modules: List[torch.nn.Module],
-        ) -> List[LoRAModule]:
+            is_unet: bool,
+            text_encoder_idx: int | None,  # None, 1, 2
+            root_module: torch.nn.Module,
+            target_replace_modules: list[torch.nn.Module],
+        ) -> list[LoRAModule]:
             unet_prefix = self.LORA_PREFIX_UNET
             if self.peft_format:
                 unet_prefix = self.PEFT_PREFIX_UNET
-            if is_pixart or is_v3 or is_auraflow or is_flux or is_lumina2 or self.is_transformer:
-                unet_prefix = f"lora_transformer"
+            if (
+                is_pixart
+                or is_v3
+                or is_auraflow
+                or is_flux
+                or is_lumina2
+                or self.is_transformer
+            ):
+                unet_prefix = "lora_transformer"
                 if self.peft_format:
                     unet_prefix = "transformer"
 
@@ -321,7 +346,11 @@ class LoRASpecialNetwork(ToolkitNetworkMixin, LoRANetwork):
                 else (
                     self.LORA_PREFIX_TEXT_ENCODER
                     if text_encoder_idx is None
-                    else (self.LORA_PREFIX_TEXT_ENCODER1 if text_encoder_idx == 1 else self.LORA_PREFIX_TEXT_ENCODER2)
+                    else (
+                        self.LORA_PREFIX_TEXT_ENCODER1
+                        if text_encoder_idx == 1
+                        else self.LORA_PREFIX_TEXT_ENCODER2
+                    )
                 )
             )
             loras = []
@@ -334,7 +363,6 @@ class LoRASpecialNetwork(ToolkitNetworkMixin, LoRANetwork):
                         is_linear = child_module.__class__.__name__ in LINEAR_MODULES
                         is_conv2d = child_module.__class__.__name__ in CONV_MODULES
                         is_conv2d_1x1 = is_conv2d and child_module.kernel_size == (1, 1)
-
 
                         lora_name = [prefix, name, child_name]
                         # filter out blank
@@ -350,20 +378,29 @@ class LoRASpecialNetwork(ToolkitNetworkMixin, LoRANetwork):
                             lora_name = lora_name.replace(".", "_")
 
                         skip = False
-                        if any([word in clean_name for word in self.ignore_if_contains]):
+                        if any(
+                            [word in clean_name for word in self.ignore_if_contains]
+                        ):
                             skip = True
 
                         # see if it is over threshold
                         if count_parameters(child_module) < parameter_threshold:
                             skip = True
-                        
+
                         if self.transformer_only and is_unet:
                             transformer_block_names = None
                             if base_model is not None:
-                                transformer_block_names = base_model.get_transformer_block_names()
-                            
+                                transformer_block_names = (
+                                    base_model.get_transformer_block_names()
+                                )
+
                             if transformer_block_names is not None:
-                                if not any([name in lora_name for name in transformer_block_names]):
+                                if not any(
+                                    [
+                                        name in lora_name
+                                        for name in transformer_block_names
+                                    ]
+                                ):
                                     skip = True
                             else:
                                 if self.is_pixart:
@@ -373,29 +410,45 @@ class LoRASpecialNetwork(ToolkitNetworkMixin, LoRANetwork):
                                     if "transformer_blocks" not in lora_name:
                                         skip = True
                                 if self.is_lumina2:
-                                    if "layers$$" not in lora_name and "noise_refiner$$" not in lora_name and "context_refiner$$" not in lora_name:
+                                    if (
+                                        "layers$$" not in lora_name
+                                        and "noise_refiner$$" not in lora_name
+                                        and "context_refiner$$" not in lora_name
+                                    ):
                                         skip = True
-                                if  self.is_v3:
+                                if self.is_v3:
                                     if "transformer_blocks" not in lora_name:
                                         skip = True
-                                
+
                                 # handle custom models
-                                if hasattr(root_module, 'transformer_blocks'):
+                                if hasattr(root_module, "transformer_blocks"):
                                     if "transformer_blocks" not in lora_name:
                                         skip = True
-                                        
-                                if hasattr(root_module, 'blocks'):
+
+                                if hasattr(root_module, "blocks"):
                                     if "blocks" not in lora_name:
                                         skip = True
-                                
-                                if hasattr(root_module, 'single_blocks'):
-                                    if "single_blocks" not in lora_name and "double_blocks" not in lora_name:
+
+                                if hasattr(root_module, "single_blocks"):
+                                    if (
+                                        "single_blocks" not in lora_name
+                                        and "double_blocks" not in lora_name
+                                    ):
                                         skip = True
 
                         if (is_linear or is_conv2d) and not skip:
-
                             if self.only_if_contains is not None:
-                                if not any([word in clean_name for word in self.only_if_contains]) and not any([word in lora_name for word in self.only_if_contains]):
+                                if not any(
+                                    [
+                                        word in clean_name
+                                        for word in self.only_if_contains
+                                    ]
+                                ) and not any(
+                                    [
+                                        word in lora_name
+                                        for word in self.only_if_contains
+                                    ]
+                                ):
                                     continue
 
                             dim = None
@@ -417,16 +470,24 @@ class LoRASpecialNetwork(ToolkitNetworkMixin, LoRANetwork):
 
                             if dim is None or dim == 0:
                                 # skipした情報を出力
-                                if is_linear or is_conv2d_1x1 or (
-                                        self.conv_lora_dim is not None or conv_block_dims is not None):
+                                if (
+                                    is_linear
+                                    or is_conv2d_1x1
+                                    or (
+                                        self.conv_lora_dim is not None
+                                        or conv_block_dims is not None
+                                    )
+                                ):
                                     skipped.append(lora_name)
                                 continue
-                            
+
                             module_kwargs = {}
-                            
+
                             if self.network_type.lower() == "lokr":
-                                module_kwargs["factor"] = self.network_config.lokr_factor
-                            
+                                module_kwargs["factor"] = (
+                                    self.network_config.lokr_factor
+                                )
+
                             if self.is_ara:
                                 module_kwargs["is_ara"] = True
 
@@ -442,19 +503,27 @@ class LoRASpecialNetwork(ToolkitNetworkMixin, LoRANetwork):
                                 network=self,
                                 parent=module,
                                 use_bias=use_bias,
-                                **module_kwargs
+                                **module_kwargs,
                             )
                             loras.append(lora)
                             if self.network_type.lower() == "lokr":
                                 try:
-                                    lora_shape_dict[lora_name] = [list(lora.lokr_w1.weight.shape), list(lora.lokr_w2.weight.shape)]
+                                    lora_shape_dict[lora_name] = [
+                                        list(lora.lokr_w1.weight.shape),
+                                        list(lora.lokr_w2.weight.shape),
+                                    ]
                                 except:
                                     pass
                             else:
                                 if self.full_rank:
-                                    lora_shape_dict[lora_name] = [list(lora.lora_down.weight.shape)]
+                                    lora_shape_dict[lora_name] = [
+                                        list(lora.lora_down.weight.shape)
+                                    ]
                                 else:
-                                    lora_shape_dict[lora_name] = [list(lora.lora_down.weight.shape), list(lora.lora_up.weight.shape)]
+                                    lora_shape_dict[lora_name] = [
+                                        list(lora.lora_down.weight.shape),
+                                        list(lora.lora_up.weight.shape),
+                                    ]
             return loras, skipped
 
         text_encoders = text_encoder if type(text_encoder) == list else [text_encoder]
@@ -474,21 +543,27 @@ class LoRASpecialNetwork(ToolkitNetworkMixin, LoRANetwork):
                     print(f"create LoRA for Text Encoder {index}:")
                 else:
                     index = None
-                    print(f"create LoRA for Text Encoder:")
+                    print("create LoRA for Text Encoder:")
 
                 replace_modules = LoRANetwork.TEXT_ENCODER_TARGET_REPLACE_MODULE
 
                 if self.is_pixart:
                     replace_modules = ["T5EncoderModel"]
 
-                text_encoder_loras, skipped = create_modules(False, index, text_encoder, replace_modules)
+                text_encoder_loras, skipped = create_modules(
+                    False, index, text_encoder, replace_modules
+                )
                 self.text_encoder_loras.extend(text_encoder_loras)
                 skipped_te += skipped
         print(f"create LoRA for Text Encoder: {len(self.text_encoder_loras)} modules.")
 
         # extend U-Net target modules if conv2d 3x3 is enabled, or load from weights
         target_modules = target_lin_modules
-        if modules_dim is not None or self.conv_lora_dim is not None or conv_block_dims is not None:
+        if (
+            modules_dim is not None
+            or self.conv_lora_dim is not None
+            or conv_block_dims is not None
+        ):
             target_modules += target_conv_modules
 
         if is_v3:
@@ -502,12 +577,14 @@ class LoRASpecialNetwork(ToolkitNetworkMixin, LoRANetwork):
 
         if is_flux:
             target_modules = ["FluxTransformer2DModel"]
-        
+
         if is_lumina2:
             target_modules = ["Lumina2Transformer2DModel"]
 
         if train_unet:
-            self.unet_loras, skipped_un = create_modules(True, None, unet, target_modules)
+            self.unet_loras, skipped_un = create_modules(
+                True, None, unet, target_modules
+            )
         else:
             self.unet_loras = []
             skipped_un = []
@@ -521,15 +598,17 @@ class LoRASpecialNetwork(ToolkitNetworkMixin, LoRANetwork):
             for name in skipped:
                 print(f"\t{name}")
 
-        self.up_lr_weight: List[float] = None
-        self.down_lr_weight: List[float] = None
+        self.up_lr_weight: list[float] = None
+        self.down_lr_weight: list[float] = None
         self.mid_lr_weight: float = None
         self.block_lr = False
 
         # assertion
         names = set()
         for lora in self.text_encoder_loras + self.unet_loras:
-            assert lora.lora_name not in names, f"duplicated lora name: {lora.lora_name}"
+            assert lora.lora_name not in names, (
+                f"duplicated lora name: {lora.lora_name}"
+            )
             names.add(lora.lora_name)
 
         if self.full_train_in_out:
@@ -550,7 +629,7 @@ class LoRASpecialNetwork(ToolkitNetworkMixin, LoRANetwork):
 
                 transformer.pos_embed = self.transformer_pos_embed
                 transformer.proj_out = self.transformer_proj_out
-            
+
             elif base_model is not None and base_model.arch == "wan21":
                 transformer: WanTransformer3DModel = unet
                 self.transformer_pos_embed = copy.deepcopy(transformer.patch_embedding)
@@ -572,17 +651,38 @@ class LoRASpecialNetwork(ToolkitNetworkMixin, LoRANetwork):
 
     def prepare_optimizer_params(self, text_encoder_lr, unet_lr, default_lr):
         # call Lora prepare_optimizer_params
-        all_params = super().prepare_optimizer_params(text_encoder_lr, unet_lr, default_lr)
+        all_params = super().prepare_optimizer_params(
+            text_encoder_lr, unet_lr, default_lr
+        )
 
         if self.full_train_in_out:
-            base_model = self.base_model_ref() if self.base_model_ref is not None else None
-            if self.is_pixart or self.is_auraflow or self.is_flux or (base_model is not None and base_model.arch == "wan21"):
-                all_params.append({"lr": unet_lr, "params": list(self.transformer_pos_embed.parameters())})
-                all_params.append({"lr": unet_lr, "params": list(self.transformer_proj_out.parameters())})
+            base_model = (
+                self.base_model_ref() if self.base_model_ref is not None else None
+            )
+            if (
+                self.is_pixart
+                or self.is_auraflow
+                or self.is_flux
+                or (base_model is not None and base_model.arch == "wan21")
+            ):
+                all_params.append(
+                    {
+                        "lr": unet_lr,
+                        "params": list(self.transformer_pos_embed.parameters()),
+                    }
+                )
+                all_params.append(
+                    {
+                        "lr": unet_lr,
+                        "params": list(self.transformer_proj_out.parameters()),
+                    }
+                )
             else:
-                all_params.append({"lr": unet_lr, "params": list(self.unet_conv_in.parameters())})
-                all_params.append({"lr": unet_lr, "params": list(self.unet_conv_out.parameters())})
+                all_params.append(
+                    {"lr": unet_lr, "params": list(self.unet_conv_in.parameters())}
+                )
+                all_params.append(
+                    {"lr": unet_lr, "params": list(self.unet_conv_out.parameters())}
+                )
 
         return all_params
-
-

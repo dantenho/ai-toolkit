@@ -1,28 +1,37 @@
 import copy
+import gc
 import os
 import random
 from collections import OrderedDict
 from typing import Union
 
-from PIL import Image
+import torch
 from diffusers import T2IAdapter
-from torchvision.transforms import transforms
-from tqdm import tqdm
-
+from PIL import Image
+from toolkit import train_tools
 from toolkit.basic import value_map
 from toolkit.config_modules import SliderConfig
 from toolkit.data_transfer_object.data_loader import DataLoaderBatchDTO
+from toolkit.prompt_utils import (
+    ACTION_TYPES_SLIDER,
+    EncodedAnchor,
+    EncodedPromptPair,
+    PromptEmbedsCache,
+    build_prompt_pair_batch_from_cache,
+    concat_anchors,
+    concat_prompt_pairs,
+    encode_prompts_to_cache,
+    split_prompt_pairs,
+)
 from toolkit.sd_device_states_presets import get_train_sd_device_state_preset
-from toolkit.train_tools import get_torch_dtype, apply_snr_weight, apply_learnable_snr_gos
-import gc
-from toolkit import train_tools
-from toolkit.prompt_utils import \
-    EncodedPromptPair, ACTION_TYPES_SLIDER, \
-    EncodedAnchor, concat_prompt_pairs, \
-    concat_anchors, PromptEmbedsCache, encode_prompts_to_cache, build_prompt_pair_batch_from_cache, split_anchors, \
-    split_prompt_pairs
+from toolkit.train_tools import (
+    apply_learnable_snr_gos,
+    apply_snr_weight,
+    get_torch_dtype,
+)
+from torchvision.transforms import transforms
+from tqdm import tqdm
 
-import torch
 from .BaseSDTrainProcess import BaseSDTrainProcess
 
 
@@ -31,9 +40,11 @@ def flush():
     gc.collect()
 
 
-adapter_transforms = transforms.Compose([
-    transforms.ToTensor(),
-])
+adapter_transforms = transforms.Compose(
+    [
+        transforms.ToTensor(),
+    ]
+)
 
 
 class TrainSliderProcess(BaseSDTrainProcess):
@@ -42,9 +53,9 @@ class TrainSliderProcess(BaseSDTrainProcess):
         self.prompt_txt_list = None
         self.step_num = 0
         self.start_step = 0
-        self.device = self.get_conf('device', self.job.device)
+        self.device = self.get_conf("device", self.job.device)
         self.device_torch = torch.device(self.device)
-        self.slider_config = SliderConfig(**self.get_conf('slider', {}))
+        self.slider_config = SliderConfig(**self.get_conf("slider", {}))
         self.prompt_cache = PromptEmbedsCache()
         self.prompt_pairs: list[EncodedPromptPair] = []
         self.anchor_pairs: list[EncodedAnchor] = []
@@ -55,7 +66,9 @@ class TrainSliderProcess(BaseSDTrainProcess):
         # this can happen because of permutation son shuffling
         if len(self.slider_config.targets) > self.train_config.steps:
             # trim targets
-            self.slider_config.targets = self.slider_config.targets[:self.train_config.steps]
+            self.slider_config.targets = self.slider_config.targets[
+                : self.train_config.steps
+            ]
 
         # get presets
         self.eval_slider_device_state = get_train_sd_device_state_preset(
@@ -82,32 +95,39 @@ class TrainSliderProcess(BaseSDTrainProcess):
         pass
 
     def hook_before_train_loop(self):
-
         # read line by line from file
         if self.slider_config.prompt_file:
             self.print(f"Loading prompt file from {self.slider_config.prompt_file}")
-            with open(self.slider_config.prompt_file, 'r', encoding='utf-8') as f:
+            with open(self.slider_config.prompt_file, encoding="utf-8") as f:
                 self.prompt_txt_list = f.readlines()
                 # clean empty lines
-                self.prompt_txt_list = [line.strip() for line in self.prompt_txt_list if len(line.strip()) > 0]
+                self.prompt_txt_list = [
+                    line.strip()
+                    for line in self.prompt_txt_list
+                    if len(line.strip()) > 0
+                ]
 
             self.print(f"Found {len(self.prompt_txt_list)} prompts.")
 
             if not self.slider_config.prompt_tensors:
-                print(f"Prompt tensors not found. Building prompt tensors for {self.train_config.steps} steps.")
+                print(
+                    f"Prompt tensors not found. Building prompt tensors for {self.train_config.steps} steps."
+                )
                 # shuffle
                 random.shuffle(self.prompt_txt_list)
                 # trim to max steps
-                self.prompt_txt_list = self.prompt_txt_list[:self.train_config.steps]
+                self.prompt_txt_list = self.prompt_txt_list[: self.train_config.steps]
                 # trim list to our max steps
 
         cache = PromptEmbedsCache()
-        print(f"Building prompt cache")
+        print("Building prompt cache")
 
         # get encoded latents for our prompts
         with torch.no_grad():
             # list of neutrals. Can come from file or be empty
-            neutral_list = self.prompt_txt_list if self.prompt_txt_list is not None else [""]
+            neutral_list = (
+                self.prompt_txt_list if self.prompt_txt_list is not None else [""]
+            )
 
             # build the prompts to cache
             prompts_to_cache = []
@@ -138,29 +158,32 @@ class TrainSliderProcess(BaseSDTrainProcess):
                 prompt_list=prompts_to_cache,
                 sd=self.sd,
                 cache=cache,
-                prompt_tensor_file=self.slider_config.prompt_tensors
+                prompt_tensor_file=self.slider_config.prompt_tensors,
             )
 
             prompt_pairs = []
             prompt_batches = []
-            for neutral in tqdm(neutral_list, desc="Building Prompt Pairs", leave=False):
+            for neutral in tqdm(
+                neutral_list, desc="Building Prompt Pairs", leave=False
+            ):
                 for target in self.slider_config.targets:
                     prompt_pair_batch = build_prompt_pair_batch_from_cache(
                         cache=cache,
                         target=target,
                         neutral=neutral,
-
                     )
                     if self.slider_config.batch_full_slide:
                         # concat the prompt pairs
                         # this allows us to run the entire 4 part process in one shot (for slider)
                         self.prompt_chunk_size = 4
-                        concat_prompt_pair_batch = concat_prompt_pairs(prompt_pair_batch).to('cpu')
+                        concat_prompt_pair_batch = concat_prompt_pairs(
+                            prompt_pair_batch
+                        ).to("cpu")
                         prompt_pairs += [concat_prompt_pair_batch]
                     else:
                         self.prompt_chunk_size = 1
                         # do them one at a time (probably not necessary after new optimizations)
-                        prompt_pairs += [x.to('cpu') for x in prompt_pair_batch]
+                        prompt_pairs += [x.to("cpu") for x in prompt_pair_batch]
 
             # setup anchors
             anchor_pairs = []
@@ -168,7 +191,7 @@ class TrainSliderProcess(BaseSDTrainProcess):
                 # build the cache
                 for prompt in [
                     anchor.prompt,
-                    anchor.neg_prompt  # empty neutral
+                    anchor.neg_prompt,  # empty neutral
                 ]:
                     if cache[prompt] == None:
                         cache[prompt] = self.sd.encode_prompt(prompt)
@@ -184,13 +207,11 @@ class TrainSliderProcess(BaseSDTrainProcess):
                         EncodedAnchor(
                             prompt=cache[anchor.prompt],
                             neg_prompt=cache[anchor.neg_prompt],
-                            multiplier=anchor.multiplier * anchor_scalar
+                            multiplier=anchor.multiplier * anchor_scalar,
                         )
                     ]
 
-                anchor_pairs += [
-                    concat_anchors(anchor_batch).to('cpu')
-                ]
+                anchor_pairs += [concat_anchors(anchor_batch).to("cpu")]
             if len(anchor_pairs) > 0:
                 self.anchor_pairs = anchor_pairs
 
@@ -213,38 +234,43 @@ class TrainSliderProcess(BaseSDTrainProcess):
         # end hook_before_train_loop
 
     def before_dataset_load(self):
-        if self.slider_config.use_adapter == 'depth':
-            print(f"Loading T2I Adapter for depth")
+        if self.slider_config.use_adapter == "depth":
+            print("Loading T2I Adapter for depth")
             # called before LoRA network is loaded but after model is loaded
             # attach the adapter here so it is there before we load the network
-            adapter_path = 'TencentARC/t2iadapter_depth_sd15v2'
+            adapter_path = "TencentARC/t2iadapter_depth_sd15v2"
             if self.model_config.is_xl:
-                adapter_path = 'TencentARC/t2i-adapter-depth-midas-sdxl-1.0'
+                adapter_path = "TencentARC/t2i-adapter-depth-midas-sdxl-1.0"
 
             print(f"Loading T2I Adapter from {adapter_path}")
 
             # dont name this adapter since we are not training it
             self.t2i_adapter = T2IAdapter.from_pretrained(
-                adapter_path, torch_dtype=get_torch_dtype(self.train_config.dtype), varient="fp16"
+                adapter_path,
+                torch_dtype=get_torch_dtype(self.train_config.dtype),
+                varient="fp16",
             ).to(self.device_torch)
             self.t2i_adapter.eval()
             self.t2i_adapter.requires_grad_(False)
             flush()
 
     @torch.no_grad()
-    def get_adapter_images(self, batch: Union[None, 'DataLoaderBatchDTO']):
-
-        img_ext_list = ['.jpg', '.jpeg', '.png', '.webp']
+    def get_adapter_images(self, batch: Union[None, "DataLoaderBatchDTO"]):
+        img_ext_list = [".jpg", ".jpeg", ".png", ".webp"]
         adapter_folder_path = self.slider_config.adapter_img_dir
         adapter_images = []
         # loop through images
         for file_item in batch.file_items:
             img_path = file_item.path
-            file_name_no_ext = os.path.basename(img_path).split('.')[0]
+            file_name_no_ext = os.path.basename(img_path).split(".")[0]
             # find the image
             for ext in img_ext_list:
-                if os.path.exists(os.path.join(adapter_folder_path, file_name_no_ext + ext)):
-                    adapter_images.append(os.path.join(adapter_folder_path, file_name_no_ext + ext))
+                if os.path.exists(
+                    os.path.join(adapter_folder_path, file_name_no_ext + ext)
+                ):
+                    adapter_images.append(
+                        os.path.join(adapter_folder_path, file_name_no_ext + ext)
+                    )
                     break
         width, height = batch.file_items[0].crop_width, batch.file_items[0].crop_height
         adapter_tensors = []
@@ -274,7 +300,7 @@ class TrainSliderProcess(BaseSDTrainProcess):
         )
         return adapter_tensors
 
-    def hook_train_loop(self, batch: Union['DataLoaderBatchDTO', None]):
+    def hook_train_loop(self, batch: Union["DataLoaderBatchDTO", None]):
         if isinstance(batch, list):
             batch = batch[0]
         # set to eval mode
@@ -307,13 +333,15 @@ class TrainSliderProcess(BaseSDTrainProcess):
 
         def get_noise_pred(neg, pos, gs, cts, dn):
             down_kwargs = copy.deepcopy(pred_kwargs)
-            if 'down_block_additional_residuals' in down_kwargs:
-                dbr_batch_size = down_kwargs['down_block_additional_residuals'][0].shape[0]
+            if "down_block_additional_residuals" in down_kwargs:
+                dbr_batch_size = down_kwargs["down_block_additional_residuals"][
+                    0
+                ].shape[0]
                 if dbr_batch_size != dn.shape[0]:
                     amount_to_add = int(dn.shape[0] * 2 / dbr_batch_size)
-                    down_kwargs['down_block_additional_residuals'] = [
-                        torch.cat([sample.clone()] * amount_to_add) for sample in
-                        down_kwargs['down_block_additional_residuals']
+                    down_kwargs["down_block_additional_residuals"] = [
+                        torch.cat([sample.clone()] * amount_to_add)
+                        for sample in down_kwargs["down_block_additional_residuals"]
                     ]
             return self.sd.predict_noise(
                 latents=dn,
@@ -324,7 +352,7 @@ class TrainSliderProcess(BaseSDTrainProcess):
                 ),
                 timestep=cts,
                 guidance_scale=gs,
-                **down_kwargs
+                **down_kwargs,
             )
 
         with torch.no_grad():
@@ -332,12 +360,17 @@ class TrainSliderProcess(BaseSDTrainProcess):
             self.sd.unet.eval()
 
             # for a complete slider, the batch size is 4 to begin with now
-            true_batch_size = prompt_pair.target_class.text_embeds.shape[0] * self.train_config.batch_size
+            true_batch_size = (
+                prompt_pair.target_class.text_embeds.shape[0]
+                * self.train_config.batch_size
+            )
             from_batch = False
             if batch is not None:
                 # traing from a batch of images, not generating ourselves
                 from_batch = True
-                noisy_latents, noise, timesteps, conditioned_prompts, imgs = self.process_general_training_batch(batch)
+                noisy_latents, noise, timesteps, conditioned_prompts, imgs = (
+                    self.process_general_training_batch(batch)
+                )
                 if self.slider_config.adapter_img_dir is not None:
                     adapter_images = self.get_adapter_images(batch)
                     adapter_strength_min = 0.9
@@ -353,41 +386,49 @@ class TrainSliderProcess(BaseSDTrainProcess):
                             0.0,
                             1.0,
                             adapter_strength_min,
-                            adapter_strength_max
+                            adapter_strength_max,
                         )
-                        return sample.to(self.device_torch, dtype=dtype).detach() * adapter_conditioning_scale
+                        return (
+                            sample.to(self.device_torch, dtype=dtype).detach()
+                            * adapter_conditioning_scale
+                        )
 
                     down_block_additional_residuals = self.t2i_adapter(adapter_images)
                     down_block_additional_residuals = [
-                        rand_strength(sample) for sample in down_block_additional_residuals
+                        rand_strength(sample)
+                        for sample in down_block_additional_residuals
                     ]
-                    pred_kwargs['down_block_additional_residuals'] = down_block_additional_residuals
+                    pred_kwargs["down_block_additional_residuals"] = (
+                        down_block_additional_residuals
+                    )
 
                 # denoised_latents = torch.cat([noisy_latents] * self.prompt_chunk_size, dim=0)
                 denoised_latents = noisy_latents
                 current_timestep = timesteps
             else:
-                if self.train_config.noise_scheduler == 'flowmatch':
-                    linear_timesteps = any([
-                        self.train_config.linear_timesteps,
-                        self.train_config.linear_timesteps2,
-                        self.train_config.timestep_type == 'linear',
-                    ])
-                    
-                    timestep_type = 'linear' if linear_timesteps else None
+                if self.train_config.noise_scheduler == "flowmatch":
+                    linear_timesteps = any(
+                        [
+                            self.train_config.linear_timesteps,
+                            self.train_config.linear_timesteps2,
+                            self.train_config.timestep_type == "linear",
+                        ]
+                    )
+
+                    timestep_type = "linear" if linear_timesteps else None
                     if timestep_type is None:
                         timestep_type = self.train_config.timestep_type
-                    
+
                     # make fake latents
-                    l = torch.randn(
-                        true_batch_size, 16, height, width
-                    ).to(self.device_torch, dtype=dtype)
-                    
+                    l = torch.randn(true_batch_size, 16, height, width).to(
+                        self.device_torch, dtype=dtype
+                    )
+
                     self.sd.noise_scheduler.set_train_timesteps(
                         self.train_config.max_denoising_steps,
                         device=self.device_torch,
                         timestep_type=timestep_type,
-                        latents=l
+                        latents=l,
                     )
                 else:
                     self.sd.noise_scheduler.set_timesteps(
@@ -415,21 +456,25 @@ class TrainSliderProcess(BaseSDTrainProcess):
                 self.sd.unet.eval()
                 # pass the multiplier list to the network
                 # double up since we are doing cfg
-                self.network.multiplier = prompt_pair.multiplier_list + prompt_pair.multiplier_list
+                self.network.multiplier = (
+                    prompt_pair.multiplier_list + prompt_pair.multiplier_list
+                )
                 denoised_latents = self.sd.diffuse_some_steps(
                     latents,  # pass simple noise latents
                     prompt_pair.target_class,
                     start_timesteps=0,
                     total_timesteps=timesteps_to,
                     guidance_scale=3,
-                    bypass_guidance_embedding=False
+                    bypass_guidance_embedding=False,
                 )
-                if hasattr(self.sd.noise_scheduler, 'set_train_timesteps'):
+                if hasattr(self.sd.noise_scheduler, "set_train_timesteps"):
                     noise_scheduler.set_train_timesteps(1000, device=self.device_torch)
                 else:
                     noise_scheduler.set_timesteps(1000)
 
-                current_timestep_index = int(timesteps_to * 1000 / self.train_config.max_denoising_steps)
+                current_timestep_index = int(
+                    timesteps_to * 1000 / self.train_config.max_denoising_steps
+                )
                 current_timestep = noise_scheduler.timesteps[current_timestep_index]
 
             # split the latents into out prompt pair chunks
@@ -438,19 +483,30 @@ class TrainSliderProcess(BaseSDTrainProcess):
             denoised_latent_chunks = [denoised_latents]
 
             # flush()  # 4.2GB to 3GB on 512x512
-            mask_multiplier = torch.ones((denoised_latents.shape[0], 1, 1, 1), device=self.device_torch, dtype=dtype)
+            mask_multiplier = torch.ones(
+                (denoised_latents.shape[0], 1, 1, 1),
+                device=self.device_torch,
+                dtype=dtype,
+            )
             has_mask = False
             if batch and batch.mask_tensor is not None:
-                with self.timer('get_mask_multiplier'):
+                with self.timer("get_mask_multiplier"):
                     # upsampling no supported for bfloat16
-                    mask_multiplier = batch.mask_tensor.to(self.device_torch, dtype=torch.float16).detach()
+                    mask_multiplier = batch.mask_tensor.to(
+                        self.device_torch, dtype=torch.float16
+                    ).detach()
                     # scale down to the size of the latents, mask multiplier shape(bs, 1, width, height), noisy_latents shape(bs, channels, width, height)
                     mask_multiplier = torch.nn.functional.interpolate(
-                        mask_multiplier, size=(noisy_latents.shape[2], noisy_latents.shape[3])
+                        mask_multiplier,
+                        size=(noisy_latents.shape[2], noisy_latents.shape[3]),
                     )
                     # expand to match latents
-                    mask_multiplier = mask_multiplier.expand(-1, noisy_latents.shape[1], -1, -1)
-                    mask_multiplier = mask_multiplier.to(self.device_torch, dtype=dtype).detach()
+                    mask_multiplier = mask_multiplier.expand(
+                        -1, noisy_latents.shape[1], -1, -1
+                    )
+                    mask_multiplier = mask_multiplier.to(
+                        self.device_torch, dtype=dtype
+                    ).detach()
                     has_mask = True
 
             if has_mask:
@@ -459,7 +515,7 @@ class TrainSliderProcess(BaseSDTrainProcess):
                     prompt_pair.target_class,  # positive prompt
                     1,
                     current_timestep,
-                    denoised_latents
+                    denoised_latents,
                 )
                 unmasked_target = unmasked_target.detach()
                 unmasked_target.requires_grad = False
@@ -496,18 +552,14 @@ class TrainSliderProcess(BaseSDTrainProcess):
             # )
             # unconditional_latents = unconditional_latents.detach()
             # unconditional_latents.requires_grad = False
-            
+
             # we just need positive target, negative target, and empty prompt to calculate all
             # since we are in no grad, we can easily do it in a single step
             embeddings = train_tools.concat_prompt_embeddings(
-                prompt_pair.positive_target,
-                prompt_pair.empty_prompt,
-                1
+                prompt_pair.positive_target, prompt_pair.empty_prompt, 1
             )
             embeddings = train_tools.concat_prompt_embeddings(
-                embeddings,
-                prompt_pair.negative_target,
-                1
+                embeddings, prompt_pair.negative_target, 1
             )
             all_pred = self.sd.predict_noise(
                 latents=torch.cat([denoised_latents] * 3, dim=0),
@@ -516,13 +568,14 @@ class TrainSliderProcess(BaseSDTrainProcess):
             )
             all_pred = all_pred.detach()
             all_pred.requires_grad = False
-            positive_pred, neutral_pred, unconditional_pred = torch.chunk(all_pred, 3, dim=0)
-            
+            positive_pred, neutral_pred, unconditional_pred = torch.chunk(
+                all_pred, 3, dim=0
+            )
+
             # doing them backward here as it was originally for erasing
             positive_latents = unconditional_pred
             neutral_latents = neutral_pred
             unconditional_latents = positive_pred
-            
 
             denoised_latents = denoised_latents.detach()
 
@@ -532,27 +585,41 @@ class TrainSliderProcess(BaseSDTrainProcess):
         self.optimizer.zero_grad(set_to_none=True)
 
         anchor_loss_float = None
-        
+
         with torch.no_grad():
             if self.slider_config.low_ram:
-                prompt_pair_chunks = split_prompt_pairs(prompt_pair.detach(), self.prompt_chunk_size)
-                denoised_latent_chunks = denoised_latent_chunks  # just to have it in one place
-                positive_latents_chunks = torch.chunk(positive_latents.detach(), self.prompt_chunk_size, dim=0)
-                neutral_latents_chunks = torch.chunk(neutral_latents.detach(), self.prompt_chunk_size, dim=0)
-                unconditional_latents_chunks = torch.chunk(
-                    unconditional_latents.detach(),
-                    self.prompt_chunk_size,
-                    dim=0
+                prompt_pair_chunks = split_prompt_pairs(
+                    prompt_pair.detach(), self.prompt_chunk_size
                 )
-                mask_multiplier_chunks = torch.chunk(mask_multiplier, self.prompt_chunk_size, dim=0)
+                denoised_latent_chunks = (
+                    denoised_latent_chunks  # just to have it in one place
+                )
+                positive_latents_chunks = torch.chunk(
+                    positive_latents.detach(), self.prompt_chunk_size, dim=0
+                )
+                neutral_latents_chunks = torch.chunk(
+                    neutral_latents.detach(), self.prompt_chunk_size, dim=0
+                )
+                unconditional_latents_chunks = torch.chunk(
+                    unconditional_latents.detach(), self.prompt_chunk_size, dim=0
+                )
+                mask_multiplier_chunks = torch.chunk(
+                    mask_multiplier, self.prompt_chunk_size, dim=0
+                )
                 if unmasked_target is not None:
-                    unmasked_target_chunks = torch.chunk(unmasked_target, self.prompt_chunk_size, dim=0)
+                    unmasked_target_chunks = torch.chunk(
+                        unmasked_target, self.prompt_chunk_size, dim=0
+                    )
                 else:
-                    unmasked_target_chunks = [None for _ in range(self.prompt_chunk_size)]
+                    unmasked_target_chunks = [
+                        None for _ in range(self.prompt_chunk_size)
+                    ]
             else:
                 # run through in one instance
                 prompt_pair_chunks = [prompt_pair.detach()]
-                denoised_latent_chunks = [torch.cat(denoised_latent_chunks, dim=0).detach()]
+                denoised_latent_chunks = [
+                    torch.cat(denoised_latent_chunks, dim=0).detach()
+                ]
                 positive_latents_chunks = [positive_latents.detach()]
                 neutral_latents_chunks = [neutral_latents.detach()]
                 unconditional_latents_chunks = [unconditional_latents.detach()]
@@ -565,24 +632,25 @@ class TrainSliderProcess(BaseSDTrainProcess):
         with self.network:
             assert self.network.is_active
             loss_list = []
-            for prompt_pair_chunk, \
-                    denoised_latent_chunk, \
-                    positive_latents_chunk, \
-                    neutral_latents_chunk, \
-                    unconditional_latents_chunk, \
-                    mask_multiplier_chunk, \
-                    unmasked_target_chunk \
-                    in zip(
+            for (
+                prompt_pair_chunk,
+                denoised_latent_chunk,
+                positive_latents_chunk,
+                neutral_latents_chunk,
+                unconditional_latents_chunk,
+                mask_multiplier_chunk,
+                unmasked_target_chunk,
+            ) in zip(
                 prompt_pair_chunks,
                 denoised_latent_chunks,
                 positive_latents_chunks,
                 neutral_latents_chunks,
                 unconditional_latents_chunks,
                 mask_multiplier_chunks,
-                unmasked_target_chunks
+                unmasked_target_chunks,
             ):
                 self.network.multiplier = prompt_pair_chunk.multiplier_list
-                
+
                 target_latents = self.sd.predict_noise(
                     latents=denoised_latent_chunk.detach(),
                     text_embeddings=prompt_pair_chunk.target_class,
@@ -591,7 +659,9 @@ class TrainSliderProcess(BaseSDTrainProcess):
 
                 guidance_scale = 1.0
 
-                offset = guidance_scale * (positive_latents_chunk - unconditional_latents_chunk)
+                offset = guidance_scale * (
+                    positive_latents_chunk - unconditional_latents_chunk
+                )
 
                 # make offset multiplier based on actions
                 offset_multiplier_list = []
@@ -601,7 +671,9 @@ class TrainSliderProcess(BaseSDTrainProcess):
                     elif action == ACTION_TYPES_SLIDER.ENHANCE_NEGATIVE:
                         offset_multiplier_list += [1.0]
 
-                offset_multiplier = torch.tensor(offset_multiplier_list).to(offset.device, dtype=offset.dtype)
+                offset_multiplier = torch.tensor(offset_multiplier_list).to(
+                    offset.device, dtype=offset.dtype
+                )
                 # make offset multiplier match rank of offset
                 offset_multiplier = offset_multiplier.view(offset.shape[0], 1, 1, 1)
                 offset *= offset_multiplier
@@ -612,7 +684,9 @@ class TrainSliderProcess(BaseSDTrainProcess):
                 offset_neutral = offset_neutral.detach().requires_grad_(False)
 
                 # 16.15 GB RAM for 512x512 -> 4.20GB RAM for 512x512 with new grad_checkpointing
-                loss = torch.nn.functional.mse_loss(target_latents.float(), offset_neutral.float(), reduction="none")
+                loss = torch.nn.functional.mse_loss(
+                    target_latents.float(), offset_neutral.float(), reduction="none"
+                )
 
                 # do inverted mask to preserve non masked
                 if has_mask and unmasked_target_chunk is not None:
@@ -621,7 +695,7 @@ class TrainSliderProcess(BaseSDTrainProcess):
                     mask_target_loss = torch.nn.functional.mse_loss(
                         target_latents.float(),
                         unmasked_target_chunk.float(),
-                        reduction="none"
+                        reduction="none",
                     )
                     mask_target_loss = mask_target_loss * (1.0 - mask_multiplier_chunk)
                     loss += mask_target_loss
@@ -631,25 +705,47 @@ class TrainSliderProcess(BaseSDTrainProcess):
                 if self.train_config.learnable_snr_gos:
                     if from_batch:
                         # match batch size
-                        loss = apply_snr_weight(loss, timesteps, self.sd.noise_scheduler,
-                                                self.train_config.min_snr_gamma)
+                        loss = apply_snr_weight(
+                            loss,
+                            timesteps,
+                            self.sd.noise_scheduler,
+                            self.train_config.min_snr_gamma,
+                        )
                     else:
                         # match batch size
-                        timesteps_index_list = [current_timestep_index for _ in range(target_latents.shape[0])]
+                        timesteps_index_list = [
+                            current_timestep_index
+                            for _ in range(target_latents.shape[0])
+                        ]
                         # add snr_gamma
-                        loss = apply_learnable_snr_gos(loss, timesteps_index_list, self.snr_gos)
-                if self.train_config.min_snr_gamma is not None and self.train_config.min_snr_gamma > 0.000001:
+                        loss = apply_learnable_snr_gos(
+                            loss, timesteps_index_list, self.snr_gos
+                        )
+                if (
+                    self.train_config.min_snr_gamma is not None
+                    and self.train_config.min_snr_gamma > 0.000001
+                ):
                     if from_batch:
                         # match batch size
-                        loss = apply_snr_weight(loss, timesteps, self.sd.noise_scheduler,
-                                                self.train_config.min_snr_gamma)
+                        loss = apply_snr_weight(
+                            loss,
+                            timesteps,
+                            self.sd.noise_scheduler,
+                            self.train_config.min_snr_gamma,
+                        )
                     else:
                         # match batch size
-                        timesteps_index_list = [current_timestep_index for _ in range(target_latents.shape[0])]
+                        timesteps_index_list = [
+                            current_timestep_index
+                            for _ in range(target_latents.shape[0])
+                        ]
                         # add min_snr_gamma
-                        loss = apply_snr_weight(loss, timesteps_index_list, noise_scheduler,
-                                                self.train_config.min_snr_gamma)
-
+                        loss = apply_snr_weight(
+                            loss,
+                            timesteps_index_list,
+                            noise_scheduler,
+                            self.train_config.min_snr_gamma,
+                        )
 
                 loss = loss.mean() * prompt_pair_chunk.weight
 
@@ -681,11 +777,11 @@ class TrainSliderProcess(BaseSDTrainProcess):
         self.network.multiplier = 1.0
 
         loss_dict = OrderedDict(
-            {'loss': loss_float},
+            {"loss": loss_float},
         )
         if anchor_loss_float is not None:
-            loss_dict['sl_l'] = loss_float
-            loss_dict['an_l'] = anchor_loss_float
+            loss_dict["sl_l"] = loss_float
+            loss_dict["an_l"] = anchor_loss_float
 
         return loss_dict
         # end hook_train_loop

@@ -1,4 +1,5 @@
-from typing import Union, List, Optional, Dict, Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 import torch
@@ -7,7 +8,6 @@ from diffusers.pipelines.flux.pipeline_flux import calculate_shift, retrieve_tim
 from diffusers.pipelines.flux.pipeline_output import FluxPipelineOutput
 from diffusers.utils import is_torch_xla_available
 from diffusers.utils.torch_utils import randn_tensor
-
 
 if is_torch_xla_available():
     import torch_xla.core.xla_model as xm
@@ -50,7 +50,6 @@ def prepare_latent_image_ids(batch_size, height, width, patch_size=2, max_offset
         latent_image_ids[..., 1] += offset_y
         latent_image_ids[..., 2] += offset_x
 
-
     (
         latent_image_id_height,
         latent_image_id_width,
@@ -78,8 +77,8 @@ class ChromaPipeline(FluxPipeline):
         text_encoder_2,
         tokenizer_2,
         transformer,
-        image_encoder = None,
-        feature_extractor = None,
+        image_encoder=None,
+        feature_extractor=None,
         is_radiance: bool = False,
     ):
         super().__init__(
@@ -95,7 +94,7 @@ class ChromaPipeline(FluxPipeline):
         )
         self.is_radiance = is_radiance
         self.vae_scale_factor = 8 if not is_radiance else 1
-    
+
     def prepare_latents(
         self,
         batch_size,
@@ -116,10 +115,7 @@ class ChromaPipeline(FluxPipeline):
 
         if latents is not None:
             latent_image_ids = prepare_latent_image_ids(
-                batch_size, 
-                height, 
-                width, 
-                patch_size=2 if not self.is_radiance else 16
+                batch_size, height, width, patch_size=2 if not self.is_radiance else 16
             ).to(device=device, dtype=dtype)
             # latent_image_ids = self._prepare_latent_image_ids(batch_size, height // 2, width // 2, device, dtype)
             return latents.to(device=device, dtype=dtype), latent_image_ids
@@ -131,48 +127,44 @@ class ChromaPipeline(FluxPipeline):
             )
 
         latents = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
-        
+
         if not self.is_radiance:
-            latents = self._pack_latents(latents, batch_size, num_channels_latents, height, width)
+            latents = self._pack_latents(
+                latents, batch_size, num_channels_latents, height, width
+            )
 
         # latent_image_ids = self._prepare_latent_image_ids(batch_size, height // 2, width // 2, device, dtype)
         latent_image_ids = prepare_latent_image_ids(
-            batch_size, 
-            height, 
-            width, 
-            patch_size=2 if not self.is_radiance else 16
+            batch_size, height, width, patch_size=2 if not self.is_radiance else 16
         ).to(device=device, dtype=dtype)
 
         return latents, latent_image_ids
-    
+
     def __call__(
         self,
-        prompt: Union[str, List[str]] = None,
-        prompt_2: Optional[Union[str, List[str]]] = None,
-        negative_prompt: Optional[Union[str, List[str]]] = None,
-        negative_prompt_2: Optional[Union[str, List[str]]] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
+        prompt: str | list[str] = None,
+        prompt_2: str | list[str] | None = None,
+        negative_prompt: str | list[str] | None = None,
+        negative_prompt_2: str | list[str] | None = None,
+        height: int | None = None,
+        width: int | None = None,
         num_inference_steps: int = 28,
-        timesteps: List[int] = None,
+        timesteps: list[int] = None,
         guidance_scale: float = 7.0,
-        num_images_per_prompt: Optional[int] = 1,
-        generator: Optional[Union[torch.Generator,
-                                  List[torch.Generator]]] = None,
-        latents: Optional[torch.FloatTensor] = None,
-        prompt_embeds: Optional[torch.FloatTensor] = None,
-        prompt_attn_mask: Optional[torch.FloatTensor] = None,
-        negative_prompt_embeds: Optional[torch.FloatTensor] = None,
-        negative_prompt_attn_mask: Optional[torch.FloatTensor] = None,
-        output_type: Optional[str] = "pil",
+        num_images_per_prompt: int | None = 1,
+        generator: torch.Generator | list[torch.Generator] | None = None,
+        latents: torch.FloatTensor | None = None,
+        prompt_embeds: torch.FloatTensor | None = None,
+        prompt_attn_mask: torch.FloatTensor | None = None,
+        negative_prompt_embeds: torch.FloatTensor | None = None,
+        negative_prompt_attn_mask: torch.FloatTensor | None = None,
+        output_type: str | None = "pil",
         return_dict: bool = True,
-        joint_attention_kwargs: Optional[Dict[str, Any]] = None,
-        callback_on_step_end: Optional[Callable[[
-            int, int, Dict], None]] = None,
-        callback_on_step_end_tensor_inputs: List[str] = ["latents"],
+        joint_attention_kwargs: dict[str, Any] | None = None,
+        callback_on_step_end: Callable[[int, int, dict], None] | None = None,
+        callback_on_step_end_tensor_inputs: list[str] = ["latents"],
         max_sequence_length: int = 512,
     ):
-
         height = height or self.default_sample_size * self.vae_scale_factor
         width = width or self.default_sample_size * self.vae_scale_factor
 
@@ -192,9 +184,13 @@ class ChromaPipeline(FluxPipeline):
         if isinstance(device, str):
             device = torch.device(device)
 
-        text_ids = torch.zeros(batch_size, prompt_embeds.shape[1], 3).to(device=device, dtype=torch.bfloat16)
+        text_ids = torch.zeros(batch_size, prompt_embeds.shape[1], 3).to(
+            device=device, dtype=torch.bfloat16
+        )
         if guidance_scale > 1.00001:
-            negative_text_ids = torch.zeros(batch_size, negative_prompt_embeds.shape[1], 3).to(device=device, dtype=torch.bfloat16)
+            negative_text_ids = torch.zeros(
+                batch_size, negative_prompt_embeds.shape[1], 3
+            ).to(device=device, dtype=torch.bfloat16)
 
         # 4. Prepare latent variables
         num_channels_latents = 64 // 4
@@ -210,7 +206,7 @@ class ChromaPipeline(FluxPipeline):
             generator,
             latents,
         )
-        
+
         # extend img ids to match batch size
         # latent_image_ids = latent_image_ids.unsqueeze(0)
         # latent_image_ids = torch.cat([latent_image_ids] * batch_size, dim=0)
@@ -234,9 +230,10 @@ class ChromaPipeline(FluxPipeline):
             mu=mu,
         )
         num_warmup_steps = max(
-            len(timesteps) - num_inference_steps * self.scheduler.order, 0)
+            len(timesteps) - num_inference_steps * self.scheduler.order, 0
+        )
         self._num_timesteps = len(timesteps)
-        
+
         guidance = torch.full([1], 0, device=device, dtype=torch.float32)
         guidance = guidance.expand(latents.shape[0])
 
@@ -256,9 +253,9 @@ class ChromaPipeline(FluxPipeline):
                     img_ids=latent_image_ids,
                     txt=prompt_embeds,
                     txt_ids=text_ids,
-                    txt_mask=prompt_attn_mask, # todo add this
+                    txt_mask=prompt_attn_mask,  # todo add this
                     timesteps=timestep / 1000,
-                    guidance=guidance
+                    guidance=guidance,
                 )
 
                 if guidance_scale > 1.00001:
@@ -267,13 +264,14 @@ class ChromaPipeline(FluxPipeline):
                         img_ids=latent_image_ids,
                         txt=negative_prompt_embeds,
                         txt_ids=negative_text_ids,
-                        txt_mask=negative_prompt_attn_mask, # todo add this
+                        txt_mask=negative_prompt_attn_mask,  # todo add this
                         timesteps=timestep / 1000,
-                        guidance=guidance
+                        guidance=guidance,
                     )
 
-                    noise_pred = noise_pred_uncond + self.guidance_scale * \
-                        (noise_pred_text - noise_pred_uncond)
+                    noise_pred = noise_pred_uncond + self.guidance_scale * (
+                        noise_pred_text - noise_pred_uncond
+                    )
 
                 else:
                     noise_pred = noise_pred_text
@@ -281,7 +279,8 @@ class ChromaPipeline(FluxPipeline):
                 # compute the previous noisy sample x_t -> x_t-1
                 latents_dtype = latents.dtype
                 latents = self.scheduler.step(
-                    noise_pred, t, latents, return_dict=False)[0]
+                    noise_pred, t, latents, return_dict=False
+                )[0]
 
                 if latents.dtype != latents_dtype:
                     if torch.backends.mps.is_available():
@@ -292,15 +291,15 @@ class ChromaPipeline(FluxPipeline):
                     callback_kwargs = {}
                     for k in callback_on_step_end_tensor_inputs:
                         callback_kwargs[k] = locals()[k]
-                    callback_outputs = callback_on_step_end(
-                        self, i, t, callback_kwargs)
+                    callback_outputs = callback_on_step_end(self, i, t, callback_kwargs)
 
                     latents = callback_outputs.pop("latents", latents)
-                    prompt_embeds = callback_outputs.pop(
-                        "prompt_embeds", prompt_embeds)
+                    prompt_embeds = callback_outputs.pop("prompt_embeds", prompt_embeds)
 
                 # call the callback, if provided
-                if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
+                if i == len(timesteps) - 1 or (
+                    (i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0
+                ):
                     progress_bar.update()
 
                 if XLA_AVAILABLE:
@@ -312,12 +311,13 @@ class ChromaPipeline(FluxPipeline):
         else:
             if not self.is_radiance:
                 latents = self._unpack_latents(
-                    latents, height, width, self.vae_scale_factor)
-            latents = (latents / self.vae.config.scaling_factor) + \
-                self.vae.config.shift_factor
+                    latents, height, width, self.vae_scale_factor
+                )
+            latents = (
+                latents / self.vae.config.scaling_factor
+            ) + self.vae.config.shift_factor
             image = self.vae.decode(latents, return_dict=False)[0]
-            image = self.image_processor.postprocess(
-                image, output_type=output_type)
+            image = self.image_processor.postprocess(image, output_type=output_type)
 
         # Offload all models
         self.maybe_free_model_hooks()

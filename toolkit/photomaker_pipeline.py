@@ -1,42 +1,38 @@
-from typing import Any, Callable, Dict, List, Optional, Union, Tuple
-from collections import OrderedDict
-import os
+from collections.abc import Callable
+from typing import Any, Union
+
 import PIL
-import numpy as np
-
 import torch
-from torchvision import transforms as T
-
-from safetensors import safe_open
-from huggingface_hub.utils import validate_hf_hub_args
-from transformers import CLIPImageProcessor, CLIPTokenizer
 from diffusers import StableDiffusionXLPipeline
-from diffusers.pipelines.stable_diffusion_xl.pipeline_output import StableDiffusionXLPipelineOutput
+from diffusers.pipelines.stable_diffusion_xl.pipeline_output import (
+    StableDiffusionXLPipelineOutput,
+)
 from diffusers.utils import (
     _get_model_file,
-    is_transformers_available,
-    logging,
 )
+from huggingface_hub.utils import validate_hf_hub_args
+from safetensors import safe_open
+from transformers import CLIPImageProcessor
 
 from .photomaker import PhotoMakerIDEncoder
 
 PipelineImageInput = Union[
     PIL.Image.Image,
     torch.FloatTensor,
-    List[PIL.Image.Image],
-    List[torch.FloatTensor],
+    list[PIL.Image.Image],
+    list[torch.FloatTensor],
 ]
 
 
 class PhotoMakerStableDiffusionXLPipeline(StableDiffusionXLPipeline):
     @validate_hf_hub_args
     def load_photomaker_adapter(
-            self,
-            pretrained_model_name_or_path_or_dict: Union[str, Dict[str, torch.Tensor]],
-            weight_name: str,
-            subfolder: str = '',
-            trigger_word: str = 'img',
-            **kwargs,
+        self,
+        pretrained_model_name_or_path_or_dict: str | dict[str, torch.Tensor],
+        weight_name: str,
+        subfolder: str = "",
+        trigger_word: str = "img",
+        **kwargs,
     ):
         """
         Parameters:
@@ -95,9 +91,13 @@ class PhotoMakerStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 with safe_open(model_file, framework="pt", device="cpu") as f:
                     for key in f.keys():
                         if key.startswith("id_encoder."):
-                            state_dict["id_encoder"][key.replace("id_encoder.", "")] = f.get_tensor(key)
+                            state_dict["id_encoder"][key.replace("id_encoder.", "")] = (
+                                f.get_tensor(key)
+                            )
                         elif key.startswith("lora_weights."):
-                            state_dict["lora_weights"][key.replace("lora_weights.", "")] = f.get_tensor(key)
+                            state_dict["lora_weights"][
+                                key.replace("lora_weights.", "")
+                            ] = f.get_tensor(key)
             else:
                 state_dict = torch.load(model_file, map_location="cpu")
         else:
@@ -105,11 +105,15 @@ class PhotoMakerStableDiffusionXLPipeline(StableDiffusionXLPipeline):
 
         keys = list(state_dict.keys())
         if keys != ["id_encoder", "lora_weights"]:
-            raise ValueError("Required keys are (`id_encoder` and `lora_weights`) missing from the state dict.")
+            raise ValueError(
+                "Required keys are (`id_encoder` and `lora_weights`) missing from the state dict."
+            )
 
         self.trigger_word = trigger_word
         # load finetuned CLIP image encoder and fuse module here if it has not been registered to the pipeline yet
-        print(f"Loading PhotoMaker components [1] id_encoder from [{pretrained_model_name_or_path_or_dict}]...")
+        print(
+            f"Loading PhotoMaker components [1] id_encoder from [{pretrained_model_name_or_path_or_dict}]..."
+        )
         id_encoder = PhotoMakerIDEncoder()
         id_encoder.load_state_dict(state_dict["id_encoder"], strict=True)
         id_encoder = id_encoder.to(self.device, dtype=self.unet.dtype)
@@ -117,7 +121,9 @@ class PhotoMakerStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         self.id_image_processor = CLIPImageProcessor()
 
         # load lora into models
-        print(f"Loading PhotoMaker components [2] lora_weights from [{pretrained_model_name_or_path_or_dict}]")
+        print(
+            f"Loading PhotoMaker components [2] lora_weights from [{pretrained_model_name_or_path_or_dict}]"
+        )
         self.load_lora_weights(state_dict["lora_weights"], adapter_name="photomaker")
 
         # Add trigger word token
@@ -127,14 +133,14 @@ class PhotoMakerStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         self.tokenizer_2.add_tokens([self.trigger_word], special_tokens=True)
 
     def encode_prompt_with_trigger_word(
-            self,
-            prompt: str,
-            prompt_2: Optional[str] = None,
-            num_id_images: int = 1,
-            device: Optional[torch.device] = None,
-            prompt_embeds: Optional[torch.FloatTensor] = None,
-            pooled_prompt_embeds: Optional[torch.FloatTensor] = None,
-            class_tokens_mask: Optional[torch.LongTensor] = None,
+        self,
+        prompt: str,
+        prompt_2: str | None = None,
+        num_id_images: int = 1,
+        device: torch.device | None = None,
+        prompt_embeds: torch.FloatTensor | None = None,
+        pooled_prompt_embeds: torch.FloatTensor | None = None,
+        class_tokens_mask: torch.LongTensor | None = None,
     ):
         device = device or self._execution_device
 
@@ -149,16 +155,24 @@ class PhotoMakerStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         image_token_id = self.tokenizer_2.convert_tokens_to_ids(self.trigger_word)
 
         # Define tokenizers and text encoders
-        tokenizers = [self.tokenizer, self.tokenizer_2] if self.tokenizer is not None else [self.tokenizer_2]
+        tokenizers = (
+            [self.tokenizer, self.tokenizer_2]
+            if self.tokenizer is not None
+            else [self.tokenizer_2]
+        )
         text_encoders = (
-            [self.text_encoder, self.text_encoder_2] if self.text_encoder is not None else [self.text_encoder_2]
+            [self.text_encoder, self.text_encoder_2]
+            if self.text_encoder is not None
+            else [self.text_encoder_2]
         )
 
         if prompt_embeds is None:
             prompt_2 = prompt_2 or prompt
             prompt_embeds_list = []
             prompts = [prompt, prompt_2]
-            for prompt, tokenizer, text_encoder in zip(prompts, tokenizers, text_encoders):
+            for prompt, tokenizer, text_encoder in zip(
+                prompts, tokenizers, text_encoders
+            ):
                 input_ids = tokenizer.encode(prompt)  # TODO: batch encode
                 clean_index = 0
                 clean_input_ids = []
@@ -180,8 +194,11 @@ class PhotoMakerStableDiffusionXLPipeline(StableDiffusionXLPipeline):
 
                 # Expand the class word token and corresponding mask
                 class_token = clean_input_ids[class_token_index]
-                clean_input_ids = clean_input_ids[:class_token_index] + [class_token] * num_id_images + \
-                                  clean_input_ids[class_token_index + 1:]
+                clean_input_ids = (
+                    clean_input_ids[:class_token_index]
+                    + [class_token] * num_id_images
+                    + clean_input_ids[class_token_index + 1 :]
+                )
 
                 # Truncation or padding
                 max_len = tokenizer.model_max_length
@@ -189,14 +206,22 @@ class PhotoMakerStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                     clean_input_ids = clean_input_ids[:max_len]
                 else:
                     clean_input_ids = clean_input_ids + [tokenizer.pad_token_id] * (
-                            max_len - len(clean_input_ids)
+                        max_len - len(clean_input_ids)
                     )
 
-                class_tokens_mask = [True if class_token_index <= i < class_token_index + num_id_images else False \
-                                     for i in range(len(clean_input_ids))]
+                class_tokens_mask = [
+                    True
+                    if class_token_index <= i < class_token_index + num_id_images
+                    else False
+                    for i in range(len(clean_input_ids))
+                ]
 
-                clean_input_ids = torch.tensor(clean_input_ids, dtype=torch.long).unsqueeze(0)
-                class_tokens_mask = torch.tensor(class_tokens_mask, dtype=torch.bool).unsqueeze(0)
+                clean_input_ids = torch.tensor(
+                    clean_input_ids, dtype=torch.long
+                ).unsqueeze(0)
+                class_tokens_mask = torch.tensor(
+                    class_tokens_mask, dtype=torch.bool
+                ).unsqueeze(0)
 
                 prompt_embeds = text_encoder(
                     clean_input_ids.to(device),
@@ -211,45 +236,47 @@ class PhotoMakerStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             prompt_embeds = torch.concat(prompt_embeds_list, dim=-1)
 
         prompt_embeds = prompt_embeds.to(dtype=self.text_encoder_2.dtype, device=device)
-        class_tokens_mask = class_tokens_mask.to(device=device)  # TODO: ignoring two-prompt case
+        class_tokens_mask = class_tokens_mask.to(
+            device=device
+        )  # TODO: ignoring two-prompt case
 
         return prompt_embeds, pooled_prompt_embeds, class_tokens_mask
 
     @torch.no_grad()
     def __call__(
-            self,
-            prompt: Union[str, List[str]] = None,
-            prompt_2: Optional[Union[str, List[str]]] = None,
-            height: Optional[int] = None,
-            width: Optional[int] = None,
-            num_inference_steps: int = 50,
-            denoising_end: Optional[float] = None,
-            guidance_scale: float = 5.0,
-            negative_prompt: Optional[Union[str, List[str]]] = None,
-            negative_prompt_2: Optional[Union[str, List[str]]] = None,
-            num_images_per_prompt: Optional[int] = 1,
-            eta: float = 0.0,
-            generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
-            latents: Optional[torch.FloatTensor] = None,
-            prompt_embeds: Optional[torch.FloatTensor] = None,
-            negative_prompt_embeds: Optional[torch.FloatTensor] = None,
-            pooled_prompt_embeds: Optional[torch.FloatTensor] = None,
-            negative_pooled_prompt_embeds: Optional[torch.FloatTensor] = None,
-            output_type: Optional[str] = "pil",
-            return_dict: bool = True,
-            cross_attention_kwargs: Optional[Dict[str, Any]] = None,
-            guidance_rescale: float = 0.0,
-            original_size: Optional[Tuple[int, int]] = None,
-            crops_coords_top_left: Tuple[int, int] = (0, 0),
-            target_size: Optional[Tuple[int, int]] = None,
-            callback: Optional[Callable[[int, int, torch.FloatTensor], None]] = None,
-            callback_steps: int = 1,
-            # Added parameters (for PhotoMaker)
-            input_id_images: PipelineImageInput = None,
-            start_merge_step: int = 0,  # TODO: change to `style_strength_ratio` in the future
-            class_tokens_mask: Optional[torch.LongTensor] = None,
-            prompt_embeds_text_only: Optional[torch.FloatTensor] = None,
-            pooled_prompt_embeds_text_only: Optional[torch.FloatTensor] = None,
+        self,
+        prompt: str | list[str] = None,
+        prompt_2: str | list[str] | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        num_inference_steps: int = 50,
+        denoising_end: float | None = None,
+        guidance_scale: float = 5.0,
+        negative_prompt: str | list[str] | None = None,
+        negative_prompt_2: str | list[str] | None = None,
+        num_images_per_prompt: int | None = 1,
+        eta: float = 0.0,
+        generator: torch.Generator | list[torch.Generator] | None = None,
+        latents: torch.FloatTensor | None = None,
+        prompt_embeds: torch.FloatTensor | None = None,
+        negative_prompt_embeds: torch.FloatTensor | None = None,
+        pooled_prompt_embeds: torch.FloatTensor | None = None,
+        negative_pooled_prompt_embeds: torch.FloatTensor | None = None,
+        output_type: str | None = "pil",
+        return_dict: bool = True,
+        cross_attention_kwargs: dict[str, Any] | None = None,
+        guidance_rescale: float = 0.0,
+        original_size: tuple[int, int] | None = None,
+        crops_coords_top_left: tuple[int, int] = (0, 0),
+        target_size: tuple[int, int] | None = None,
+        callback: Callable[[int, int, torch.FloatTensor], None] | None = None,
+        callback_steps: int = 1,
+        # Added parameters (for PhotoMaker)
+        input_id_images: PipelineImageInput = None,
+        start_merge_step: int = 0,  # TODO: change to `style_strength_ratio` in the future
+        class_tokens_mask: torch.LongTensor | None = None,
+        prompt_embeds_text_only: torch.FloatTensor | None = None,
+        pooled_prompt_embeds_text_only: torch.FloatTensor | None = None,
     ):
         r"""
         Function invoked when calling the pipeline for generation.
@@ -342,7 +369,9 @@ class PhotoMakerStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         )
 
         # 4. Encode input prompt without the trigger word for delayed conditioning
-        prompt_text_only = prompt.replace(" " + self.trigger_word, "")  # sensitive to white space
+        prompt_text_only = prompt.replace(
+            " " + self.trigger_word, ""
+        )  # sensitive to white space
         (
             prompt_embeds_text_only,
             negative_prompt_embeds,
@@ -365,20 +394,28 @@ class PhotoMakerStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         # 5. Prepare the input ID images
         dtype = next(self.id_encoder.parameters()).dtype
         if not isinstance(input_id_images[0], torch.Tensor):
-            id_pixel_values = self.id_image_processor(input_id_images, return_tensors="pt").pixel_values
+            id_pixel_values = self.id_image_processor(
+                input_id_images, return_tensors="pt"
+            ).pixel_values
 
-        id_pixel_values = id_pixel_values.unsqueeze(0).to(device=device, dtype=dtype)  # TODO: multiple prompts
+        id_pixel_values = id_pixel_values.unsqueeze(0).to(
+            device=device, dtype=dtype
+        )  # TODO: multiple prompts
 
         # 6. Get the update text embedding with the stacked ID embedding
-        prompt_embeds = self.id_encoder(id_pixel_values, prompt_embeds, class_tokens_mask)
+        prompt_embeds = self.id_encoder(
+            id_pixel_values, prompt_embeds, class_tokens_mask
+        )
 
         bs_embed, seq_len, _ = prompt_embeds.shape
         # duplicate text embeddings for each generation per prompt, using mps friendly method
         prompt_embeds = prompt_embeds.repeat(1, num_images_per_prompt, 1)
-        prompt_embeds = prompt_embeds.view(bs_embed * num_images_per_prompt, seq_len, -1)
-        pooled_prompt_embeds = pooled_prompt_embeds.repeat(1, num_images_per_prompt).view(
-            bs_embed * num_images_per_prompt, -1
+        prompt_embeds = prompt_embeds.view(
+            bs_embed * num_images_per_prompt, seq_len, -1
         )
+        pooled_prompt_embeds = pooled_prompt_embeds.repeat(
+            1, num_images_per_prompt
+        ).view(bs_embed * num_images_per_prompt, -1)
 
         # 7. Prepare timesteps
         self.scheduler.set_timesteps(num_inference_steps, device=device)
@@ -414,7 +451,9 @@ class PhotoMakerStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             text_encoder_projection_dim=text_encoder_projection_dim,
         )
         add_time_ids = torch.cat([add_time_ids, add_time_ids], dim=0)
-        add_time_ids = add_time_ids.to(device).repeat(batch_size * num_images_per_prompt, 1)
+        add_time_ids = add_time_ids.to(device).repeat(
+            batch_size * num_images_per_prompt, 1
+        )
 
         # 11. Denoising loop
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
@@ -423,20 +462,30 @@ class PhotoMakerStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 latent_model_input = (
                     torch.cat([latents] * 2) if do_classifier_free_guidance else latents
                 )
-                latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+                latent_model_input = self.scheduler.scale_model_input(
+                    latent_model_input, t
+                )
 
                 if i <= start_merge_step:
                     current_prompt_embeds = torch.cat(
                         [negative_prompt_embeds, prompt_embeds_text_only], dim=0
                     )
-                    add_text_embeds = torch.cat([negative_pooled_prompt_embeds, pooled_prompt_embeds_text_only], dim=0)
+                    add_text_embeds = torch.cat(
+                        [negative_pooled_prompt_embeds, pooled_prompt_embeds_text_only],
+                        dim=0,
+                    )
                 else:
                     current_prompt_embeds = torch.cat(
                         [negative_prompt_embeds, prompt_embeds], dim=0
                     )
-                    add_text_embeds = torch.cat([negative_pooled_prompt_embeds, pooled_prompt_embeds], dim=0)
+                    add_text_embeds = torch.cat(
+                        [negative_pooled_prompt_embeds, pooled_prompt_embeds], dim=0
+                    )
                 # predict the noise residual
-                added_cond_kwargs = {"text_embeds": add_text_embeds, "time_ids": add_time_ids}
+                added_cond_kwargs = {
+                    "text_embeds": add_text_embeds,
+                    "time_ids": add_time_ids,
+                }
                 noise_pred = self.unet(
                     latent_model_input,
                     t,
@@ -449,17 +498,25 @@ class PhotoMakerStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 # perform guidance
                 if do_classifier_free_guidance:
                     noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
-                    noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
+                    noise_pred = noise_pred_uncond + guidance_scale * (
+                        noise_pred_text - noise_pred_uncond
+                    )
 
                 if do_classifier_free_guidance and guidance_rescale > 0.0:
                     # Based on 3.4. in https://arxiv.org/pdf/2305.08891.pdf
-                    noise_pred = rescale_noise_cfg(noise_pred, noise_pred_text, guidance_rescale=guidance_rescale)
+                    noise_pred = rescale_noise_cfg(
+                        noise_pred, noise_pred_text, guidance_rescale=guidance_rescale
+                    )
 
                 # compute the previous noisy sample x_t -> x_t-1
-                latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
+                latents = self.scheduler.step(
+                    noise_pred, t, latents, **extra_step_kwargs, return_dict=False
+                )[0]
 
                 # call the callback, if provided
-                if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
+                if i == len(timesteps) - 1 or (
+                    (i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0
+                ):
                     progress_bar.update()
                     if callback is not None and i % callback_steps == 0:
                         callback(i, t, latents)
@@ -467,10 +524,14 @@ class PhotoMakerStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         # make sure the VAE is in float32 mode, as it overflows in float16
         if self.vae.dtype == torch.float16 and self.vae.config.force_upcast:
             self.upcast_vae()
-            latents = latents.to(next(iter(self.vae.post_quant_conv.parameters())).dtype)
+            latents = latents.to(
+                next(iter(self.vae.post_quant_conv.parameters())).dtype
+            )
 
         if not output_type == "latent":
-            image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False)[0]
+            image = self.vae.decode(
+                latents / self.vae.config.scaling_factor, return_dict=False
+            )[0]
         else:
             image = latents
             return StableDiffusionXLPipelineOutput(images=image)

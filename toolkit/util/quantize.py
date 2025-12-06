@@ -1,21 +1,22 @@
+import os
 from fnmatch import fnmatch
-from typing import List, Optional, Union, TYPE_CHECKING
-import torch
+from typing import TYPE_CHECKING
 
+import torch
+from huggingface_hub import hf_hub_download
+from optimum.quanto import freeze
 from optimum.quanto.quantize import _quantize_submodule
 from optimum.quanto.tensor import Optimizer, qtype, qtypes
+from safetensors.torch import load_file
+from toolkit.print import print_acc
 from torchao.quantization.quant_api import (
-    quantize_ as torchao_quantize_,
     Float8WeightOnlyConfig,
     UIntXWeightOnlyConfig,
 )
-from optimum.quanto import freeze
+from torchao.quantization.quant_api import (
+    quantize_ as torchao_quantize_,
+)
 from tqdm import tqdm
-from safetensors.torch import load_file
-from huggingface_hub import hf_hub_download
-
-from toolkit.print import print_acc
-import os
 
 if TYPE_CHECKING:
     from toolkit.models.base_model import BaseModel
@@ -51,7 +52,7 @@ class aotype:
         self.config = torchao_qtypes[name]
 
 
-def get_qtype(qtype: Union[str, qtype]) -> qtype:
+def get_qtype(qtype: str | qtype) -> qtype:
     if qtype in torchao_qtypes:
         return aotype(qtype)
     if isinstance(qtype, str):
@@ -62,11 +63,11 @@ def get_qtype(qtype: Union[str, qtype]) -> qtype:
 
 def quantize(
     model: torch.nn.Module,
-    weights: Optional[Union[str, qtype, aotype]] = None,
-    activations: Optional[Union[str, qtype]] = None,
-    optimizer: Optional[Optimizer] = None,
-    include: Optional[Union[str, List[str]]] = None,
-    exclude: Optional[Union[str, List[str]]] = None,
+    weights: str | qtype | aotype | None = None,
+    activations: str | qtype | None = None,
+    optimizer: Optimizer | None = None,
+    include: str | list[str] | None = None,
+    exclude: str | list[str] | None = None,
 ):
     """Quantize the specified model submodules
 
@@ -167,10 +168,12 @@ def quantize_model(
 
         # build the lora config based on the lora weights
         lora_state_dict = load_file(load_lora_path)
-        
+
         if hasattr(base_model, "convert_lora_weights_before_load"):
-            lora_state_dict = base_model.convert_lora_weights_before_load(lora_state_dict)
-        
+            lora_state_dict = base_model.convert_lora_weights_before_load(
+                lora_state_dict
+            )
+
         network_config = {
             "type": "lora",
             "network_kwargs": {"only_if_contains": []},
@@ -183,7 +186,7 @@ def quantize_model(
             "lokr" in key for key in lora_state_dict.keys()
         ):
             network_config["type"] = "lokr"
-        
+
         network_kwargs = {}
 
         # find firse loraA weight
@@ -224,9 +227,9 @@ def quantize_model(
                     if contains_key not in only_if_contains:
                         only_if_contains.append(contains_key)
             network_kwargs["only_if_contains"] = only_if_contains
-        
-        if hasattr(base_model, 'target_lora_modules'):
-            network_kwargs['target_lin_modules'] = base_model.target_lora_modules
+
+        if hasattr(base_model, "target_lora_modules"):
+            network_kwargs["target_lin_modules"] = base_model.target_lora_modules
 
         # todo auto grab these
         # get dim and scale
@@ -248,7 +251,7 @@ def quantize_model(
             is_transformer=base_model.is_transformer,
             base_model=base_model,
             is_ara=True,
-            **network_kwargs
+            **network_kwargs,
         )
         network.apply_to(
             None, model_to_quantize, apply_text_encoder=False, apply_unet=True
@@ -273,7 +276,9 @@ def quantize_model(
                 param.requires_grad = False
             quantize(orig_module, weights=quantization_type)
             freeze(orig_module)
-            module_name = lora_module.lora_name.replace('$$', '.').replace('transformer.', '')
+            module_name = lora_module.lora_name.replace("$$", ".").replace(
+                "transformer.", ""
+            )
             lora_exclude_modules.append(module_name)
             if base_model.model_config.low_vram:
                 # move it back to cpu
@@ -281,18 +286,16 @@ def quantize_model(
         pass
         # quantize additional layers
         print_acc(" - quantizing additional layers")
-        quantization_type = get_qtype('uint8')
+        quantization_type = get_qtype("uint8")
         quantize(
-            model_to_quantize,
-            weights=quantization_type,
-            exclude=lora_exclude_modules
+            model_to_quantize, weights=quantization_type, exclude=lora_exclude_modules
         )
     else:
         # quantize model the original way without an accuracy recovery adapter
         # move and quantize only certain pieces at a time.
         quantization_type = get_qtype(base_model.model_config.qtype)
         # all_blocks = list(model_to_quantize.transformer_blocks)
-        all_blocks: List[torch.nn.Module] = []
+        all_blocks: list[torch.nn.Module] = []
         transformer_block_names = base_model.get_transformer_block_names()
         for name in transformer_block_names:
             block_list = getattr(model_to_quantize, name, None)
@@ -302,7 +305,9 @@ def quantize_model(
             f" - quantizing {len(all_blocks)} transformer blocks"
         )
         for block in tqdm(all_blocks):
-            block.to(base_model.device_torch, dtype=base_model.torch_dtype, non_blocking=True)
+            block.to(
+                base_model.device_torch, dtype=base_model.torch_dtype, non_blocking=True
+            )
             quantize(block, weights=quantization_type)
             freeze(block)
             block.to("cpu", non_blocking=True)

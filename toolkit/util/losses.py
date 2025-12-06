@@ -1,6 +1,5 @@
 import torch
 
-
 _dwt = None
 
 
@@ -78,9 +77,7 @@ def stepped_loss(model_pred, latents, noise, noisy_latents, timesteps, scheduler
         stepped = sample + (sigma_next - sigma) * model_output
 
         # ---- Inverse-Gaussian recovery at the target timestep ----
-        t_01 = (
-            (scheduler.sigmas[target_idx]).to(stepped.device).to(stepped.dtype)
-        )
+        t_01 = (scheduler.sigmas[target_idx]).to(stepped.device).to(stepped.dtype)
         original_samples = (stepped - t_01 * noise_i) / (1.0 - t_01)
         x0_pred_chunks.append(original_samples)
 

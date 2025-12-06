@@ -1,75 +1,113 @@
 import copy
 import gc
 import json
-import random
-import shutil
-import typing
-from typing import Optional, Union, List, Literal, Iterator
-import sys
 import os
+import shutil
 from collections import OrderedDict
-import copy
-import yaml
-from PIL import Image
-from diffusers.pipelines.pixart_alpha.pipeline_pixart_sigma import ASPECT_RATIO_1024_BIN, ASPECT_RATIO_512_BIN, \
-    ASPECT_RATIO_2048_BIN, ASPECT_RATIO_256_BIN
-from diffusers.pipelines.stable_diffusion_xl.pipeline_stable_diffusion_xl import rescale_noise_cfg
-from safetensors.torch import save_file, load_file
-from torch import autocast
-from torch.nn import Parameter
-from torch.utils.checkpoint import checkpoint
-from tqdm import tqdm
-from torchvision.transforms import Resize, transforms
+from typing import TYPE_CHECKING, Literal, Union
 
+import diffusers
+import torch
+import yaml
+from diffusers import (
+    AuraFlowPipeline,
+    AuraFlowTransformer2DModel,
+    AutoencoderKL,
+    AutoencoderTiny,
+    ControlNetModel,
+    DDPMScheduler,
+    FlowMatchEulerDiscreteScheduler,
+    FluxPipeline,
+    FluxTransformer2DModel,
+    LCMScheduler,
+    Lumina2Pipeline,
+    Lumina2Transformer2DModel,
+    PixArtAlphaPipeline,
+    PixArtSigmaPipeline,
+    SD3Transformer2DModel,
+    StableDiffusion3Pipeline,
+    StableDiffusionAdapterPipeline,
+    StableDiffusionControlNetPipeline,
+    StableDiffusionPipeline,
+    StableDiffusionXLAdapterPipeline,
+    StableDiffusionXLControlNetPipeline,
+    StableDiffusionXLImg2ImgPipeline,
+    StableDiffusionXLPipeline,
+    T2IAdapter,
+    Transformer2DModel,
+    UNet2DConditionModel,
+)
+from diffusers.pipelines.pixart_alpha.pipeline_pixart_sigma import (
+    ASPECT_RATIO_256_BIN,
+    ASPECT_RATIO_512_BIN,
+    ASPECT_RATIO_1024_BIN,
+    ASPECT_RATIO_2048_BIN,
+)
+from diffusers.pipelines.stable_diffusion_xl.pipeline_stable_diffusion_xl import (
+    rescale_noise_cfg,
+)
+from einops import rearrange, repeat
+from huggingface_hub import hf_hub_download
+from optimum.quanto import QTensor, freeze
+from PIL import Image
+from safetensors.torch import load_file, save_file
+from torch.nn import Parameter
+from torchvision.transforms import Resize, transforms
+from tqdm import tqdm
+from transformers import (
+    AutoModel,
+    AutoTokenizer,
+    CLIPTextModel,
+    CLIPTextModelWithProjection,
+    CLIPTokenizer,
+    Gemma2Model,
+    LlamaModel,
+    Qwen2Model,
+    T5EncoderModel,
+    T5TokenizerFast,
+    UMT5EncoderModel,
+)
+
+from toolkit import train_tools
+from toolkit.accelerator import get_accelerator, unwrap_model
 from toolkit.assistant_lora import load_assistant_lora_from_path
 from toolkit.clip_vision_adapter import ClipVisionAdapter
+from toolkit.config_modules import GenerateImageConfig, ModelArch, ModelConfig
 from toolkit.custom_adapter import CustomAdapter
 from toolkit.dequantize import patch_dequantization_on_save
 from toolkit.ip_adapter import IPAdapter
-from toolkit.util.vae import load_vae
-from toolkit import train_tools
-from toolkit.config_modules import ModelConfig, GenerateImageConfig, ModelArch
-from toolkit.metadata import get_meta_for_safetensors
 from toolkit.models.decorator import Decorator
-from toolkit.paths import KEYMAPS_ROOT
-from toolkit.prompt_utils import inject_trigger_into_prompt, PromptEmbeds, concat_prompt_embeds
+from toolkit.models.flux import (
+    add_model_gpu_splitter_to_flux,
+    bypass_flux_guidance,
+    restore_flux_guidance,
+)
+from toolkit.paths import KEYMAPS_ROOT, ORIG_CONFIGS_ROOT
+from toolkit.pipelines import (
+    CustomStableDiffusionXLPipeline,
+    FluxAdvancedControlPipeline,
+    FluxWithCFGPipeline,
+    StableDiffusionKDiffusionXLPipeline,
+)
+from toolkit.print import print_acc
+from toolkit.prompt_utils import (
+    PromptEmbeds,
+    concat_prompt_embeds,
+    inject_trigger_into_prompt,
+)
 from toolkit.reference_adapter import ReferenceAdapter
 from toolkit.sampler import get_sampler
-from toolkit.samplers.custom_flowmatch_sampler import CustomFlowMatchEulerDiscreteScheduler
-from toolkit.saving import save_ldm_model_from_diffusers, get_ldm_state_dict_from_diffusers
+from toolkit.samplers.custom_flowmatch_sampler import (
+    CustomFlowMatchEulerDiscreteScheduler,
+)
+from toolkit.saving import (
+    get_ldm_state_dict_from_diffusers,
+    save_ldm_model_from_diffusers,
+)
 from toolkit.sd_device_states_presets import empty_preset
-from toolkit.train_tools import get_torch_dtype, apply_noise_offset
-from einops import rearrange, repeat
-import torch
-from toolkit.pipelines import CustomStableDiffusionXLPipeline, CustomStableDiffusionPipeline, \
-    StableDiffusionKDiffusionXLPipeline, StableDiffusionXLRefinerPipeline, FluxWithCFGPipeline, \
-    FluxAdvancedControlPipeline
-from diffusers import StableDiffusionPipeline, StableDiffusionXLPipeline, T2IAdapter, DDPMScheduler, \
-    StableDiffusionXLAdapterPipeline, StableDiffusionAdapterPipeline, DiffusionPipeline, PixArtTransformer2DModel, \
-    StableDiffusionXLImg2ImgPipeline, LCMScheduler, Transformer2DModel, AutoencoderTiny, ControlNetModel, \
-    StableDiffusionXLControlNetPipeline, StableDiffusionControlNetPipeline, StableDiffusion3Pipeline, \
-    StableDiffusion3Img2ImgPipeline, PixArtSigmaPipeline, AuraFlowPipeline, AuraFlowTransformer2DModel, FluxPipeline, \
-    FluxTransformer2DModel, FlowMatchEulerDiscreteScheduler, SD3Transformer2DModel, Lumina2Pipeline, \
-    FluxControlPipeline, Lumina2Transformer2DModel
-import diffusers
-from diffusers import \
-    AutoencoderKL, \
-    UNet2DConditionModel
-from diffusers import PixArtAlphaPipeline, DPMSolverMultistepScheduler, PixArtSigmaPipeline
-from transformers import T5EncoderModel, BitsAndBytesConfig, UMT5EncoderModel, T5TokenizerFast
-from transformers import CLIPTextModel, CLIPTokenizer, CLIPTextModelWithProjection
-
-from toolkit.paths import ORIG_CONFIGS_ROOT, DIFFUSERS_CONFIGS_ROOT
-from huggingface_hub import hf_hub_download
-from toolkit.models.flux import add_model_gpu_splitter_to_flux, bypass_flux_guidance, restore_flux_guidance
-
-from optimum.quanto import freeze, qfloat8, QTensor, qint4
-from toolkit.util.quantize import quantize, get_qtype
-from toolkit.accelerator import get_accelerator, unwrap_model
-from typing import TYPE_CHECKING
-from toolkit.print import print_acc
-from diffusers import FluxFillPipeline
-from transformers import AutoModel, AutoTokenizer, Gemma2Model, Qwen2Model, LlamaModel
+from toolkit.train_tools import apply_noise_offset, get_torch_dtype
+from toolkit.util.quantize import get_qtype, quantize
+from toolkit.util.vae import load_vae
 
 if TYPE_CHECKING:
     from toolkit.lora_special import LoRASpecialNetwork
@@ -97,11 +135,10 @@ DO_NOT_TRAIN_WEIGHTS = [
     "refiner_unet_time_embedding.linear_2.weight",
 ]
 
-DeviceStatePreset = Literal['cache_latents', 'generate']
+DeviceStatePreset = Literal["cache_latents", "generate"]
 
 
 class BlankNetwork:
-
     def __init__(self):
         self.multiplier = 1.0
         self.is_active = True
@@ -113,7 +150,7 @@ class BlankNetwork:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.is_active = False
-    
+
     def train(self):
         pass
 
@@ -127,17 +164,15 @@ UNET_IN_CHANNELS = 4  # Stable Diffusion の in_channels は 4 で固定。XLも
 # VAE_SCALE_FACTOR = 8  # 2 ** (len(vae.config.block_out_channels) - 1) = 8
 
 
-
 class StableDiffusion:
-
     def __init__(
-            self,
-            device,
-            model_config: ModelConfig,
-            dtype='fp16',
-            custom_pipeline=None,
-            noise_scheduler=None,
-            quantize_device=None,
+        self,
+        device,
+        model_config: ModelConfig,
+        dtype="fp16",
+        custom_pipeline=None,
+        noise_scheduler=None,
+        quantize_device=None,
     ):
         self.accelerator = get_accelerator()
         self.custom_pipeline = custom_pipeline
@@ -155,20 +190,29 @@ class StableDiffusion:
         self.te_torch_dtype = get_torch_dtype(model_config.te_dtype)
 
         self.model_config = model_config
-        self.prediction_type = "v_prediction" if self.model_config.is_v_pred else "epsilon"
+        self.prediction_type = (
+            "v_prediction" if self.model_config.is_v_pred else "epsilon"
+        )
         self.arch = model_config.arch
 
         self.device_state = None
 
-        self.pipeline: Union[None, 'StableDiffusionPipeline', 'CustomStableDiffusionXLPipeline', 'PixArtAlphaPipeline']
-        self.vae: Union[None, 'AutoencoderKL']
-        self.unet: Union[None, 'UNet2DConditionModel']
-        self.text_encoder: Union[None, 'CLIPTextModel', List[Union['CLIPTextModel', 'CLIPTextModelWithProjection']]]
-        self.tokenizer: Union[None, 'CLIPTokenizer', List['CLIPTokenizer']]
-        self.noise_scheduler: Union[None, 'DDPMScheduler'] = noise_scheduler
+        self.pipeline: (
+            None
+            | StableDiffusionPipeline
+            | CustomStableDiffusionXLPipeline
+            | PixArtAlphaPipeline
+        )
+        self.vae: None | AutoencoderKL
+        self.unet: None | UNet2DConditionModel
+        self.text_encoder: (
+            None | CLIPTextModel | list[CLIPTextModel | CLIPTextModelWithProjection]
+        )
+        self.tokenizer: None | CLIPTokenizer | list[CLIPTokenizer]
+        self.noise_scheduler: None | DDPMScheduler = noise_scheduler
 
-        self.refiner_unet: Union[None, 'UNet2DConditionModel'] = None
-        self.assistant_lora: Union[None, 'LoRASpecialNetwork'] = None
+        self.refiner_unet: None | UNet2DConditionModel = None
+        self.assistant_lora: None | LoRASpecialNetwork = None
 
         # sdxl stuff
         self.logit_scale = None
@@ -177,8 +221,10 @@ class StableDiffusion:
 
         # to hold network if there is one
         self.network = None
-        self.adapter: Union['ControlNetModel', 'T2IAdapter', 'IPAdapter', 'ReferenceAdapter', None] = None
-        self.decorator: Union[Decorator, None] = None
+        self.adapter: (
+            ControlNetModel | T2IAdapter | IPAdapter | ReferenceAdapter | None
+        ) = None
+        self.decorator: Decorator | None = None
         self.arch: ModelArch = model_config.arch
         # self.is_xl = model_config.is_xl
         # self.is_v2 = model_config.is_v2
@@ -196,7 +242,13 @@ class StableDiffusion:
         self.config_file = None
 
         self.is_flow_matching = False
-        if self.is_flux or self.is_v3 or self.is_auraflow or self.is_lumina2 or isinstance(self.noise_scheduler, CustomFlowMatchEulerDiscreteScheduler):
+        if (
+            self.is_flux
+            or self.is_v3
+            or self.is_auraflow
+            or self.is_lumina2
+            or isinstance(self.noise_scheduler, CustomFlowMatchEulerDiscreteScheduler)
+        ):
             self.is_flow_matching = True
 
         self.quantize_device = self.device_torch
@@ -208,73 +260,72 @@ class StableDiffusion:
         self._status_update_hooks = []
         # todo update this based on the model
         self.is_transformer = False
-        
+
         self.sample_prompts_cache = None
-        
+
         self.is_multistage = False
         # a list of multistage boundaries starting with train step 1000 to first idx
-        self.multistage_boundaries: List[float] = [0.0]
+        self.multistage_boundaries: list[float] = [0.0]
         # a list of trainable multistage boundaries
-        self.trainable_multistage_boundaries: List[int] = [0]
-        
+        self.trainable_multistage_boundaries: list[int] = [0]
+
         # set true for models that encode control image into text embeddings
         self.encode_control_in_text_embeddings = False
         # control images will come in as a list for encoding some things if true
         self.has_multiple_control_images = False
         # do not resize control images
         self.use_raw_control_images = False
-        
+
     # properties for old arch for backwards compatibility
     @property
     def is_xl(self):
-        return self.arch == 'sdxl'
-    
+        return self.arch == "sdxl"
+
     @property
     def is_v2(self):
-        return self.arch == 'sd2'
-    
+        return self.arch == "sd2"
+
     @property
     def is_ssd(self):
-        return self.arch == 'ssd'
-    
+        return self.arch == "ssd"
+
     @property
     def is_v3(self):
-        return self.arch == 'sd3'
-    
+        return self.arch == "sd3"
+
     @property
     def is_vega(self):
-        return self.arch == 'vega'
-    
+        return self.arch == "vega"
+
     @property
     def is_pixart(self):
-        return self.arch == 'pixart'
-    
+        return self.arch == "pixart"
+
     @property
     def is_auraflow(self):
-        return self.arch == 'auraflow'
-    
+        return self.arch == "auraflow"
+
     @property
     def is_flux(self):
-        return self.arch == 'flux'
-    
+        return self.arch == "flux"
+
     @property
     def is_lumina2(self):
-        return self.arch == 'lumina2'
-    
+        return self.arch == "lumina2"
+
     @property
     def unet_unwrapped(self):
         return unwrap_model(self.unet)
-    
+
     def get_bucket_divisibility(self):
         if self.vae is None:
             return 16
-        divisibility = 2 ** (len(self.vae.config['block_out_channels']) - 1)
-        
+        divisibility = 2 ** (len(self.vae.config["block_out_channels"]) - 1)
+
         # flux packs this again,
         if self.is_flux or self.is_v3:
             divisibility = divisibility * 2
-        return divisibility * 2 # todo remove this
-        
+        return divisibility * 2  # todo remove this
 
     def load_model(self):
         if self.is_loaded:
@@ -287,18 +338,23 @@ class StableDiffusion:
         # self.noise_scheduler.alphas_cumprod = self.noise_scheduler.alphas_cumprod.to(self.device_torch)
 
         model_path = self.model_config.name_or_path
-        if 'civitai.com' in self.model_config.name_or_path:
+        if "civitai.com" in self.model_config.name_or_path:
             # load is a civit ai model, use the loader.
             from toolkit.civitai import get_model_path_from_url
+
             model_path = get_model_path_from_url(self.model_config.name_or_path)
 
         load_args = {}
         if self.noise_scheduler:
-            load_args['scheduler'] = self.noise_scheduler
+            load_args["scheduler"] = self.noise_scheduler
 
         if self.model_config.vae_path is not None:
-            load_args['vae'] = load_vae(self.model_config.vae_path, dtype)
-        if self.model_config.is_xl or self.model_config.is_ssd or self.model_config.is_vega:
+            load_args["vae"] = load_vae(self.model_config.vae_path, dtype)
+        if (
+            self.model_config.is_xl
+            or self.model_config.is_ssd
+            or self.model_config.is_vega
+        ):
             if self.custom_pipeline is not None:
                 pipln = self.custom_pipeline
             else:
@@ -314,7 +370,7 @@ class StableDiffusion:
                     device=self.device_torch,
                     # variant="fp16",
                     use_safetensors=True,
-                    **load_args
+                    **load_args,
                 )
             else:
                 pipe = pipln.from_single_file(
@@ -323,8 +379,8 @@ class StableDiffusion:
                     torch_dtype=self.torch_dtype,
                 )
 
-            if 'vae' in load_args and load_args['vae'] is not None:
-                pipe.vae = load_args['vae']
+            if "vae" in load_args and load_args["vae"] is not None:
+                pipe.vae = load_args["vae"]
             flush()
 
             text_encoders = [pipe.text_encoder, pipe.text_encoder_2]
@@ -342,12 +398,16 @@ class StableDiffusion:
                 print_acc("Loading and injecting alt weights")
                 # load the mismatched weight and force it in
                 raw_state_dict = load_file(model_path)
-                replacement_weight = raw_state_dict['conditioner.embedders.1.model.text_projection'].clone()
+                replacement_weight = raw_state_dict[
+                    "conditioner.embedders.1.model.text_projection"
+                ].clone()
                 del raw_state_dict
                 #  get state dict for  for 2nd text encoder
                 te1_state_dict = text_encoders[1].state_dict()
                 # replace weight with mismatched weight
-                te1_state_dict['text_projection.weight'] = replacement_weight.to(self.device_torch, dtype=dtype)
+                te1_state_dict["text_projection.weight"] = replacement_weight.to(
+                    self.device_torch, dtype=dtype
+                )
                 flush()
                 print_acc("Injecting alt weights")
         elif self.model_config.is_v3:
@@ -355,26 +415,26 @@ class StableDiffusion:
                 pipln = self.custom_pipeline
             else:
                 pipln = StableDiffusion3Pipeline
-            
+
             print_acc("Loading SD3 model")
             # assume it is the large model
             base_model_path = "stabilityai/stable-diffusion-3.5-large"
             print_acc("Loading transformer")
-            subfolder = 'transformer'
+            subfolder = "transformer"
             transformer_path = model_path
             # check if HF_DATASETS_OFFLINE or TRANSFORMERS_OFFLINE is set
             if os.path.exists(transformer_path):
                 subfolder = None
-                transformer_path = os.path.join(transformer_path, 'transformer')
+                transformer_path = os.path.join(transformer_path, "transformer")
                 # check if the path is a full checkpoint.
-                te_folder_path = os.path.join(model_path, 'text_encoder')
+                te_folder_path = os.path.join(model_path, "text_encoder")
                 # if we have the te, this folder is a full checkpoint, use it as the base
                 if os.path.exists(te_folder_path):
                     base_model_path = model_path
             else:
                 # is remote use whatever path we were given
                 base_model_path = model_path
-            
+
             transformer = SD3Transformer2DModel.from_pretrained(
                 transformer_path,
                 subfolder=subfolder,
@@ -384,10 +444,10 @@ class StableDiffusion:
                 # for low v ram, we leave it on the cpu. Quantizes slower, but allows training on primary gpu
                 transformer.to(self.quantize_device, dtype=dtype)
             flush()
-            
+
             if self.model_config.lora_path is not None:
                 raise ValueError("LoRA is not supported for SD3 models currently")
-            
+
             if self.model_config.quantize:
                 quantization_type = get_qtype(self.model_config.qtype)
                 print_acc("Quantizing transformer")
@@ -396,20 +456,24 @@ class StableDiffusion:
                 transformer.to(self.device_torch)
             else:
                 transformer.to(self.device_torch, dtype=dtype)
-                
-            scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(base_model_path, subfolder="scheduler")
-            print_acc("Loading vae")
-            vae = AutoencoderKL.from_pretrained(base_model_path, subfolder="vae", torch_dtype=dtype)
-            flush()
-            
-            print_acc("Loading t5")
-            tokenizer_3 = T5TokenizerFast.from_pretrained(base_model_path, subfolder="tokenizer_3", torch_dtype=dtype)
-            text_encoder_3 = T5EncoderModel.from_pretrained(
-                base_model_path, 
-                subfolder="text_encoder_3", 
-                torch_dtype=dtype
+
+            scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(
+                base_model_path, subfolder="scheduler"
             )
-            
+            print_acc("Loading vae")
+            vae = AutoencoderKL.from_pretrained(
+                base_model_path, subfolder="vae", torch_dtype=dtype
+            )
+            flush()
+
+            print_acc("Loading t5")
+            tokenizer_3 = T5TokenizerFast.from_pretrained(
+                base_model_path, subfolder="tokenizer_3", torch_dtype=dtype
+            )
+            text_encoder_3 = T5EncoderModel.from_pretrained(
+                base_model_path, subfolder="text_encoder_3", torch_dtype=dtype
+            )
+
             text_encoder_3.to(self.device_torch, dtype=dtype)
             flush()
 
@@ -418,7 +482,6 @@ class StableDiffusion:
                 quantize(text_encoder_3, weights=get_qtype(self.model_config.qtype))
                 freeze(text_encoder_3)
                 flush()
-                
 
             # see if path exists
             if not os.path.exists(model_path) or os.path.isdir(model_path):
@@ -435,7 +498,7 @@ class StableDiffusion:
                         use_safetensors=True,
                         repo_type="model",
                         ignore_patterns=["*.md", "*..gitattributes"],
-                        **load_args
+                        **load_args,
                     )
                 except Exception as e:
                     print_acc(f"Error loading from pretrained: {e}")
@@ -449,12 +512,16 @@ class StableDiffusion:
                     torch_dtype=self.torch_dtype,
                     tokenizer_3=tokenizer_3,
                     text_encoder_3=text_encoder_3,
-                    **load_args
+                    **load_args,
                 )
 
             flush()
 
-            text_encoders = [pipe.text_encoder, pipe.text_encoder_2, pipe.text_encoder_3]
+            text_encoders = [
+                pipe.text_encoder,
+                pipe.text_encoder_2,
+                pipe.text_encoder_3,
+            ]
             tokenizer = [pipe.tokenizer, pipe.tokenizer_2, pipe.tokenizer_3]
             # replace the to function with a no-op since it throws an error instead of a warning
             # text_encoders[2].to = lambda *args, **kwargs: None
@@ -464,18 +531,17 @@ class StableDiffusion:
                 text_encoder.eval()
             text_encoder = text_encoders
 
-
         elif self.model_config.is_pixart:
             te_kwargs = {}
             # handle quantization of TE
             te_is_quantized = False
             if self.model_config.text_encoder_bits == 8:
-                te_kwargs['load_in_8bit'] = True
-                te_kwargs['device_map'] = "auto"
+                te_kwargs["load_in_8bit"] = True
+                te_kwargs["device_map"] = "auto"
                 te_is_quantized = True
             elif self.model_config.text_encoder_bits == 4:
-                te_kwargs['load_in_4bit'] = True
-                te_kwargs['device_map'] = "auto"
+                te_kwargs["load_in_4bit"] = True
+                te_kwargs["device_map"] = "auto"
                 te_is_quantized = True
 
             main_model_path = "PixArt-alpha/PixArt-XL-2-1024-MS"
@@ -489,13 +555,15 @@ class StableDiffusion:
                 main_model_path,
                 subfolder="text_encoder",
                 torch_dtype=self.torch_dtype,
-                **te_kwargs
+                **te_kwargs,
             )
 
             # load the transformer
             subfolder = "transformer"
             # check if it is just the unet
-            if os.path.exists(model_path) and not os.path.exists(os.path.join(model_path, subfolder)):
+            if os.path.exists(model_path) and not os.path.exists(
+                os.path.join(model_path, subfolder)
+            ):
                 subfolder = None
 
             if te_is_quantized:
@@ -507,9 +575,11 @@ class StableDiffusion:
             if self.model_config.is_pixart_sigma:
                 # load the transformer only from the save
                 transformer = Transformer2DModel.from_pretrained(
-                    model_path if self.model_config.unet_path is None else self.model_config.unet_path,
+                    model_path
+                    if self.model_config.unet_path is None
+                    else self.model_config.unet_path,
                     torch_dtype=self.torch_dtype,
-                    subfolder='transformer'
+                    subfolder="transformer",
                 )
                 pipe: PixArtSigmaPipeline = PixArtSigmaPipeline.from_pretrained(
                     main_model_path,
@@ -517,21 +587,21 @@ class StableDiffusion:
                     text_encoder=text_encoder,
                     dtype=dtype,
                     device=self.device_torch,
-                    **load_args
+                    **load_args,
                 )
 
             else:
-
                 # load the transformer only from the save
-                transformer = Transformer2DModel.from_pretrained(model_path, torch_dtype=self.torch_dtype,
-                                                                 subfolder=subfolder)
+                transformer = Transformer2DModel.from_pretrained(
+                    model_path, torch_dtype=self.torch_dtype, subfolder=subfolder
+                )
                 pipe: PixArtAlphaPipeline = PixArtAlphaPipeline.from_pretrained(
                     main_model_path,
                     transformer=transformer,
                     text_encoder=text_encoder,
                     dtype=dtype,
                     device=self.device_torch,
-                    **load_args
+                    **load_args,
                 ).to(self.device_torch)
 
             if self.model_config.unet_sample_size is not None:
@@ -550,18 +620,17 @@ class StableDiffusion:
             if self.noise_scheduler is None:
                 self.noise_scheduler = pipe.scheduler
 
-
         elif self.model_config.is_auraflow:
             te_kwargs = {}
             # handle quantization of TE
             te_is_quantized = False
             if self.model_config.text_encoder_bits == 8:
-                te_kwargs['load_in_8bit'] = True
-                te_kwargs['device_map'] = "auto"
+                te_kwargs["load_in_8bit"] = True
+                te_kwargs["device_map"] = "auto"
                 te_is_quantized = True
             elif self.model_config.text_encoder_bits == 4:
-                te_kwargs['load_in_4bit'] = True
-                te_kwargs['device_map'] = "auto"
+                te_kwargs["load_in_4bit"] = True
+                te_kwargs["device_map"] = "auto"
                 te_is_quantized = True
 
             main_model_path = model_path
@@ -571,13 +640,15 @@ class StableDiffusion:
                 main_model_path,
                 subfolder="text_encoder",
                 torch_dtype=self.torch_dtype,
-                **te_kwargs
+                **te_kwargs,
             )
 
             # load the transformer
             subfolder = "transformer"
             # check if it is just the unet
-            if os.path.exists(model_path) and not os.path.exists(os.path.join(model_path, subfolder)):
+            if os.path.exists(model_path) and not os.path.exists(
+                os.path.join(model_path, subfolder)
+            ):
                 subfolder = None
 
             if te_is_quantized:
@@ -586,9 +657,11 @@ class StableDiffusion:
 
             # load the transformer only from the save
             transformer = AuraFlowTransformer2DModel.from_pretrained(
-                model_path if self.model_config.unet_path is None else self.model_config.unet_path,
+                model_path
+                if self.model_config.unet_path is None
+                else self.model_config.unet_path,
                 torch_dtype=self.torch_dtype,
-                subfolder='transformer'
+                subfolder="transformer",
             )
             pipe: AuraFlowPipeline = AuraFlowPipeline.from_pretrained(
                 main_model_path,
@@ -596,7 +669,7 @@ class StableDiffusion:
                 text_encoder=text_encoder,
                 dtype=dtype,
                 device=self.device_torch,
-                **load_args
+                **load_args,
             )
 
             pipe.transformer = pipe.transformer.to(self.device_torch, dtype=dtype)
@@ -617,15 +690,15 @@ class StableDiffusion:
             # base_model_path = "black-forest-labs/FLUX.1-schnell"
             base_model_path = self.model_config.name_or_path_original
             self.print_and_status_update("Loading transformer")
-            subfolder = 'transformer'
+            subfolder = "transformer"
             transformer_path = model_path
             local_files_only = False
             # check if HF_DATASETS_OFFLINE or TRANSFORMERS_OFFLINE is set
             if os.path.exists(transformer_path):
                 subfolder = None
-                transformer_path = os.path.join(transformer_path, 'transformer')
+                transformer_path = os.path.join(transformer_path, "transformer")
                 # check if the path is a full checkpoint.
-                te_folder_path = os.path.join(model_path, 'text_encoder')
+                te_folder_path = os.path.join(model_path, "text_encoder")
                 # if we have the te, this folder is a full checkpoint, use it as the base
                 if os.path.exists(te_folder_path):
                     base_model_path = model_path
@@ -640,25 +713,37 @@ class StableDiffusion:
             # hack in model gpu splitter
             if self.model_config.split_model_over_gpus:
                 add_model_gpu_splitter_to_flux(
-                    transformer, 
-                    other_module_param_count_scale=self.model_config.split_model_other_module_param_count_scale
+                    transformer,
+                    other_module_param_count_scale=self.model_config.split_model_other_module_param_count_scale,
                 )
-            
+
             if not self.low_vram:
                 # for low v ram, we leave it on the cpu. Quantizes slower, but allows training on primary gpu
                 transformer.to(self.quantize_device, dtype=dtype)
             flush()
 
-            if self.model_config.assistant_lora_path is not None or self.model_config.inference_lora_path is not None:
-                if self.model_config.inference_lora_path is not None and self.model_config.assistant_lora_path is not None:
-                    raise ValueError("Cannot load both assistant lora and inference lora at the same time")
-                
+            if (
+                self.model_config.assistant_lora_path is not None
+                or self.model_config.inference_lora_path is not None
+            ):
+                if (
+                    self.model_config.inference_lora_path is not None
+                    and self.model_config.assistant_lora_path is not None
+                ):
+                    raise ValueError(
+                        "Cannot load both assistant lora and inference lora at the same time"
+                    )
+
                 if self.model_config.lora_path:
-                    raise ValueError("Cannot load both assistant lora and lora at the same time")
+                    raise ValueError(
+                        "Cannot load both assistant lora and lora at the same time"
+                    )
 
                 if not self.is_flux:
-                    raise ValueError("Assistant/ inference lora is only supported for flux models currently")
-                
+                    raise ValueError(
+                        "Assistant/ inference lora is only supported for flux models currently"
+                    )
+
                 load_lora_path = self.model_config.inference_lora_path
                 if load_lora_path is None:
                     load_lora_path = self.model_config.assistant_lora_path
@@ -670,12 +755,11 @@ class StableDiffusion:
                 elif not os.path.exists(load_lora_path):
                     print_acc(f"Grabbing lora from the hub: {load_lora_path}")
                     new_lora_path = hf_hub_download(
-                        load_lora_path,
-                        filename="pytorch_lora_weights.safetensors"
+                        load_lora_path, filename="pytorch_lora_weights.safetensors"
                     )
                     # replace the path
                     load_lora_path = new_lora_path
-                    
+
                     if self.model_config.inference_lora_path is not None:
                         self.model_config.inference_lora_path = new_lora_path
                     if self.model_config.assistant_lora_path is not None:
@@ -718,28 +802,36 @@ class StableDiffusion:
                         elif double_block_key in key:
                             double_transformer_lora[key] = value
                         else:
-                            raise ValueError(f"Unknown lora key: {key}. Cannot load this lora in low vram mode")
+                            raise ValueError(
+                                f"Unknown lora key: {key}. Cannot load this lora in low vram mode"
+                            )
 
                     # double blocks
                     transformer.transformer_blocks = transformer.transformer_blocks.to(
                         self.quantize_device, dtype=dtype
                     )
-                    pipe.load_lora_weights(double_transformer_lora, adapter_name=f"lora1_double")
+                    pipe.load_lora_weights(
+                        double_transformer_lora, adapter_name="lora1_double"
+                    )
                     pipe.fuse_lora()
                     pipe.unload_lora_weights()
                     transformer.transformer_blocks = transformer.transformer_blocks.to(
-                        'cpu', dtype=dtype
+                        "cpu", dtype=dtype
                     )
 
                     # single blocks
-                    transformer.single_transformer_blocks = transformer.single_transformer_blocks.to(
-                        self.quantize_device, dtype=dtype
+                    transformer.single_transformer_blocks = (
+                        transformer.single_transformer_blocks.to(
+                            self.quantize_device, dtype=dtype
+                        )
                     )
-                    pipe.load_lora_weights(single_transformer_lora, adapter_name=f"lora1_single")
+                    pipe.load_lora_weights(
+                        single_transformer_lora, adapter_name="lora1_single"
+                    )
                     pipe.fuse_lora()
                     pipe.unload_lora_weights()
-                    transformer.single_transformer_blocks = transformer.single_transformer_blocks.to(
-                        'cpu', dtype=dtype
+                    transformer.single_transformer_blocks = (
+                        transformer.single_transformer_blocks.to("cpu", dtype=dtype)
                     )
 
                     # cleanup
@@ -751,18 +843,24 @@ class StableDiffusion:
                 else:
                     # need the pipe to do this unfortunately for now
                     # we have to fuse in the weights before quantizing
-                    pipe.load_lora_weights(self.model_config.lora_path, adapter_name="lora1")
+                    pipe.load_lora_weights(
+                        self.model_config.lora_path, adapter_name="lora1"
+                    )
                     pipe.fuse_lora()
                     # unfortunately, not an easier way with peft
                     pipe.unload_lora_weights()
             flush()
-            
+
             if self.model_config.quantize:
                 # patch the state dict method
                 patch_dequantization_on_save(transformer)
                 quantization_type = get_qtype(self.model_config.qtype)
                 self.print_and_status_update("Quantizing transformer")
-                quantize(transformer, weights=quantization_type, **self.model_config.quantize_kwargs)
+                quantize(
+                    transformer,
+                    weights=quantization_type,
+                    **self.model_config.quantize_kwargs,
+                )
                 freeze(transformer)
                 transformer.to(self.device_torch)
             else:
@@ -770,18 +868,25 @@ class StableDiffusion:
 
             flush()
 
-            scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(base_model_path, subfolder="scheduler")
+            scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(
+                base_model_path, subfolder="scheduler"
+            )
             self.print_and_status_update("Loading VAE")
             if self.model_config.vae_path is not None:
                 vae = load_vae(self.model_config.vae_path, dtype)
             else:
-                vae = AutoencoderKL.from_pretrained(base_model_path, subfolder="vae", torch_dtype=dtype)
+                vae = AutoencoderKL.from_pretrained(
+                    base_model_path, subfolder="vae", torch_dtype=dtype
+                )
             flush()
-            
+
             self.print_and_status_update("Loading T5")
-            tokenizer_2 = T5TokenizerFast.from_pretrained(base_model_path, subfolder="tokenizer_2", torch_dtype=dtype)
-            text_encoder_2 = T5EncoderModel.from_pretrained(base_model_path, subfolder="text_encoder_2",
-                                                            torch_dtype=dtype)
+            tokenizer_2 = T5TokenizerFast.from_pretrained(
+                base_model_path, subfolder="tokenizer_2", torch_dtype=dtype
+            )
+            text_encoder_2 = T5EncoderModel.from_pretrained(
+                base_model_path, subfolder="text_encoder_2", torch_dtype=dtype
+            )
 
             text_encoder_2.to(self.device_torch, dtype=dtype)
             flush()
@@ -791,15 +896,19 @@ class StableDiffusion:
                 quantize(text_encoder_2, weights=get_qtype(self.model_config.qtype))
                 freeze(text_encoder_2)
                 flush()
-                
+
             self.print_and_status_update("Loading CLIP")
-            text_encoder = CLIPTextModel.from_pretrained(base_model_path, subfolder="text_encoder", torch_dtype=dtype)
-            tokenizer = CLIPTokenizer.from_pretrained(base_model_path, subfolder="tokenizer", torch_dtype=dtype)
+            text_encoder = CLIPTextModel.from_pretrained(
+                base_model_path, subfolder="text_encoder", torch_dtype=dtype
+            )
+            tokenizer = CLIPTokenizer.from_pretrained(
+                base_model_path, subfolder="tokenizer", torch_dtype=dtype
+            )
             text_encoder.to(self.device_torch, dtype=dtype)
 
             self.print_and_status_update("Making pipe")
             Pipe = FluxPipeline
-            
+
             pipe: Pipe = Pipe(
                 scheduler=scheduler,
                 text_encoder=text_encoder,
@@ -833,13 +942,13 @@ class StableDiffusion:
             # base_model_path = "black-forest-labs/FLUX.1-schnell"
             base_model_path = self.model_config.name_or_path_original
             self.print_and_status_update("Loading transformer")
-            subfolder = 'transformer'
+            subfolder = "transformer"
             transformer_path = model_path
             if os.path.exists(transformer_path):
                 subfolder = None
-                transformer_path = os.path.join(transformer_path, 'transformer')
+                transformer_path = os.path.join(transformer_path, "transformer")
                 # check if the path is a full checkpoint.
-                te_folder_path = os.path.join(model_path, 'text_encoder')
+                te_folder_path = os.path.join(model_path, "text_encoder")
                 # if we have the te, this folder is a full checkpoint, use it as the base
                 if os.path.exists(te_folder_path):
                     base_model_path = model_path
@@ -849,27 +958,40 @@ class StableDiffusion:
                 subfolder=subfolder,
                 torch_dtype=dtype,
             )
-            
+
             if self.model_config.split_model_over_gpus:
-                raise ValueError("Splitting model over gpus is not supported for Lumina2 models")
-            
+                raise ValueError(
+                    "Splitting model over gpus is not supported for Lumina2 models"
+                )
+
             transformer.to(self.quantize_device, dtype=dtype)
             flush()
 
-            if self.model_config.assistant_lora_path is not None or self.model_config.inference_lora_path is not None:
-                raise ValueError("Assistant LoRA is not supported for Lumina2 models currently")
+            if (
+                self.model_config.assistant_lora_path is not None
+                or self.model_config.inference_lora_path is not None
+            ):
+                raise ValueError(
+                    "Assistant LoRA is not supported for Lumina2 models currently"
+                )
 
             if self.model_config.lora_path is not None:
-                raise ValueError("Loading LoRA is not supported for Lumina2 models currently")
-            
+                raise ValueError(
+                    "Loading LoRA is not supported for Lumina2 models currently"
+                )
+
             flush()
-            
+
             if self.model_config.quantize:
                 # patch the state dict method
                 patch_dequantization_on_save(transformer)
                 quantization_type = get_qtype(self.model_config.qtype)
                 self.print_and_status_update("Quantizing transformer")
-                quantize(transformer, weights=quantization_type, **self.model_config.quantize_kwargs)
+                quantize(
+                    transformer,
+                    weights=quantization_type,
+                    **self.model_config.quantize_kwargs,
+                )
                 freeze(transformer)
                 transformer.to(self.device_torch)
             else:
@@ -877,19 +999,31 @@ class StableDiffusion:
 
             flush()
 
-            scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(base_model_path, subfolder="scheduler")
+            scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(
+                base_model_path, subfolder="scheduler"
+            )
             self.print_and_status_update("Loading vae")
-            vae = AutoencoderKL.from_pretrained(base_model_path, subfolder="vae", torch_dtype=dtype)
+            vae = AutoencoderKL.from_pretrained(
+                base_model_path, subfolder="vae", torch_dtype=dtype
+            )
             flush()
-            
+
             if self.model_config.te_name_or_path is not None:
                 self.print_and_status_update("Loading TE")
-                tokenizer = AutoTokenizer.from_pretrained(self.model_config.te_name_or_path, torch_dtype=dtype)
-                text_encoder = AutoModel.from_pretrained(self.model_config.te_name_or_path, torch_dtype=dtype)
+                tokenizer = AutoTokenizer.from_pretrained(
+                    self.model_config.te_name_or_path, torch_dtype=dtype
+                )
+                text_encoder = AutoModel.from_pretrained(
+                    self.model_config.te_name_or_path, torch_dtype=dtype
+                )
             else:
                 self.print_and_status_update("Loading Gemma2")
-                tokenizer = AutoTokenizer.from_pretrained(base_model_path, subfolder="tokenizer", torch_dtype=dtype)
-                text_encoder = AutoModel.from_pretrained(base_model_path, subfolder="text_encoder", torch_dtype=dtype)
+                tokenizer = AutoTokenizer.from_pretrained(
+                    base_model_path, subfolder="tokenizer", torch_dtype=dtype
+                )
+                text_encoder = AutoModel.from_pretrained(
+                    base_model_path, subfolder="text_encoder", torch_dtype=dtype
+                )
 
             text_encoder.to(self.device_torch, dtype=dtype)
             flush()
@@ -936,24 +1070,24 @@ class StableDiffusion:
                 # handle quantization of TE
                 te_is_quantized = False
                 if self.model_config.text_encoder_bits == 8:
-                    te_kwargs['load_in_8bit'] = True
-                    te_kwargs['device_map'] = "auto"
+                    te_kwargs["load_in_8bit"] = True
+                    te_kwargs["device_map"] = "auto"
                     te_is_quantized = True
                 elif self.model_config.text_encoder_bits == 4:
-                    te_kwargs['load_in_4bit'] = True
-                    te_kwargs['device_map'] = "auto"
+                    te_kwargs["load_in_4bit"] = True
+                    te_kwargs["device_map"] = "auto"
                     te_is_quantized = True
 
                 text_encoder = T5EncoderModel.from_pretrained(
                     model_path,
                     subfolder="text_encoder",
                     torch_dtype=self.te_torch_dtype,
-                    **te_kwargs
+                    **te_kwargs,
                 )
                 # replace the to function with a no-op since it throws an error instead of a warning
                 text_encoder.to = lambda *args, **kwargs: None
 
-                load_args['text_encoder'] = text_encoder
+                load_args["text_encoder"] = text_encoder
 
             # see if path exists
             if not os.path.exists(model_path) or os.path.isdir(model_path):
@@ -967,7 +1101,7 @@ class StableDiffusion:
                     safety_checker=None,
                     # variant="fp16",
                     trust_remote_code=True,
-                    **load_args
+                    **load_args,
                 )
             else:
                 pipe = pipln.from_single_file(
@@ -979,7 +1113,7 @@ class StableDiffusion:
                     torch_dtype=self.torch_dtype,
                     safety_checker=None,
                     trust_remote_code=True,
-                    **load_args
+                    **load_args,
                 )
             flush()
 
@@ -996,22 +1130,34 @@ class StableDiffusion:
         # add hacks to unet to help training
         # pipe.unet = prepare_unet_for_training(pipe.unet)
 
-        if self.is_pixart or self.is_v3 or self.is_auraflow or self.is_flux or self.is_lumina2:
+        if (
+            self.is_pixart
+            or self.is_v3
+            or self.is_auraflow
+            or self.is_flux
+            or self.is_lumina2
+        ):
             # pixart and sd3 dont use a unet
             self.unet = pipe.transformer
         else:
-            self.unet: 'UNet2DConditionModel' = pipe.unet
-        self.vae: 'AutoencoderKL' = pipe.vae.to(self.vae_device_torch, dtype=self.vae_torch_dtype)
+            self.unet: UNet2DConditionModel = pipe.unet
+        self.vae: AutoencoderKL = pipe.vae.to(
+            self.vae_device_torch, dtype=self.vae_torch_dtype
+        )
         self.vae.eval()
         self.vae.requires_grad_(False)
-        VAE_SCALE_FACTOR = 2 ** (len(self.vae.config['block_out_channels']) - 1)
+        VAE_SCALE_FACTOR = 2 ** (len(self.vae.config["block_out_channels"]) - 1)
         self.vae_scale_factor = VAE_SCALE_FACTOR
         self.unet.to(self.device_torch, dtype=dtype)
         self.unet.requires_grad_(False)
         self.unet.eval()
 
         # load any loras we have
-        if self.model_config.lora_path is not None and not self.is_flux and not self.is_lumina2:
+        if (
+            self.model_config.lora_path is not None
+            and not self.is_flux
+            and not self.is_lumina2
+        ):
             pipe.load_lora_weights(self.model_config.lora_path, adapter_name="lora1")
             pipe.fuse_lora()
             # unfortunately, not an easier way with peft
@@ -1025,18 +1171,20 @@ class StableDiffusion:
 
         if self.model_config.assistant_lora_path is not None:
             print_acc("Loading assistant lora")
-            self.assistant_lora: 'LoRASpecialNetwork' = load_assistant_lora_from_path(
-                self.model_config.assistant_lora_path, self)
+            self.assistant_lora: LoRASpecialNetwork = load_assistant_lora_from_path(
+                self.model_config.assistant_lora_path, self
+            )
 
             if self.invert_assistant_lora:
                 # invert and disable during training
                 self.assistant_lora.multiplier = -1.0
                 self.assistant_lora.is_active = False
-                
+
         if self.model_config.inference_lora_path is not None:
             print_acc("Loading inference lora")
-            self.assistant_lora: 'LoRASpecialNetwork' = load_assistant_lora_from_path(
-                self.model_config.inference_lora_path, self)
+            self.assistant_lora: LoRASpecialNetwork = load_assistant_lora_from_path(
+                self.model_config.inference_lora_path, self
+            )
             # disable during training
             self.assistant_lora.is_active = False
 
@@ -1045,13 +1193,25 @@ class StableDiffusion:
             # we generate an image 2x larger, so we need to copy the sizes from larger ones down
             # ASPECT_RATIO_1024_BIN, ASPECT_RATIO_512_BIN, ASPECT_RATIO_2048_BIN, ASPECT_RATIO_256_BIN
             for key in ASPECT_RATIO_256_BIN.keys():
-                ASPECT_RATIO_256_BIN[key] = [ASPECT_RATIO_256_BIN[key][0] * 2, ASPECT_RATIO_256_BIN[key][1] * 2]
+                ASPECT_RATIO_256_BIN[key] = [
+                    ASPECT_RATIO_256_BIN[key][0] * 2,
+                    ASPECT_RATIO_256_BIN[key][1] * 2,
+                ]
             for key in ASPECT_RATIO_512_BIN.keys():
-                ASPECT_RATIO_512_BIN[key] = [ASPECT_RATIO_512_BIN[key][0] * 2, ASPECT_RATIO_512_BIN[key][1] * 2]
+                ASPECT_RATIO_512_BIN[key] = [
+                    ASPECT_RATIO_512_BIN[key][0] * 2,
+                    ASPECT_RATIO_512_BIN[key][1] * 2,
+                ]
             for key in ASPECT_RATIO_1024_BIN.keys():
-                ASPECT_RATIO_1024_BIN[key] = [ASPECT_RATIO_1024_BIN[key][0] * 2, ASPECT_RATIO_1024_BIN[key][1] * 2]
+                ASPECT_RATIO_1024_BIN[key] = [
+                    ASPECT_RATIO_1024_BIN[key][0] * 2,
+                    ASPECT_RATIO_1024_BIN[key][1] * 2,
+                ]
             for key in ASPECT_RATIO_2048_BIN.keys():
-                ASPECT_RATIO_2048_BIN[key] = [ASPECT_RATIO_2048_BIN[key][0] * 2, ASPECT_RATIO_2048_BIN[key][1] * 2]
+                ASPECT_RATIO_2048_BIN[key] = [
+                    ASPECT_RATIO_2048_BIN[key][0] * 2,
+                    ASPECT_RATIO_2048_BIN[key][1] * 2,
+                ]
 
     def te_train(self):
         if isinstance(self.text_encoder, list):
@@ -1072,7 +1232,7 @@ class StableDiffusion:
         # which is TE2 for SDXL and TE for SD (no refiner currently)
         # and completely ignore a TE that may or may not be packaged with the refiner
         if self.model_config.refiner_name_or_path is not None:
-            refiner_config_path = os.path.join(ORIG_CONFIGS_ROOT, 'sd_xl_refiner.yaml')
+            refiner_config_path = os.path.join(ORIG_CONFIGS_ROOT, "sd_xl_refiner.yaml")
             # load the refiner model
             dtype = get_torch_dtype(self.dtype)
             model_path = self.model_config.refiner_name_or_path
@@ -1097,32 +1257,32 @@ class StableDiffusion:
             self.refiner_unet = refiner.unet
             del refiner
             flush()
-            
+
     def _after_sample_image(self, img_num, total_imgs):
         # process all hooks
         for hook in self._after_sample_img_hooks:
             hook(img_num, total_imgs)
-    
+
     def add_after_sample_image_hook(self, func):
         self._after_sample_img_hooks.append(func)
-        
+
     def _status_update(self, status: str):
         for hook in self._status_update_hooks:
             hook(status)
-    
+
     def print_and_status_update(self, status: str):
         print_acc(status)
         self._status_update(status)
-        
+
     def add_status_update_hook(self, func):
         self._status_update_hooks.append(func)
 
     @torch.no_grad()
     def generate_images(
-            self,
-            image_configs: List[GenerateImageConfig],
-            sampler=None,
-            pipeline: Union[None, StableDiffusionPipeline, StableDiffusionXLPipeline] = None,
+        self,
+        image_configs: list[GenerateImageConfig],
+        sampler=None,
+        pipeline: None | StableDiffusionPipeline | StableDiffusionXLPipeline = None,
     ):
         network = unwrap_model(self.network)
         merge_multiplier = 1.0
@@ -1136,7 +1296,7 @@ class StableDiffusion:
                 self.assistant_lora.force_to(self.device_torch, self.torch_dtype)
             else:
                 self.assistant_lora.is_active = False
-                
+
         if self.model_config.inference_lora_path is not None:
             print_acc("Loading inference lora")
             self.assistant_lora.is_active = True
@@ -1149,7 +1309,7 @@ class StableDiffusion:
             # the network to drastically speed up inference
             unique_network_weights = set([x.network_multiplier for x in image_configs])
             if len(unique_network_weights) == 1 and network.can_merge_in:
-                # make sure it is on device before merging. 
+                # make sure it is on device before merging.
                 self.unet.to(self.device_torch)
                 can_merge_in = True
                 merge_multiplier = unique_network_weights.pop()
@@ -1158,11 +1318,13 @@ class StableDiffusion:
             network = BlankNetwork()
 
         self.save_device_state()
-        self.set_device_state_preset('generate')
+        self.set_device_state_preset("generate")
 
         # save current seed state for training
         rng_state = torch.get_rng_state()
-        cuda_rng_state = torch.cuda.get_rng_state() if torch.cuda.is_available() else None
+        cuda_rng_state = (
+            torch.cuda.get_rng_state() if torch.cuda.is_available() else None
+        )
 
         if pipeline is None:
             noise_scheduler = self.noise_scheduler
@@ -1170,27 +1332,31 @@ class StableDiffusion:
                 if sampler.startswith("sample_"):  # sample_dpmpp_2m
                     # using ksampler
                     noise_scheduler = get_sampler(
-                        'lms', {
+                        "lms",
+                        {
                             "prediction_type": self.prediction_type,
-                        })
+                        },
+                    )
                 else:
-                    arch = 'sd'
+                    arch = "sd"
                     if self.is_pixart:
-                        arch = 'pixart'
+                        arch = "pixart"
                     if self.is_flux:
-                        arch = 'flux'
+                        arch = "flux"
                     if self.is_lumina2:
-                        arch = 'lumina2'
+                        arch = "lumina2"
                     noise_scheduler = get_sampler(
                         sampler,
                         {
                             "prediction_type": self.prediction_type,
                         },
-                        arch=arch
+                        arch=arch,
                     )
 
                 try:
-                    noise_scheduler = noise_scheduler.to(self.device_torch, self.torch_dtype)
+                    noise_scheduler = noise_scheduler.to(
+                        self.device_torch, self.torch_dtype
+                    )
                 except:
                     pass
 
@@ -1211,19 +1377,19 @@ class StableDiffusion:
                         Pipe = StableDiffusionXLAdapterPipeline
                     else:
                         Pipe = StableDiffusionAdapterPipeline
-                    extra_args['adapter'] = self.adapter
+                    extra_args["adapter"] = self.adapter
                 elif isinstance(self.adapter, ControlNetModel):
                     if self.is_xl:
                         Pipe = StableDiffusionXLControlNetPipeline
                     else:
                         Pipe = StableDiffusionControlNetPipeline
-                    extra_args['controlnet'] = self.adapter
+                    extra_args["controlnet"] = self.adapter
                 elif isinstance(self.adapter, ReferenceAdapter):
                     # pass the noise scheduler to the adapter
                     self.adapter.noise_scheduler = noise_scheduler
                 else:
                     if self.is_xl:
-                        extra_args['add_watermarker'] = False
+                        extra_args["add_watermarker"] = False
 
             # TODO add clip skip
             if self.is_xl:
@@ -1235,7 +1401,7 @@ class StableDiffusion:
                     tokenizer=self.tokenizer[0],
                     tokenizer_2=self.tokenizer[1],
                     scheduler=noise_scheduler,
-                    **extra_args
+                    **extra_args,
                 ).to(self.device_torch)
                 pipeline.watermark = None
             elif self.is_flux:
@@ -1248,18 +1414,24 @@ class StableDiffusion:
                         tokenizer=self.tokenizer[0],
                         tokenizer_2=self.tokenizer[1],
                         scheduler=noise_scheduler,
-                        **extra_args
+                        **extra_args,
                     )
 
                 else:
                     Pipe = FluxPipeline
-                    if self.adapter is not None and isinstance(self.adapter, CustomAdapter):
+                    if self.adapter is not None and isinstance(
+                        self.adapter, CustomAdapter
+                    ):
                         # see if it is a control lora
                         if self.adapter.control_lora is not None:
                             Pipe = FluxAdvancedControlPipeline
-                            extra_args['do_inpainting'] = self.adapter.config.has_inpainting_input
-                            extra_args['num_controls'] = self.adapter.config.num_control_images
-                    
+                            extra_args["do_inpainting"] = (
+                                self.adapter.config.has_inpainting_input
+                            )
+                            extra_args["num_controls"] = (
+                                self.adapter.config.num_control_images
+                            )
+
                     pipeline = Pipe(
                         vae=self.vae,
                         transformer=unwrap_model(self.unet),
@@ -1268,9 +1440,9 @@ class StableDiffusion:
                         tokenizer=self.tokenizer[0],
                         tokenizer_2=self.tokenizer[1],
                         scheduler=noise_scheduler,
-                        **extra_args
+                        **extra_args,
                     )
-                    
+
                 pipeline.watermark = None
             elif self.is_lumina2:
                 pipeline = Lumina2Pipeline(
@@ -1279,7 +1451,7 @@ class StableDiffusion:
                     text_encoder=self.text_encoder,
                     tokenizer=self.tokenizer,
                     scheduler=noise_scheduler,
-                    **extra_args
+                    **extra_args,
                 )
             elif self.is_v3:
                 pipeline = Pipe(
@@ -1292,7 +1464,7 @@ class StableDiffusion:
                     tokenizer_2=self.tokenizer[1],
                     tokenizer_3=self.tokenizer[2],
                     scheduler=noise_scheduler,
-                    **extra_args
+                    **extra_args,
                 )
             elif self.is_pixart:
                 pipeline = PixArtSigmaPipeline(
@@ -1301,7 +1473,7 @@ class StableDiffusion:
                     text_encoder=self.text_encoder,
                     tokenizer=self.tokenizer,
                     scheduler=noise_scheduler,
-                    **extra_args
+                    **extra_args,
                 )
 
             elif self.is_auraflow:
@@ -1311,7 +1483,7 @@ class StableDiffusion:
                     text_encoder=self.text_encoder,
                     tokenizer=self.tokenizer,
                     scheduler=noise_scheduler,
-                    **extra_args
+                    **extra_args,
                 )
 
             else:
@@ -1324,7 +1496,7 @@ class StableDiffusion:
                     safety_checker=None,
                     feature_extractor=None,
                     requires_safety_checker=False,
-                    **extra_args
+                    **extra_args,
                 )
             flush()
             # disable progress bar
@@ -1363,12 +1535,17 @@ class StableDiffusion:
                 if network is not None:
                     assert network.is_active
 
-                for i in tqdm(range(len(image_configs)), desc=f"Generating Images", leave=False):
+                for i in tqdm(
+                    range(len(image_configs)), desc="Generating Images", leave=False
+                ):
                     gen_config = image_configs[i]
 
                     extra = {}
                     validation_image = None
-                    if self.adapter is not None and gen_config.adapter_image_path is not None:
+                    if (
+                        self.adapter is not None
+                        and gen_config.adapter_image_path is not None
+                    ):
                         validation_image = Image.open(gen_config.adapter_image_path)
                         # if the name doesnt have .inpainting. in it, make sure it is rgb
                         if ".inpaint." not in gen_config.adapter_image_path:
@@ -1376,30 +1553,51 @@ class StableDiffusion:
                         else:
                             # make sure it has an alpha
                             if validation_image.mode != "RGBA":
-                                raise ValueError("Inpainting images must have an alpha channel")
+                                raise ValueError(
+                                    "Inpainting images must have an alpha channel"
+                                )
                         if isinstance(self.adapter, T2IAdapter):
                             # not sure why this is double??
-                            validation_image = validation_image.resize((gen_config.width * 2, gen_config.height * 2))
-                            extra['image'] = validation_image
-                            extra['adapter_conditioning_scale'] = gen_config.adapter_conditioning_scale
+                            validation_image = validation_image.resize(
+                                (gen_config.width * 2, gen_config.height * 2)
+                            )
+                            extra["image"] = validation_image
+                            extra["adapter_conditioning_scale"] = (
+                                gen_config.adapter_conditioning_scale
+                            )
                         if isinstance(self.adapter, ControlNetModel):
-                            validation_image = validation_image.resize((gen_config.width, gen_config.height))
-                            extra['image'] = validation_image
-                            extra['controlnet_conditioning_scale'] = gen_config.adapter_conditioning_scale
-                        if isinstance(self.adapter, CustomAdapter) and self.adapter.control_lora is not None:
-                            validation_image = validation_image.resize((gen_config.width, gen_config.height))
-                            extra['control_image'] = validation_image
-                            extra['control_image_idx'] = gen_config.ctrl_idx
-                        if isinstance(self.adapter, IPAdapter) or isinstance(self.adapter, ClipVisionAdapter):
-                            transform = transforms.Compose([
-                                transforms.ToTensor(),
-                            ])
+                            validation_image = validation_image.resize(
+                                (gen_config.width, gen_config.height)
+                            )
+                            extra["image"] = validation_image
+                            extra["controlnet_conditioning_scale"] = (
+                                gen_config.adapter_conditioning_scale
+                            )
+                        if (
+                            isinstance(self.adapter, CustomAdapter)
+                            and self.adapter.control_lora is not None
+                        ):
+                            validation_image = validation_image.resize(
+                                (gen_config.width, gen_config.height)
+                            )
+                            extra["control_image"] = validation_image
+                            extra["control_image_idx"] = gen_config.ctrl_idx
+                        if isinstance(self.adapter, IPAdapter) or isinstance(
+                            self.adapter, ClipVisionAdapter
+                        ):
+                            transform = transforms.Compose(
+                                [
+                                    transforms.ToTensor(),
+                                ]
+                            )
                             validation_image = transform(validation_image)
                         if isinstance(self.adapter, CustomAdapter):
                             # todo allow loading multiple
-                            transform = transforms.Compose([
-                                transforms.ToTensor(),
-                            ])
+                            transform = transforms.Compose(
+                                [
+                                    transforms.ToTensor(),
+                                ]
+                            )
                             validation_image = transform(validation_image)
                             self.adapter.num_images = 1
                         if isinstance(self.adapter, ReferenceAdapter):
@@ -1413,16 +1611,25 @@ class StableDiffusion:
                         network.multiplier = gen_config.network_multiplier
                     torch.manual_seed(gen_config.seed)
                     torch.cuda.manual_seed(gen_config.seed)
-                    
+
                     generator = torch.manual_seed(gen_config.seed)
 
-                    if self.adapter is not None and isinstance(self.adapter, ClipVisionAdapter) \
-                            and gen_config.adapter_image_path is not None:
+                    if (
+                        self.adapter is not None
+                        and isinstance(self.adapter, ClipVisionAdapter)
+                        and gen_config.adapter_image_path is not None
+                    ):
                         # run through the adapter to saturate the embeds
-                        conditional_clip_embeds = self.adapter.get_clip_image_embeds_from_tensors(validation_image)
+                        conditional_clip_embeds = (
+                            self.adapter.get_clip_image_embeds_from_tensors(
+                                validation_image
+                            )
+                        )
                         self.adapter(conditional_clip_embeds)
 
-                    if self.adapter is not None and isinstance(self.adapter, CustomAdapter):
+                    if self.adapter is not None and isinstance(
+                        self.adapter, CustomAdapter
+                    ):
                         # handle condition the prompts
                         gen_config.prompt = self.adapter.condition_prompt(
                             gen_config.prompt,
@@ -1435,27 +1642,39 @@ class StableDiffusion:
                         )
                         gen_config.negative_prompt_2 = gen_config.negative_prompt
 
-                    if self.adapter is not None and isinstance(self.adapter, CustomAdapter) and validation_image is not None:
+                    if (
+                        self.adapter is not None
+                        and isinstance(self.adapter, CustomAdapter)
+                        and validation_image is not None
+                    ):
                         self.adapter.trigger_pre_te(
                             tensors_0_1=validation_image,
                             is_training=False,
                             has_been_preprocessed=False,
-                            quad_count=4
+                            quad_count=4,
                         )
 
                     if self.sample_prompts_cache is not None:
-                        conditional_embeds = self.sample_prompts_cache[i]['conditional'].to(self.device_torch, dtype=self.torch_dtype)
-                        unconditional_embeds = self.sample_prompts_cache[i]['unconditional'].to(self.device_torch, dtype=self.torch_dtype)
-                    else: 
+                        conditional_embeds = self.sample_prompts_cache[i][
+                            "conditional"
+                        ].to(self.device_torch, dtype=self.torch_dtype)
+                        unconditional_embeds = self.sample_prompts_cache[i][
+                            "unconditional"
+                        ].to(self.device_torch, dtype=self.torch_dtype)
+                    else:
                         # encode the prompt ourselves so we can do fun stuff with embeddings
                         if isinstance(self.adapter, CustomAdapter):
                             self.adapter.is_unconditional_run = False
-                        conditional_embeds = self.encode_prompt(gen_config.prompt, gen_config.prompt_2, force_all=True)
+                        conditional_embeds = self.encode_prompt(
+                            gen_config.prompt, gen_config.prompt_2, force_all=True
+                        )
 
                         if isinstance(self.adapter, CustomAdapter):
                             self.adapter.is_unconditional_run = True
                         unconditional_embeds = self.encode_prompt(
-                            gen_config.negative_prompt, gen_config.negative_prompt_2, force_all=True
+                            gen_config.negative_prompt,
+                            gen_config.negative_prompt_2,
+                            force_all=True,
                         )
                         if isinstance(self.adapter, CustomAdapter):
                             self.adapter.is_unconditional_run = False
@@ -1465,22 +1684,46 @@ class StableDiffusion:
                         conditional_embeds,
                         unconditional_embeds,
                     )
-                    
+
                     if self.decorator is not None:
                         # apply the decorator to the embeddings
-                        conditional_embeds.text_embeds = self.decorator(conditional_embeds.text_embeds)
-                        unconditional_embeds.text_embeds = self.decorator(unconditional_embeds.text_embeds, is_unconditional=True)
+                        conditional_embeds.text_embeds = self.decorator(
+                            conditional_embeds.text_embeds
+                        )
+                        unconditional_embeds.text_embeds = self.decorator(
+                            unconditional_embeds.text_embeds, is_unconditional=True
+                        )
 
-                    if self.adapter is not None and isinstance(self.adapter, IPAdapter) \
-                            and gen_config.adapter_image_path is not None:
+                    if (
+                        self.adapter is not None
+                        and isinstance(self.adapter, IPAdapter)
+                        and gen_config.adapter_image_path is not None
+                    ):
                         # apply the image projection
-                        conditional_clip_embeds = self.adapter.get_clip_image_embeds_from_tensors(validation_image)
-                        unconditional_clip_embeds = self.adapter.get_clip_image_embeds_from_tensors(validation_image,
-                                                                                                    True)
-                        conditional_embeds = self.adapter(conditional_embeds, conditional_clip_embeds, is_unconditional=False)
-                        unconditional_embeds = self.adapter(unconditional_embeds, unconditional_clip_embeds, is_unconditional=True)
+                        conditional_clip_embeds = (
+                            self.adapter.get_clip_image_embeds_from_tensors(
+                                validation_image
+                            )
+                        )
+                        unconditional_clip_embeds = (
+                            self.adapter.get_clip_image_embeds_from_tensors(
+                                validation_image, True
+                            )
+                        )
+                        conditional_embeds = self.adapter(
+                            conditional_embeds,
+                            conditional_clip_embeds,
+                            is_unconditional=False,
+                        )
+                        unconditional_embeds = self.adapter(
+                            unconditional_embeds,
+                            unconditional_clip_embeds,
+                            is_unconditional=True,
+                        )
 
-                    if self.adapter is not None and isinstance(self.adapter, CustomAdapter):
+                    if self.adapter is not None and isinstance(
+                        self.adapter, CustomAdapter
+                    ):
                         conditional_embeds = self.adapter.condition_encoded_embeds(
                             tensors_0_1=validation_image,
                             prompt_embeds=conditional_embeds,
@@ -1497,24 +1740,41 @@ class StableDiffusion:
                             is_generating_samples=True,
                         )
 
-                    if self.adapter is not None and isinstance(self.adapter, CustomAdapter) and len(
-                            gen_config.extra_values) > 0:
-                        extra_values = torch.tensor([gen_config.extra_values], device=self.device_torch,
-                                                    dtype=self.torch_dtype)
+                    if (
+                        self.adapter is not None
+                        and isinstance(self.adapter, CustomAdapter)
+                        and len(gen_config.extra_values) > 0
+                    ):
+                        extra_values = torch.tensor(
+                            [gen_config.extra_values],
+                            device=self.device_torch,
+                            dtype=self.torch_dtype,
+                        )
                         # apply extra values to the embeddings
-                        self.adapter.add_extra_values(extra_values, is_unconditional=False)
-                        self.adapter.add_extra_values(torch.zeros_like(extra_values), is_unconditional=True)
+                        self.adapter.add_extra_values(
+                            extra_values, is_unconditional=False
+                        )
+                        self.adapter.add_extra_values(
+                            torch.zeros_like(extra_values), is_unconditional=True
+                        )
                         pass  # todo remove, for debugging
 
-                    if self.refiner_unet is not None and gen_config.refiner_start_at < 1.0:
+                    if (
+                        self.refiner_unet is not None
+                        and gen_config.refiner_start_at < 1.0
+                    ):
                         # if we have a refiner loaded, set the denoising end at the refiner start
-                        extra['denoising_end'] = gen_config.refiner_start_at
-                        extra['output_type'] = 'latent'
+                        extra["denoising_end"] = gen_config.refiner_start_at
+                        extra["output_type"] = "latent"
                         if not self.is_xl:
                             raise ValueError("Refiner is only supported for XL models")
 
-                    conditional_embeds = conditional_embeds.to(self.device_torch, dtype=self.unet.dtype)
-                    unconditional_embeds = unconditional_embeds.to(self.device_torch, dtype=self.unet.dtype)
+                    conditional_embeds = conditional_embeds.to(
+                        self.device_torch, dtype=self.unet.dtype
+                    )
+                    unconditional_embeds = unconditional_embeds.to(
+                        self.device_torch, dtype=self.unet.dtype
+                    )
 
                     if self.is_xl:
                         # fix guidance rescale for sdxl
@@ -1526,7 +1786,7 @@ class StableDiffusion:
                         # grs = 0.0
 
                         if sampler.startswith("sample_"):
-                            extra['use_karras_sigmas'] = True
+                            extra["use_karras_sigmas"] = True
                             extra = {
                                 **extra,
                                 **gen_config.extra_kwargs,
@@ -1548,7 +1808,7 @@ class StableDiffusion:
                             guidance_rescale=grs,
                             latents=gen_config.latents,
                             generator=generator,
-                            **extra
+                            **extra,
                         ).images[0]
                     elif self.is_v3:
                         img = pipeline(
@@ -1562,7 +1822,7 @@ class StableDiffusion:
                             guidance_scale=gen_config.guidance_scale,
                             latents=gen_config.latents,
                             generator=generator,
-                            **extra
+                            **extra,
                         ).images[0]
                     elif self.is_flux:
                         if self.model_config.use_flux_cfg:
@@ -1577,7 +1837,7 @@ class StableDiffusion:
                                 guidance_scale=gen_config.guidance_scale,
                                 latents=gen_config.latents,
                                 generator=generator,
-                                **extra
+                                **extra,
                             ).images[0]
                         else:
                             # Fix a bug in diffusers/torch
@@ -1586,6 +1846,7 @@ class StableDiffusion:
                                 if latents.dtype != self.unet.dtype:
                                     latents = latents.to(self.unet.dtype)
                                 return {"latents": latents}
+
                             img = pipeline(
                                 prompt_embeds=conditional_embeds.text_embeds,
                                 pooled_prompt_embeds=conditional_embeds.pooled_embeds,
@@ -1598,35 +1859,44 @@ class StableDiffusion:
                                 latents=gen_config.latents,
                                 generator=generator,
                                 callback_on_step_end=callback_on_step_end,
-                                **extra
+                                **extra,
                             ).images[0]
                     elif self.is_lumina2:
                         pipeline: Lumina2Pipeline = pipeline
 
                         img = pipeline(
                             prompt_embeds=conditional_embeds.text_embeds,
-                            prompt_attention_mask=conditional_embeds.attention_mask.to(self.device_torch, dtype=torch.int64),
+                            prompt_attention_mask=conditional_embeds.attention_mask.to(
+                                self.device_torch, dtype=torch.int64
+                            ),
                             negative_prompt_embeds=unconditional_embeds.text_embeds,
-                            negative_prompt_attention_mask=unconditional_embeds.attention_mask.to(self.device_torch, dtype=torch.int64),
+                            negative_prompt_attention_mask=unconditional_embeds.attention_mask.to(
+                                self.device_torch, dtype=torch.int64
+                            ),
                             height=gen_config.height,
                             width=gen_config.width,
                             num_inference_steps=gen_config.num_inference_steps,
                             guidance_scale=gen_config.guidance_scale,
                             latents=gen_config.latents,
                             generator=generator,
-                            **extra
+                            **extra,
                         ).images[0]
                     elif self.is_pixart:
                         # needs attention masks for some reason
                         img = pipeline(
                             prompt=None,
-                            prompt_embeds=conditional_embeds.text_embeds.to(self.device_torch, dtype=self.unet.dtype),
-                            prompt_attention_mask=conditional_embeds.attention_mask.to(self.device_torch,
-                                                                                       dtype=self.unet.dtype),
-                            negative_prompt_embeds=unconditional_embeds.text_embeds.to(self.device_torch,
-                                                                                       dtype=self.unet.dtype),
-                            negative_prompt_attention_mask=unconditional_embeds.attention_mask.to(self.device_torch,
-                                                                                                  dtype=self.unet.dtype),
+                            prompt_embeds=conditional_embeds.text_embeds.to(
+                                self.device_torch, dtype=self.unet.dtype
+                            ),
+                            prompt_attention_mask=conditional_embeds.attention_mask.to(
+                                self.device_torch, dtype=self.unet.dtype
+                            ),
+                            negative_prompt_embeds=unconditional_embeds.text_embeds.to(
+                                self.device_torch, dtype=self.unet.dtype
+                            ),
+                            negative_prompt_attention_mask=unconditional_embeds.attention_mask.to(
+                                self.device_torch, dtype=self.unet.dtype
+                            ),
                             negative_prompt=None,
                             # negative_prompt=gen_config.negative_prompt,
                             height=gen_config.height,
@@ -1635,20 +1905,25 @@ class StableDiffusion:
                             guidance_scale=gen_config.guidance_scale,
                             latents=gen_config.latents,
                             generator=generator,
-                            **extra
+                            **extra,
                         ).images[0]
                     elif self.is_auraflow:
                         pipeline: AuraFlowPipeline = pipeline
 
                         img = pipeline(
                             prompt=None,
-                            prompt_embeds=conditional_embeds.text_embeds.to(self.device_torch, dtype=self.unet.dtype),
-                            prompt_attention_mask=conditional_embeds.attention_mask.to(self.device_torch,
-                                                                                       dtype=self.unet.dtype),
-                            negative_prompt_embeds=unconditional_embeds.text_embeds.to(self.device_torch,
-                                                                                       dtype=self.unet.dtype),
-                            negative_prompt_attention_mask=unconditional_embeds.attention_mask.to(self.device_torch,
-                                                                                                  dtype=self.unet.dtype),
+                            prompt_embeds=conditional_embeds.text_embeds.to(
+                                self.device_torch, dtype=self.unet.dtype
+                            ),
+                            prompt_attention_mask=conditional_embeds.attention_mask.to(
+                                self.device_torch, dtype=self.unet.dtype
+                            ),
+                            negative_prompt_embeds=unconditional_embeds.text_embeds.to(
+                                self.device_torch, dtype=self.unet.dtype
+                            ),
+                            negative_prompt_attention_mask=unconditional_embeds.attention_mask.to(
+                                self.device_torch, dtype=self.unet.dtype
+                            ),
                             negative_prompt=None,
                             # negative_prompt=gen_config.negative_prompt,
                             height=gen_config.height,
@@ -1657,7 +1932,7 @@ class StableDiffusion:
                             guidance_scale=gen_config.guidance_scale,
                             latents=gen_config.latents,
                             generator=generator,
-                            **extra
+                            **extra,
                         ).images[0]
                     else:
                         img = pipeline(
@@ -1671,19 +1946,25 @@ class StableDiffusion:
                             guidance_scale=gen_config.guidance_scale,
                             latents=gen_config.latents,
                             generator=generator,
-                            **extra
+                            **extra,
                         ).images[0]
 
-                    if self.refiner_unet is not None and gen_config.refiner_start_at < 1.0:
+                    if (
+                        self.refiner_unet is not None
+                        and gen_config.refiner_start_at < 1.0
+                    ):
                         # slide off just the last 1280 on the last dim as refiner does not use first text encoder
                         # todo, should we just use the Text encoder for the refiner? Fine tuned versions will differ
-                        refiner_text_embeds = conditional_embeds.text_embeds[:, :, -1280:]
-                        refiner_unconditional_text_embeds = unconditional_embeds.text_embeds[:, :, -1280:]
+                        refiner_text_embeds = conditional_embeds.text_embeds[
+                            :, :, -1280:
+                        ]
+                        refiner_unconditional_text_embeds = (
+                            unconditional_embeds.text_embeds[:, :, -1280:]
+                        )
                         # run through refiner
                         img = refiner_pipeline(
                             # prompt=gen_config.prompt,
                             # prompt_2=gen_config.prompt_2,
-
                             # slice these as it does not use both text encoders
                             # height=gen_config.height,
                             # width=gen_config.width,
@@ -1705,7 +1986,9 @@ class StableDiffusion:
                     self._after_sample_image(i, len(image_configs))
                     flush()
 
-                if self.adapter is not None and isinstance(self.adapter, ReferenceAdapter):
+                if self.adapter is not None and isinstance(
+                    self.adapter, ReferenceAdapter
+                ):
                     self.adapter.clear_memory()
 
         # clear pipeline and cache to reduce vram usage
@@ -1735,29 +2018,29 @@ class StableDiffusion:
             if self.invert_assistant_lora:
                 self.assistant_lora.is_active = False
                 # move weights off the device
-                self.assistant_lora.force_to('cpu', self.torch_dtype)
+                self.assistant_lora.force_to("cpu", self.torch_dtype)
             else:
                 self.assistant_lora.is_active = True
-                
+
         if self.model_config.inference_lora_path is not None:
             print_acc("Unloading inference lora")
             self.assistant_lora.is_active = False
             # move weights off the device
-            self.assistant_lora.force_to('cpu', self.torch_dtype)
+            self.assistant_lora.force_to("cpu", self.torch_dtype)
 
         flush()
 
     def get_latent_noise(
-            self,
-            height=None,
-            width=None,
-            pixel_height=None,
-            pixel_width=None,
-            batch_size=1,
-            noise_offset=0.0,
-            num_channels=None,
+        self,
+        height=None,
+        width=None,
+        pixel_height=None,
+        pixel_width=None,
+        batch_size=1,
+        noise_offset=0.0,
+        num_channels=None,
     ):
-        VAE_SCALE_FACTOR = 2 ** (len(self.vae.config['block_out_channels']) - 1)
+        VAE_SCALE_FACTOR = 2 ** (len(self.vae.config["block_out_channels"]) - 1)
         if height is None and pixel_height is None:
             raise ValueError("height or pixel_height must be specified")
         if width is None and pixel_width is None:
@@ -1768,7 +2051,7 @@ class StableDiffusion:
             width = pixel_width // VAE_SCALE_FACTOR
 
         if num_channels is None:
-            num_channels = self.unet_unwrapped.config['in_channels']
+            num_channels = self.unet_unwrapped.config["in_channels"]
             if self.is_flux:
                 # it gets packed, unpack it
                 num_channels = num_channels // 4
@@ -1783,18 +2066,16 @@ class StableDiffusion:
         )
         noise = apply_noise_offset(noise, noise_offset)
         return noise
-    
-    def get_latent_noise_from_latents(
-        self,
-        latents: torch.Tensor,
-        noise_offset=0.0
-    ):
+
+    def get_latent_noise_from_latents(self, latents: torch.Tensor, noise_offset=0.0):
         noise = torch.randn_like(latents)
         noise = apply_noise_offset(noise, noise_offset)
         return noise
 
-    def get_time_ids_from_latents(self, latents: torch.Tensor, requires_aesthetic_score=False):
-        VAE_SCALE_FACTOR = 2 ** (len(self.vae.config['block_out_channels']) - 1)
+    def get_time_ids_from_latents(
+        self, latents: torch.Tensor, requires_aesthetic_score=False
+    ):
+        VAE_SCALE_FACTOR = 2 ** (len(self.vae.config["block_out_channels"]) - 1)
         if self.is_xl:
             bs, ch, h, w = list(latents.shape)
 
@@ -1810,71 +2091,80 @@ class StableDiffusion:
                 # refiner
                 # https://huggingface.co/papers/2307.01952
                 aesthetic_score = 6.0  # simulate one
-                add_time_ids = list(original_size + crops_coords_top_left + (aesthetic_score,))
+                add_time_ids = list(
+                    original_size + crops_coords_top_left + (aesthetic_score,)
+                )
             else:
                 add_time_ids = list(original_size + crops_coords_top_left + target_size)
             add_time_ids = torch.tensor([add_time_ids])
             add_time_ids = add_time_ids.to(latents.device, dtype=dtype)
 
-            batch_time_ids = torch.cat(
-                [add_time_ids for _ in range(bs)]
-            )
+            batch_time_ids = torch.cat([add_time_ids for _ in range(bs)])
             return batch_time_ids
         else:
             return None
 
     def add_noise(
-            self,
-            original_samples: torch.FloatTensor,
-            noise: torch.FloatTensor,
-            timesteps: torch.IntTensor,
-            **kwargs,
+        self,
+        original_samples: torch.FloatTensor,
+        noise: torch.FloatTensor,
+        timesteps: torch.IntTensor,
+        **kwargs,
     ) -> torch.FloatTensor:
-        original_samples_chunks = torch.chunk(original_samples, original_samples.shape[0], dim=0)
+        original_samples_chunks = torch.chunk(
+            original_samples, original_samples.shape[0], dim=0
+        )
         noise_chunks = torch.chunk(noise, noise.shape[0], dim=0)
         timesteps_chunks = torch.chunk(timesteps, timesteps.shape[0], dim=0)
 
-        if len(timesteps_chunks) == 1 and len(timesteps_chunks) != len(original_samples_chunks):
+        if len(timesteps_chunks) == 1 and len(timesteps_chunks) != len(
+            original_samples_chunks
+        ):
             timesteps_chunks = [timesteps_chunks[0]] * len(original_samples_chunks)
 
         noisy_latents_chunks = []
 
         for idx in range(original_samples.shape[0]):
-            noisy_latents = self.noise_scheduler.add_noise(original_samples_chunks[idx], noise_chunks[idx],
-                                                           timesteps_chunks[idx])
+            noisy_latents = self.noise_scheduler.add_noise(
+                original_samples_chunks[idx], noise_chunks[idx], timesteps_chunks[idx]
+            )
             noisy_latents_chunks.append(noisy_latents)
 
         noisy_latents = torch.cat(noisy_latents_chunks, dim=0)
         return noisy_latents
 
     def predict_noise(
-            self,
-            latents: torch.Tensor,
-            text_embeddings: Union[PromptEmbeds, None] = None,
-            timestep: Union[int, torch.Tensor] = 1,
-            guidance_scale=7.5,
-            guidance_rescale=0,
-            add_time_ids=None,
-            conditional_embeddings: Union[PromptEmbeds, None] = None,
-            unconditional_embeddings: Union[PromptEmbeds, None] = None,
-            is_input_scaled=False,
-            detach_unconditional=False,
-            rescale_cfg=None,
-            return_conditional_pred=False,
-            guidance_embedding_scale=1.0,
-            bypass_guidance_embedding=False,
-            batch: Union[None, 'DataLoaderBatchDTO'] = None,
-            **kwargs,
+        self,
+        latents: torch.Tensor,
+        text_embeddings: PromptEmbeds | None = None,
+        timestep: int | torch.Tensor = 1,
+        guidance_scale=7.5,
+        guidance_rescale=0,
+        add_time_ids=None,
+        conditional_embeddings: PromptEmbeds | None = None,
+        unconditional_embeddings: PromptEmbeds | None = None,
+        is_input_scaled=False,
+        detach_unconditional=False,
+        rescale_cfg=None,
+        return_conditional_pred=False,
+        guidance_embedding_scale=1.0,
+        bypass_guidance_embedding=False,
+        batch: Union[None, "DataLoaderBatchDTO"] = None,
+        **kwargs,
     ):
         conditional_pred = None
         # get the embeddings
         if text_embeddings is None and conditional_embeddings is None:
-            raise ValueError("Either text_embeddings or conditional_embeddings must be specified")
+            raise ValueError(
+                "Either text_embeddings or conditional_embeddings must be specified"
+            )
         if text_embeddings is None and unconditional_embeddings is not None:
-            text_embeddings = concat_prompt_embeds([
-                unconditional_embeddings,  # negative embedding
-                conditional_embeddings,  # positive embedding
-            ])
+            text_embeddings = concat_prompt_embeds(
+                [
+                    unconditional_embeddings,  # negative embedding
+                    conditional_embeddings,  # positive embedding
+                ]
+            )
         elif text_embeddings is None and conditional_embeddings is not None:
             # not doing cfg
             text_embeddings = conditional_embeddings
@@ -1887,7 +2177,9 @@ class StableDiffusion:
         if latents.shape[0] == text_embeddings.text_embeds.shape[0]:
             do_classifier_free_guidance = False
         elif latents.shape[0] * 2 != text_embeddings.text_embeds.shape[0]:
-            raise ValueError("Batch size of latents must be the same or half the batch size of text embeddings")
+            raise ValueError(
+                "Batch size of latents must be the same or half the batch size of text embeddings"
+            )
         latents = latents.to(self.device_torch)
         text_embeddings = text_embeddings.to(self.device_torch)
         timestep = timestep.to(self.device_torch)
@@ -1905,35 +2197,57 @@ class StableDiffusion:
                 timestep = timestep.repeat(latents.shape[0], 0)
 
         # handle t2i adapters
-        if 'down_intrablock_additional_residuals' in kwargs:
+        if "down_intrablock_additional_residuals" in kwargs:
             # go through each item and concat if doing cfg and it doesnt have the same shape
-            for idx, item in enumerate(kwargs['down_intrablock_additional_residuals']):
-                if do_classifier_free_guidance and item.shape[0] != text_embeddings.text_embeds.shape[0]:
-                    kwargs['down_intrablock_additional_residuals'][idx] = torch.cat([item] * 2, dim=0)
+            for idx, item in enumerate(kwargs["down_intrablock_additional_residuals"]):
+                if (
+                    do_classifier_free_guidance
+                    and item.shape[0] != text_embeddings.text_embeds.shape[0]
+                ):
+                    kwargs["down_intrablock_additional_residuals"][idx] = torch.cat(
+                        [item] * 2, dim=0
+                    )
 
         # handle controlnet
-        if 'down_block_additional_residuals' in kwargs and 'mid_block_additional_residual' in kwargs:
+        if (
+            "down_block_additional_residuals" in kwargs
+            and "mid_block_additional_residual" in kwargs
+        ):
             # go through each item and concat if doing cfg and it doesnt have the same shape
-            for idx, item in enumerate(kwargs['down_block_additional_residuals']):
-                if do_classifier_free_guidance and item.shape[0] != text_embeddings.text_embeds.shape[0]:
-                    kwargs['down_block_additional_residuals'][idx] = torch.cat([item] * 2, dim=0)
-            for idx, item in enumerate(kwargs['mid_block_additional_residual']):
-                if do_classifier_free_guidance and item.shape[0] != text_embeddings.text_embeds.shape[0]:
-                    kwargs['mid_block_additional_residual'][idx] = torch.cat([item] * 2, dim=0)
+            for idx, item in enumerate(kwargs["down_block_additional_residuals"]):
+                if (
+                    do_classifier_free_guidance
+                    and item.shape[0] != text_embeddings.text_embeds.shape[0]
+                ):
+                    kwargs["down_block_additional_residuals"][idx] = torch.cat(
+                        [item] * 2, dim=0
+                    )
+            for idx, item in enumerate(kwargs["mid_block_additional_residual"]):
+                if (
+                    do_classifier_free_guidance
+                    and item.shape[0] != text_embeddings.text_embeds.shape[0]
+                ):
+                    kwargs["mid_block_additional_residual"][idx] = torch.cat(
+                        [item] * 2, dim=0
+                    )
 
         def scale_model_input(model_input, timestep_tensor):
             if is_input_scaled:
                 return model_input
             mi_chunks = torch.chunk(model_input, model_input.shape[0], dim=0)
-            timestep_chunks = torch.chunk(timestep_tensor, timestep_tensor.shape[0], dim=0)
+            timestep_chunks = torch.chunk(
+                timestep_tensor, timestep_tensor.shape[0], dim=0
+            )
             out_chunks = []
             # unsqueeze if timestep is zero dim
             for idx in range(model_input.shape[0]):
                 # if scheduler has step_index
-                if hasattr(self.noise_scheduler, '_step_index'):
+                if hasattr(self.noise_scheduler, "_step_index"):
                     self.noise_scheduler._step_index = None
                 out_chunks.append(
-                    self.noise_scheduler.scale_model_input(mi_chunks[idx], timestep_chunks[idx])
+                    self.noise_scheduler.scale_model_input(
+                        mi_chunks[idx], timestep_chunks[idx]
+                    )
                 )
             return torch.cat(out_chunks, dim=0)
 
@@ -1964,16 +2278,22 @@ class StableDiffusion:
             if self.model_config.refiner_name_or_path is not None:
                 # we have the refiner on the second half of everything. Do Both
                 if do_classifier_free_guidance:
-                    raise ValueError("Refiner is not supported with classifier free guidance")
+                    raise ValueError(
+                        "Refiner is not supported with classifier free guidance"
+                    )
 
                 if self.unet.training:
                     input_chunks = torch.chunk(latent_model_input, 2, dim=0)
                     timestep_chunks = torch.chunk(timestep, 2, dim=0)
                     added_cond_kwargs_chunked = {
-                        "text_embeds": torch.chunk(text_embeddings.pooled_embeds, 2, dim=0),
+                        "text_embeds": torch.chunk(
+                            text_embeddings.pooled_embeds, 2, dim=0
+                        ),
                         "time_ids": torch.chunk(add_time_ids, 2, dim=0),
                     }
-                    text_embeds_chunks = torch.chunk(text_embeddings.text_embeds, 2, dim=0)
+                    text_embeds_chunks = torch.chunk(
+                        text_embeddings.text_embeds, 2, dim=0
+                    )
 
                     # predict the noise residual
                     base_pred = self.unet(
@@ -1981,8 +2301,8 @@ class StableDiffusion:
                         timestep_chunks[0],
                         encoder_hidden_states=text_embeds_chunks[0],
                         added_cond_kwargs={
-                            "text_embeds": added_cond_kwargs_chunked['text_embeds'][0],
-                            "time_ids": added_cond_kwargs_chunked['time_ids'][0],
+                            "text_embeds": added_cond_kwargs_chunked["text_embeds"][0],
+                            "time_ids": added_cond_kwargs_chunked["time_ids"][0],
                         },
                         **kwargs,
                     ).sample
@@ -1993,9 +2313,11 @@ class StableDiffusion:
                         encoder_hidden_states=text_embeds_chunks[1][:, :, -1280:],
                         # just use the first second text encoder
                         added_cond_kwargs={
-                            "text_embeds": added_cond_kwargs_chunked['text_embeds'][1],
+                            "text_embeds": added_cond_kwargs_chunked["text_embeds"][1],
                             # "time_ids": added_cond_kwargs_chunked['time_ids'][1],
-                            "time_ids": self.get_time_ids_from_latents(input_chunks[1], requires_aesthetic_score=True),
+                            "time_ids": self.get_time_ids_from_latents(
+                                input_chunks[1], requires_aesthetic_score=True
+                            ),
                         },
                         **kwargs,
                     ).sample
@@ -2009,14 +2331,14 @@ class StableDiffusion:
                         # just use the first second text encoder
                         added_cond_kwargs={
                             "text_embeds": text_embeddings.pooled_embeds,
-                            "time_ids": self.get_time_ids_from_latents(latent_model_input,
-                                                                       requires_aesthetic_score=True),
+                            "time_ids": self.get_time_ids_from_latents(
+                                latent_model_input, requires_aesthetic_score=True
+                            ),
                         },
                         **kwargs,
                     ).sample
 
             else:
-
                 # predict the noise residual
                 noise_pred = self.unet(
                     latent_model_input.to(self.device_torch, self.torch_dtype),
@@ -2033,13 +2355,15 @@ class StableDiffusion:
                 noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
                 conditional_pred = noise_pred_text
                 noise_pred = noise_pred_uncond + guidance_scale * (
-                        noise_pred_text - noise_pred_uncond
+                    noise_pred_text - noise_pred_uncond
                 )
 
                 # https://github.com/huggingface/diffusers/blob/7a91ea6c2b53f94da930a61ed571364022b21044/src/diffusers/pipelines/stable_diffusion_xl/pipeline_stable_diffusion_xl.py#L775
                 if guidance_rescale > 0.0:
                     # Based on 3.4. in https://arxiv.org/pdf/2305.08891.pdf
-                    noise_pred = rescale_noise_cfg(noise_pred, noise_pred_text, guidance_rescale=guidance_rescale)
+                    noise_pred = rescale_noise_cfg(
+                        noise_pred, noise_pred_text, guidance_rescale=guidance_rescale
+                    )
 
         else:
             with torch.no_grad():
@@ -2057,16 +2381,19 @@ class StableDiffusion:
                     ts_bs = timestep.shape[0]
                     if ts_bs != latent_model_input.shape[0]:
                         if ts_bs == 1:
-                            timestep = torch.cat([timestep] * latent_model_input.shape[0])
+                            timestep = torch.cat(
+                                [timestep] * latent_model_input.shape[0]
+                            )
                         elif ts_bs * 2 == latent_model_input.shape[0]:
                             timestep = torch.cat([timestep] * 2, dim=0)
                         else:
                             raise ValueError(
-                                f"Batch size of latents {latent_model_input.shape[0]} must be the same or half the batch size of timesteps {timestep.shape[0]}")
+                                f"Batch size of latents {latent_model_input.shape[0]} must be the same or half the batch size of timesteps {timestep.shape[0]}"
+                            )
 
             # predict the noise residual
             if self.is_pixart:
-                VAE_SCALE_FACTOR = 2 ** (len(self.vae.config['block_out_channels']) - 1)
+                VAE_SCALE_FACTOR = 2 ** (len(self.vae.config["block_out_channels"]) - 1)
                 batch_size, ch, h, w = list(latents.shape)
 
                 height = h * VAE_SCALE_FACTOR
@@ -2081,24 +2408,40 @@ class StableDiffusion:
                 elif self.pipeline.transformer.config.sample_size == 32:
                     aspect_ratio_bin = ASPECT_RATIO_256_BIN
                 else:
-                    raise ValueError(f"Invalid sample size: {self.pipeline.transformer.config.sample_size}")
+                    raise ValueError(
+                        f"Invalid sample size: {self.pipeline.transformer.config.sample_size}"
+                    )
                 orig_height, orig_width = height, width
-                height, width = self.pipeline.image_processor.classify_height_width_bin(height, width,
-                                                                                        ratios=aspect_ratio_bin)
+                height, width = self.pipeline.image_processor.classify_height_width_bin(
+                    height, width, ratios=aspect_ratio_bin
+                )
 
                 added_cond_kwargs = {"resolution": None, "aspect_ratio": None}
                 if self.unet_unwrapped.config.sample_size == 128 or (
-                        self.vae_scale_factor == 16 and self.unet_unwrapped.config.sample_size == 64):
+                    self.vae_scale_factor == 16
+                    and self.unet_unwrapped.config.sample_size == 64
+                ):
                     resolution = torch.tensor([height, width]).repeat(batch_size, 1)
-                    aspect_ratio = torch.tensor([float(height / width)]).repeat(batch_size, 1)
-                    resolution = resolution.to(dtype=text_embeddings.text_embeds.dtype, device=self.device_torch)
-                    aspect_ratio = aspect_ratio.to(dtype=text_embeddings.text_embeds.dtype, device=self.device_torch)
+                    aspect_ratio = torch.tensor([float(height / width)]).repeat(
+                        batch_size, 1
+                    )
+                    resolution = resolution.to(
+                        dtype=text_embeddings.text_embeds.dtype,
+                        device=self.device_torch,
+                    )
+                    aspect_ratio = aspect_ratio.to(
+                        dtype=text_embeddings.text_embeds.dtype,
+                        device=self.device_torch,
+                    )
 
                     if do_classifier_free_guidance:
                         resolution = torch.cat([resolution, resolution], dim=0)
                         aspect_ratio = torch.cat([aspect_ratio, aspect_ratio], dim=0)
 
-                    added_cond_kwargs = {"resolution": resolution, "aspect_ratio": aspect_ratio}
+                    added_cond_kwargs = {
+                        "resolution": resolution,
+                        "aspect_ratio": aspect_ratio,
+                    }
 
                 noise_pred = self.unet(
                     latent_model_input.to(self.device_torch, self.torch_dtype),
@@ -2107,11 +2450,14 @@ class StableDiffusion:
                     timestep=timestep,
                     added_cond_kwargs=added_cond_kwargs,
                     return_dict=False,
-                    **kwargs
+                    **kwargs,
                 )[0]
 
                 # learned sigma
-                if self.unet_unwrapped.config.out_channels // 2 == self.unet_unwrapped.config.in_channels:
+                if (
+                    self.unet_unwrapped.config.out_channels // 2
+                    == self.unet_unwrapped.config.in_channels
+                ):
                     noise_pred = noise_pred.chunk(2, dim=1)[0]
                 else:
                     noise_pred = noise_pred
@@ -2119,38 +2465,49 @@ class StableDiffusion:
                 if self.unet.device != self.device_torch:
                     try:
                         self.unet.to(self.device_torch)
-                    except Exception as e:
+                    except Exception:
                         pass
                 if self.unet.dtype != self.torch_dtype:
                     self.unet = self.unet.to(dtype=self.torch_dtype)
                 if self.is_flux:
                     with torch.no_grad():
-
                         bs, c, h, w = latent_model_input.shape
                         latent_model_input_packed = rearrange(
                             latent_model_input,
                             "b c (h ph) (w pw) -> b (h w) (c ph pw)",
                             ph=2,
-                            pw=2
+                            pw=2,
                         )
 
                         img_ids = torch.zeros(h // 2, w // 2, 3)
-                        img_ids[..., 1] = img_ids[..., 1] + torch.arange(h // 2)[:, None]
-                        img_ids[..., 2] = img_ids[..., 2] + torch.arange(w // 2)[None, :]
-                        img_ids = repeat(img_ids, "h w c -> b (h w) c", b=bs).to(self.device_torch)
+                        img_ids[..., 1] = (
+                            img_ids[..., 1] + torch.arange(h // 2)[:, None]
+                        )
+                        img_ids[..., 2] = (
+                            img_ids[..., 2] + torch.arange(w // 2)[None, :]
+                        )
+                        img_ids = repeat(img_ids, "h w c -> b (h w) c", b=bs).to(
+                            self.device_torch
+                        )
 
-                        txt_ids = torch.zeros(bs, text_embeddings.text_embeds.shape[1], 3).to(self.device_torch)
+                        txt_ids = torch.zeros(
+                            bs, text_embeddings.text_embeds.shape[1], 3
+                        ).to(self.device_torch)
 
                         # # handle guidance
                         if self.unet_unwrapped.config.guidance_embeds:
                             if isinstance(guidance_embedding_scale, list):
-                                guidance = torch.tensor(guidance_embedding_scale, device=self.device_torch)
+                                guidance = torch.tensor(
+                                    guidance_embedding_scale, device=self.device_torch
+                                )
                             else:
-                                guidance = torch.tensor([guidance_embedding_scale], device=self.device_torch)
+                                guidance = torch.tensor(
+                                    [guidance_embedding_scale], device=self.device_torch
+                                )
                                 guidance = guidance.expand(latents.shape[0])
                         else:
                             guidance = None
-                    
+
                     if bypass_guidance_embedding:
                         bypass_flux_guidance(self.unet)
 
@@ -2162,13 +2519,19 @@ class StableDiffusion:
                         img_ids = img_ids[0]
                     # with torch.amp.autocast(device_type='cuda', dtype=cast_dtype):
                     noise_pred = self.unet(
-                        hidden_states=latent_model_input_packed.to(self.device_torch, cast_dtype),  # [1, 4096, 64]
+                        hidden_states=latent_model_input_packed.to(
+                            self.device_torch, cast_dtype
+                        ),  # [1, 4096, 64]
                         # YiYi notes: divide it by 1000 for now because we scale it by 1000 in the transforme rmodel (we should not keep it but I want to keep the inputs same for the model for testing)
                         # todo make sure this doesnt change
                         timestep=timestep / 1000,  # timestep is 1000 scale
-                        encoder_hidden_states=text_embeddings.text_embeds.to(self.device_torch, cast_dtype),
+                        encoder_hidden_states=text_embeddings.text_embeds.to(
+                            self.device_torch, cast_dtype
+                        ),
                         # [1, 512, 4096]
-                        pooled_projections=text_embeddings.pooled_embeds.to(self.device_torch, cast_dtype),  # [1, 768]
+                        pooled_projections=text_embeddings.pooled_embeds.to(
+                            self.device_torch, cast_dtype
+                        ),  # [1, 768]
                         txt_ids=txt_ids,  # [1, 512, 3]
                         img_ids=img_ids,  # [1, 4096, 3]
                         guidance=guidance,
@@ -2187,9 +2550,9 @@ class StableDiffusion:
                         ph=2,
                         pw=2,
                         # c=latent_model_input.shape[1],
-                        c=self.vae.config.latent_channels
+                        c=self.vae.config.latent_channels,
                     )
-                    
+
                     if bypass_guidance_embedding:
                         restore_flux_guidance(self.unet)
                 elif self.is_lumina2:
@@ -2197,21 +2560,33 @@ class StableDiffusion:
                     t = 1 - timestep / self.noise_scheduler.config.num_train_timesteps
                     with self.accelerator.autocast():
                         noise_pred = self.unet(
-                            hidden_states=latent_model_input.to(self.device_torch, self.torch_dtype),
+                            hidden_states=latent_model_input.to(
+                                self.device_torch, self.torch_dtype
+                            ),
                             timestep=t,
-                            encoder_attention_mask=text_embeddings.attention_mask.to(self.device_torch, dtype=torch.int64),
-                            encoder_hidden_states=text_embeddings.text_embeds.to(self.device_torch, self.torch_dtype),
+                            encoder_attention_mask=text_embeddings.attention_mask.to(
+                                self.device_torch, dtype=torch.int64
+                            ),
+                            encoder_hidden_states=text_embeddings.text_embeds.to(
+                                self.device_torch, self.torch_dtype
+                            ),
                             **kwargs,
                         ).sample
-                    
+
                     # lumina2 does this before stepping. Should we do it here?
                     noise_pred = -noise_pred
                 elif self.is_v3:
                     noise_pred = self.unet(
-                        hidden_states=latent_model_input.to(self.device_torch, self.torch_dtype),
+                        hidden_states=latent_model_input.to(
+                            self.device_torch, self.torch_dtype
+                        ),
                         timestep=timestep,
-                        encoder_hidden_states=text_embeddings.text_embeds.to(self.device_torch, self.torch_dtype),
-                        pooled_projections=text_embeddings.pooled_embeds.to(self.device_torch, self.torch_dtype),
+                        encoder_hidden_states=text_embeddings.text_embeds.to(
+                            self.device_torch, self.torch_dtype
+                        ),
+                        pooled_projections=text_embeddings.pooled_embeds.to(
+                            self.device_torch, self.torch_dtype
+                        ),
                         **kwargs,
                     ).sample
                     if isinstance(noise_pred, QTensor):
@@ -2219,12 +2594,16 @@ class StableDiffusion:
                 elif self.is_auraflow:
                     # aura use timestep value between 0 and 1, with t=1 as noise and t=0 as the image
                     # broadcast to batch dimension in a way that's compatible with ONNX/Core ML
-                    t = torch.tensor([timestep / 1000]).expand(latent_model_input.shape[0])
+                    t = torch.tensor([timestep / 1000]).expand(
+                        latent_model_input.shape[0]
+                    )
                     t = t.to(self.device_torch, self.torch_dtype)
 
                     noise_pred = self.unet(
                         latent_model_input,
-                        encoder_hidden_states=text_embeddings.text_embeds.to(self.device_torch, self.torch_dtype),
+                        encoder_hidden_states=text_embeddings.text_embeds.to(
+                            self.device_torch, self.torch_dtype
+                        ),
                         timestep=t,
                         return_dict=False,
                     )[0]
@@ -2232,7 +2611,9 @@ class StableDiffusion:
                     noise_pred = self.unet(
                         latent_model_input.to(self.device_torch, self.torch_dtype),
                         timestep=timestep,
-                        encoder_hidden_states=text_embeddings.text_embeds.to(self.device_torch, self.torch_dtype),
+                        encoder_hidden_states=text_embeddings.text_embeds.to(
+                            self.device_torch, self.torch_dtype
+                        ),
                         **kwargs,
                     ).sample
 
@@ -2245,16 +2626,20 @@ class StableDiffusion:
                 if detach_unconditional:
                     noise_pred_uncond = noise_pred_uncond.detach()
                 noise_pred = noise_pred_uncond + guidance_scale * (
-                        noise_pred_text - noise_pred_uncond
+                    noise_pred_text - noise_pred_uncond
                 )
                 if rescale_cfg is not None and rescale_cfg != guidance_scale:
                     with torch.no_grad():
                         # do cfg at the target rescale so we can match it
                         target_pred_mean_std = noise_pred_uncond + rescale_cfg * (
-                                noise_pred_text - noise_pred_uncond
+                            noise_pred_text - noise_pred_uncond
                         )
-                        target_mean = target_pred_mean_std.mean([1, 2, 3], keepdim=True).detach()
-                        target_std = target_pred_mean_std.std([1, 2, 3], keepdim=True).detach()
+                        target_mean = target_pred_mean_std.mean(
+                            [1, 2, 3], keepdim=True
+                        ).detach()
+                        target_std = target_pred_mean_std.std(
+                            [1, 2, 3], keepdim=True
+                        ).detach()
 
                         pred_mean = noise_pred.mean([1, 2, 3], keepdim=True).detach()
                         pred_std = noise_pred.std([1, 2, 3], keepdim=True).detach()
@@ -2266,22 +2651,30 @@ class StableDiffusion:
                 # https://github.com/huggingface/diffusers/blob/7a91ea6c2b53f94da930a61ed571364022b21044/src/diffusers/pipelines/stable_diffusion_xl/pipeline_stable_diffusion_xl.py#L775
                 if guidance_rescale > 0.0:
                     # Based on 3.4. in https://arxiv.org/pdf/2305.08891.pdf
-                    noise_pred = rescale_noise_cfg(noise_pred, noise_pred_text, guidance_rescale=guidance_rescale)
+                    noise_pred = rescale_noise_cfg(
+                        noise_pred, noise_pred_text, guidance_rescale=guidance_rescale
+                    )
 
         if return_conditional_pred:
             return noise_pred, conditional_pred
         return noise_pred
 
-    def step_scheduler(self, model_input, latent_input, timestep_tensor, noise_scheduler=None):
+    def step_scheduler(
+        self, model_input, latent_input, timestep_tensor, noise_scheduler=None
+    ):
         if noise_scheduler is None:
             noise_scheduler = self.noise_scheduler
         # // sometimes they are on the wrong device, no idea why
-        if isinstance(noise_scheduler, DDPMScheduler) or isinstance(noise_scheduler, LCMScheduler):
+        if isinstance(noise_scheduler, DDPMScheduler) or isinstance(
+            noise_scheduler, LCMScheduler
+        ):
             try:
                 noise_scheduler.betas = noise_scheduler.betas.to(self.device_torch)
                 noise_scheduler.alphas = noise_scheduler.alphas.to(self.device_torch)
-                noise_scheduler.alphas_cumprod = noise_scheduler.alphas_cumprod.to(self.device_torch)
-            except Exception as e:
+                noise_scheduler.alphas_cumprod = noise_scheduler.alphas_cumprod.to(
+                    self.device_torch
+                )
+            except Exception:
                 pass
 
         mi_chunks = torch.chunk(model_input, model_input.shape[0], dim=0)
@@ -2294,33 +2687,39 @@ class StableDiffusion:
 
         for idx in range(model_input.shape[0]):
             # Reset it so it is unique for the
-            if hasattr(noise_scheduler, '_step_index'):
+            if hasattr(noise_scheduler, "_step_index"):
                 noise_scheduler._step_index = None
-            if hasattr(noise_scheduler, 'is_scale_input_called'):
+            if hasattr(noise_scheduler, "is_scale_input_called"):
                 noise_scheduler.is_scale_input_called = True
             out_chunks.append(
-                noise_scheduler.step(mi_chunks[idx], timestep_chunks[idx], latent_chunks[idx], return_dict=False)[
-                    0]
+                noise_scheduler.step(
+                    mi_chunks[idx],
+                    timestep_chunks[idx],
+                    latent_chunks[idx],
+                    return_dict=False,
+                )[0]
             )
         return torch.cat(out_chunks, dim=0)
 
     # ref: https://github.com/huggingface/diffusers/blob/0bab447670f47c28df60fbd2f6a0f833f75a16f5/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion.py#L746
     def diffuse_some_steps(
-            self,
-            latents: torch.FloatTensor,
-            text_embeddings: PromptEmbeds,
-            total_timesteps: int = 1000,
-            start_timesteps=0,
-            guidance_scale=1,
-            add_time_ids=None,
-            bleed_ratio: float = 0.5,
-            bleed_latents: torch.FloatTensor = None,
-            is_input_scaled=False,
-            return_first_prediction=False,
-            bypass_guidance_embedding=False,
-            **kwargs,
+        self,
+        latents: torch.FloatTensor,
+        text_embeddings: PromptEmbeds,
+        total_timesteps: int = 1000,
+        start_timesteps=0,
+        guidance_scale=1,
+        add_time_ids=None,
+        bleed_ratio: float = 0.5,
+        bleed_latents: torch.FloatTensor = None,
+        is_input_scaled=False,
+        return_first_prediction=False,
+        bypass_guidance_embedding=False,
+        **kwargs,
     ):
-        timesteps_to_run = self.noise_scheduler.timesteps[start_timesteps:total_timesteps]
+        timesteps_to_run = self.noise_scheduler.timesteps[
+            start_timesteps:total_timesteps
+        ]
 
         first_prediction = None
 
@@ -2345,7 +2744,10 @@ class StableDiffusion:
             latents = self.step_scheduler(noise_pred, latents, timestep)
 
             # if not last step, and bleeding, bleed in some latents
-            if bleed_latents is not None and timestep != self.noise_scheduler.timesteps[-1]:
+            if (
+                bleed_latents is not None
+                and timestep != self.noise_scheduler.timesteps[-1]
+            ):
                 latents = (latents * (1 - bleed_ratio)) + (bleed_latents * bleed_ratio)
 
             # only skip first scaling
@@ -2357,15 +2759,15 @@ class StableDiffusion:
         return latents
 
     def encode_prompt(
-            self,
-            prompt,
-            prompt2=None,
-            num_images_per_prompt=1,
-            force_all=False,
-            long_prompts=False,
-            max_length=None,
-            dropout_prob=0.0,
-            control_images=None,
+        self,
+        prompt,
+        prompt2=None,
+        num_images_per_prompt=1,
+        force_all=False,
+        long_prompts=False,
+        max_length=None,
+        dropout_prob=0.0,
+        control_images=None,
     ) -> PromptEmbeds:
         # sd1.5 embeddings are (bs, 77, 768)
         prompt = prompt
@@ -2418,7 +2820,7 @@ class StableDiffusion:
                 prompt,
                 truncate=not long_prompts,
                 max_length=300 if self.model_config.is_pixart_sigma else 120,
-                dropout_prob=dropout_prob
+                dropout_prob=dropout_prob,
             )
             return PromptEmbeds(
                 embeds,
@@ -2431,7 +2833,7 @@ class StableDiffusion:
                 prompt,
                 truncate=not long_prompts,
                 max_length=256,
-                dropout_prob=dropout_prob
+                dropout_prob=dropout_prob,
             )
             return PromptEmbeds(
                 embeds,
@@ -2445,11 +2847,9 @@ class StableDiffusion:
                 truncate=not long_prompts,
                 max_length=512,
                 dropout_prob=dropout_prob,
-                attn_mask=self.model_config.attn_masking
+                attn_mask=self.model_config.attn_masking,
             )
-            pe = PromptEmbeds(
-                prompt_embeds
-            )
+            pe = PromptEmbeds(prompt_embeds)
             pe.pooled_embeds = pooled_prompt_embeds
             return pe
 
@@ -2464,7 +2864,7 @@ class StableDiffusion:
                 do_classifier_free_guidance=False,
                 num_images_per_prompt=1,
                 device=self.device_torch,
-                max_sequence_length=256, # should it be 512?
+                max_sequence_length=256,  # should it be 512?
             )
             return PromptEmbeds(
                 prompt_embeds,
@@ -2478,15 +2878,16 @@ class StableDiffusion:
                 prompt,
                 truncate=not long_prompts,
                 max_length=256,
-                dropout_prob=dropout_prob
+                dropout_prob=dropout_prob,
             )
-            
+
             # just mask the attention mask
             prompt_attention_mask = attention_mask.unsqueeze(-1).expand(embeds.shape)
-            embeds = embeds * prompt_attention_mask.to(dtype=embeds.dtype, device=embeds.device)
+            embeds = embeds * prompt_attention_mask.to(
+                dtype=embeds.dtype, device=embeds.device
+            )
             return PromptEmbeds(
                 embeds,
-                
                 # do we want attn mask here?
                 # attention_mask=attention_mask,
             )
@@ -2498,17 +2899,12 @@ class StableDiffusion:
                     prompt,
                     truncate=not long_prompts,
                     max_length=max_length,
-                    dropout_prob=dropout_prob
+                    dropout_prob=dropout_prob,
                 )
             )
 
     @torch.no_grad()
-    def encode_images(
-            self,
-            image_list: List[torch.Tensor],
-            device=None,
-            dtype=None
-    ):
+    def encode_images(self, image_list: list[torch.Tensor], device=None, dtype=None):
         if device is None:
             device = self.vae_device_torch
         if dtype is None:
@@ -2523,35 +2919,41 @@ class StableDiffusion:
         # move to device and dtype
         image_list = [image.to(device, dtype=dtype) for image in image_list]
 
-        VAE_SCALE_FACTOR = 2 ** (len(self.vae.config['block_out_channels']) - 1)
+        VAE_SCALE_FACTOR = 2 ** (len(self.vae.config["block_out_channels"]) - 1)
 
         # resize images if not divisible by 8
         for i in range(len(image_list)):
             image = image_list[i]
-            if image.shape[1] % VAE_SCALE_FACTOR != 0 or image.shape[2] % VAE_SCALE_FACTOR != 0:
-                image_list[i] = Resize((image.shape[1] // VAE_SCALE_FACTOR * VAE_SCALE_FACTOR,
-                                        image.shape[2] // VAE_SCALE_FACTOR * VAE_SCALE_FACTOR))(image)
+            if (
+                image.shape[1] % VAE_SCALE_FACTOR != 0
+                or image.shape[2] % VAE_SCALE_FACTOR != 0
+            ):
+                image_list[i] = Resize(
+                    (
+                        image.shape[1] // VAE_SCALE_FACTOR * VAE_SCALE_FACTOR,
+                        image.shape[2] // VAE_SCALE_FACTOR * VAE_SCALE_FACTOR,
+                    )
+                )(image)
 
         images = torch.stack(image_list)
         if isinstance(self.vae, AutoencoderTiny):
             latents = self.vae.encode(images, return_dict=False)[0]
         else:
             latents = self.vae.encode(images).latent_dist.sample()
-        shift = self.vae.config['shift_factor'] if self.vae.config['shift_factor'] is not None else 0
+        shift = (
+            self.vae.config["shift_factor"]
+            if self.vae.config["shift_factor"] is not None
+            else 0
+        )
 
         # flux ref https://github.com/black-forest-labs/flux/blob/c23ae247225daba30fbd56058d247cc1b1fc20a3/src/flux/modules/autoencoder.py#L303
         # z = self.scale_factor * (z - self.shift_factor)
-        latents = self.vae.config['scaling_factor'] * (latents - shift)
+        latents = self.vae.config["scaling_factor"] * (latents - shift)
         latents = latents.to(device, dtype=dtype)
 
         return latents
 
-    def decode_latents(
-            self,
-            latents: torch.Tensor,
-            device=None,
-            dtype=None
-    ):
+    def decode_latents(self, latents: torch.Tensor, device=None, dtype=None):
         if device is None:
             device = self.device
         if dtype is None:
@@ -2561,18 +2963,20 @@ class StableDiffusion:
         if self.vae.device == torch.device("cpu"):
             self.vae.to(self.device_torch)
         latents = latents.to(self.device_torch, dtype=self.torch_dtype)
-        latents = (latents / self.vae.config['scaling_factor']) + self.vae.config['shift_factor']
+        latents = (latents / self.vae.config["scaling_factor"]) + self.vae.config[
+            "shift_factor"
+        ]
         images = self.vae.decode(latents).sample
         images = images.to(device, dtype=dtype)
 
         return images
 
     def encode_image_prompt_pairs(
-            self,
-            prompt_list: List[str],
-            image_list: List[torch.Tensor],
-            device=None,
-            dtype=None
+        self,
+        prompt_list: list[str],
+        image_list: list[torch.Tensor],
+        device=None,
+        dtype=None,
     ):
         # todo check image types and expand and rescale as needed
         # device and dtype are for outputs
@@ -2593,7 +2997,7 @@ class StableDiffusion:
     def get_weight_by_name(self, name):
         # weights begin with te{te_num}_ for text encoder
         # weights begin with unet_ for unet_
-        if name.startswith('te'):
+        if name.startswith("te"):
             key = name[4:]
             # text encoder
             te_num = int(name[2])
@@ -2601,14 +3005,16 @@ class StableDiffusion:
                 return self.text_encoder[te_num].state_dict()[key]
             else:
                 return self.text_encoder.state_dict()[key]
-        elif name.startswith('unet'):
+        elif name.startswith("unet"):
             key = name[5:]
             # unet
             return self.unet.state_dict()[key]
 
         raise ValueError(f"Unknown weight name: {name}")
 
-    def inject_trigger_into_prompt(self, prompt, trigger=None, to_replace_list=None, add_if_not_present=False):
+    def inject_trigger_into_prompt(
+        self, prompt, trigger=None, to_replace_list=None, add_if_not_present=False
+    ):
         return inject_trigger_into_prompt(
             prompt,
             trigger=trigger,
@@ -2620,55 +3026,89 @@ class StableDiffusion:
         state_dict = OrderedDict()
         if vae:
             for k, v in self.vae.state_dict().items():
-                new_key = k if k.startswith(f"{SD_PREFIX_VAE}") else f"{SD_PREFIX_VAE}_{k}"
+                new_key = (
+                    k if k.startswith(f"{SD_PREFIX_VAE}") else f"{SD_PREFIX_VAE}_{k}"
+                )
                 state_dict[new_key] = v
         if text_encoder:
             if isinstance(self.text_encoder, list):
                 for i, encoder in enumerate(self.text_encoder):
                     for k, v in encoder.state_dict().items():
-                        new_key = k if k.startswith(
-                            f"{SD_PREFIX_TEXT_ENCODER}{i}_") else f"{SD_PREFIX_TEXT_ENCODER}{i}_{k}"
+                        new_key = (
+                            k
+                            if k.startswith(f"{SD_PREFIX_TEXT_ENCODER}{i}_")
+                            else f"{SD_PREFIX_TEXT_ENCODER}{i}_{k}"
+                        )
                         state_dict[new_key] = v
             else:
                 for k, v in self.text_encoder.state_dict().items():
-                    new_key = k if k.startswith(f"{SD_PREFIX_TEXT_ENCODER}_") else f"{SD_PREFIX_TEXT_ENCODER}_{k}"
+                    new_key = (
+                        k
+                        if k.startswith(f"{SD_PREFIX_TEXT_ENCODER}_")
+                        else f"{SD_PREFIX_TEXT_ENCODER}_{k}"
+                    )
                     state_dict[new_key] = v
         if unet:
             for k, v in self.unet.state_dict().items():
-                new_key = k if k.startswith(f"{SD_PREFIX_UNET}_") else f"{SD_PREFIX_UNET}_{k}"
+                new_key = (
+                    k if k.startswith(f"{SD_PREFIX_UNET}_") else f"{SD_PREFIX_UNET}_{k}"
+                )
                 state_dict[new_key] = v
         return state_dict
 
-    def named_parameters(self, vae=True, text_encoder=True, unet=True, refiner=False, state_dict_keys=False) -> \
-            OrderedDict[
-                str, Parameter]:
+    def named_parameters(
+        self,
+        vae=True,
+        text_encoder=True,
+        unet=True,
+        refiner=False,
+        state_dict_keys=False,
+    ) -> OrderedDict[str, Parameter]:
         named_params: OrderedDict[str, Parameter] = OrderedDict()
         if vae:
-            for name, param in self.vae.named_parameters(recurse=True, prefix=f"{SD_PREFIX_VAE}"):
+            for name, param in self.vae.named_parameters(
+                recurse=True, prefix=f"{SD_PREFIX_VAE}"
+            ):
                 named_params[name] = param
         if text_encoder:
             if isinstance(self.text_encoder, list):
                 for i, encoder in enumerate(self.text_encoder):
-                    if self.is_xl and not self.model_config.use_text_encoder_1 and i == 0:
+                    if (
+                        self.is_xl
+                        and not self.model_config.use_text_encoder_1
+                        and i == 0
+                    ):
                         # dont add these params
                         continue
-                    if self.is_xl and not self.model_config.use_text_encoder_2 and i == 1:
+                    if (
+                        self.is_xl
+                        and not self.model_config.use_text_encoder_2
+                        and i == 1
+                    ):
                         # dont add these params
                         continue
 
-                    for name, param in encoder.named_parameters(recurse=True, prefix=f"{SD_PREFIX_TEXT_ENCODER}{i}"):
+                    for name, param in encoder.named_parameters(
+                        recurse=True, prefix=f"{SD_PREFIX_TEXT_ENCODER}{i}"
+                    ):
                         named_params[name] = param
             else:
-                for name, param in self.text_encoder.named_parameters(recurse=True, prefix=f"{SD_PREFIX_TEXT_ENCODER}"):
+                for name, param in self.text_encoder.named_parameters(
+                    recurse=True, prefix=f"{SD_PREFIX_TEXT_ENCODER}"
+                ):
                     named_params[name] = param
         if unet:
             if self.is_flux or self.is_lumina2:
-                for name, param in self.unet.named_parameters(recurse=True, prefix="transformer"):
+                for name, param in self.unet.named_parameters(
+                    recurse=True, prefix="transformer"
+                ):
                     named_params[name] = param
             else:
-                for name, param in self.unet.named_parameters(recurse=True, prefix=f"{SD_PREFIX_UNET}"):
+                for name, param in self.unet.named_parameters(
+                    recurse=True, prefix=f"{SD_PREFIX_UNET}"
+                ):
                     named_params[name] = param
-            
+
             if self.model_config.ignore_if_contains is not None:
                 # remove params that contain the ignore_if_contains from named params
                 for key in list(named_params.keys()):
@@ -2681,7 +3121,9 @@ class StableDiffusion:
                         del named_params[key]
 
         if refiner:
-            for name, param in self.refiner_unet.named_parameters(recurse=True, prefix=f"{SD_PREFIX_REFINER_UNET}"):
+            for name, param in self.refiner_unet.named_parameters(
+                recurse=True, prefix=f"{SD_PREFIX_REFINER_UNET}"
+            ):
                 named_params[name] = param
 
         # convert to state dict keys, jsut replace . with _ on keys
@@ -2689,18 +3131,19 @@ class StableDiffusion:
             new_named_params = OrderedDict()
             for k, v in named_params.items():
                 # replace only the first . with an _
-                new_key = k.replace('.', '_', 1)
+                new_key = k.replace(".", "_", 1)
                 new_named_params[new_key] = v
             named_params = new_named_params
 
         return named_params
 
-    def save_refiner(self, output_file: str, meta: OrderedDict, save_dtype=get_torch_dtype('fp16')):
-
+    def save_refiner(
+        self, output_file: str, meta: OrderedDict, save_dtype=get_torch_dtype("fp16")
+    ):
         # load the full refiner since we only train unet
         if self.model_config.refiner_name_or_path is None:
             raise ValueError("Refiner must be specified to save it")
-        refiner_config_path = os.path.join(ORIG_CONFIGS_ROOT, 'sd_xl_refiner.yaml')
+        refiner_config_path = os.path.join(ORIG_CONFIGS_ROOT, "sd_xl_refiner.yaml")
         # load the refiner model
         dtype = get_torch_dtype(self.dtype)
         model_path = self.model_config._original_refiner_name_or_path
@@ -2709,7 +3152,7 @@ class StableDiffusion:
             refiner = StableDiffusionXLImg2ImgPipeline.from_pretrained(
                 model_path,
                 dtype=dtype,
-                device='cpu',
+                device="cpu",
                 # variant="fp16",
                 use_safetensors=True,
             )
@@ -2717,7 +3160,7 @@ class StableDiffusion:
             refiner = StableDiffusionXLImg2ImgPipeline.from_single_file(
                 model_path,
                 dtype=dtype,
-                device='cpu',
+                device="cpu",
                 torch_dtype=self.torch_dtype,
                 original_config_file=refiner_config_path,
             )
@@ -2730,17 +3173,20 @@ class StableDiffusion:
             new_key = k if k.startswith(f"{SD_PREFIX_VAE}") else f"{SD_PREFIX_VAE}_{k}"
             diffusers_state_dict[new_key] = v
         for k, v in refiner.text_encoder_2.state_dict().items():
-            new_key = k if k.startswith(f"{SD_PREFIX_TEXT_ENCODER2}_") else f"{SD_PREFIX_TEXT_ENCODER2}_{k}"
+            new_key = (
+                k
+                if k.startswith(f"{SD_PREFIX_TEXT_ENCODER2}_")
+                else f"{SD_PREFIX_TEXT_ENCODER2}_{k}"
+            )
             diffusers_state_dict[new_key] = v
         for k, v in refiner.unet.state_dict().items():
-            new_key = k if k.startswith(f"{SD_PREFIX_UNET}_") else f"{SD_PREFIX_UNET}_{k}"
+            new_key = (
+                k if k.startswith(f"{SD_PREFIX_UNET}_") else f"{SD_PREFIX_UNET}_{k}"
+            )
             diffusers_state_dict[new_key] = v
 
         converted_state_dict = get_ldm_state_dict_from_diffusers(
-            diffusers_state_dict,
-            'sdxl_refiner',
-            device='cpu',
-            dtype=save_dtype
+            diffusers_state_dict, "sdxl_refiner", device="cpu", dtype=save_dtype
         )
 
         # make sure parent folder exists
@@ -2752,45 +3198,50 @@ class StableDiffusion:
             output_config_path = f"{output_path_no_ext}.yaml"
             shutil.copyfile(self.config_file, output_config_path)
 
-    def save(self, output_file: str, meta: OrderedDict, save_dtype=get_torch_dtype('fp16'), logit_scale=None):
-        version_string = '1'
+    def save(
+        self,
+        output_file: str,
+        meta: OrderedDict,
+        save_dtype=get_torch_dtype("fp16"),
+        logit_scale=None,
+    ):
+        version_string = "1"
         if self.is_v2:
-            version_string = '2'
+            version_string = "2"
         if self.is_xl:
-            version_string = 'sdxl'
+            version_string = "sdxl"
         if self.is_ssd:
             # overwrite sdxl because both wil be true here
-            version_string = 'ssd'
+            version_string = "ssd"
         if self.is_ssd and self.is_vega:
-            version_string = 'vega'
+            version_string = "vega"
         # if output file does not end in .safetensors, then it is a directory and we are
         # saving in diffusers format
-        if not output_file.endswith('.safetensors'):
+        if not output_file.endswith(".safetensors"):
             # diffusers
             if self.is_flux:
                 # only save the unet
                 transformer: FluxTransformer2DModel = unwrap_model(self.unet)
                 transformer.save_pretrained(
-                    save_directory=os.path.join(output_file, 'transformer'),
+                    save_directory=os.path.join(output_file, "transformer"),
                     safe_serialization=True,
                 )
             elif self.is_lumina2:
                 # only save the unet
                 transformer: Lumina2Transformer2DModel = unwrap_model(self.unet)
                 transformer.save_pretrained(
-                    save_directory=os.path.join(output_file, 'transformer'),
+                    save_directory=os.path.join(output_file, "transformer"),
                     safe_serialization=True,
                 )
-                
-            else:
 
+            else:
                 self.pipeline.save_pretrained(
                     save_directory=output_file,
                     safe_serialization=True,
                 )
             # save out meta config
-            meta_path = os.path.join(output_file, 'aitk_meta.yaml')
-            with open(meta_path, 'w') as f:
+            meta_path = os.path.join(output_file, "aitk_meta.yaml")
+            with open(meta_path, "w") as f:
                 yaml.dump(meta, f)
 
         else:
@@ -2807,44 +3258,55 @@ class StableDiffusion:
                 shutil.copyfile(self.config_file, output_config_path)
 
     def prepare_optimizer_params(
-            self,
-            unet=False,
-            text_encoder=False,
-            text_encoder_lr=None,
-            unet_lr=None,
-            refiner_lr=None,
-            refiner=False,
-            default_lr=1e-6,
+        self,
+        unet=False,
+        text_encoder=False,
+        text_encoder_lr=None,
+        unet_lr=None,
+        refiner_lr=None,
+        refiner=False,
+        default_lr=1e-6,
     ):
         # todo maybe only get locon ones?
         # not all items are saved, to make it match, we need to match out save mappings
         # and not train anything not mapped. Also add learning rate
-        version = 'sd1'
+        version = "sd1"
         if self.is_xl:
-            version = 'sdxl'
+            version = "sdxl"
         if self.is_v2:
-            version = 'sd2'
+            version = "sd2"
         mapping_filename = f"stable_diffusion_{version}.json"
         mapping_path = os.path.join(KEYMAPS_ROOT, mapping_filename)
-        with open(mapping_path, 'r') as f:
+        with open(mapping_path) as f:
             mapping = json.load(f)
-        ldm_diffusers_keymap = mapping['ldm_diffusers_keymap']
+        ldm_diffusers_keymap = mapping["ldm_diffusers_keymap"]
 
         trainable_parameters = []
 
         # we use state dict to find params
 
         if unet:
-            named_params = self.named_parameters(vae=False, unet=unet, text_encoder=False, state_dict_keys=True)
+            named_params = self.named_parameters(
+                vae=False, unet=unet, text_encoder=False, state_dict_keys=True
+            )
             unet_lr = unet_lr if unet_lr is not None else default_lr
             params = []
-            if self.is_pixart or self.is_auraflow or self.is_flux or self.is_v3 or self.is_lumina2:
+            if (
+                self.is_pixart
+                or self.is_auraflow
+                or self.is_flux
+                or self.is_v3
+                or self.is_lumina2
+            ):
                 for param in named_params.values():
                     if param.requires_grad:
                         params.append(param)
             else:
                 for key, diffusers_key in ldm_diffusers_keymap.items():
-                    if diffusers_key in named_params and diffusers_key not in DO_NOT_TRAIN_WEIGHTS:
+                    if (
+                        diffusers_key in named_params
+                        and diffusers_key not in DO_NOT_TRAIN_WEIGHTS
+                    ):
                         if named_params[diffusers_key].requires_grad:
                             params.append(named_params[diffusers_key])
             param_data = {"params": params, "lr": unet_lr}
@@ -2852,11 +3314,18 @@ class StableDiffusion:
             print_acc(f"Found {len(params)} trainable parameter in unet")
 
         if text_encoder:
-            named_params = self.named_parameters(vae=False, unet=False, text_encoder=text_encoder, state_dict_keys=True)
-            text_encoder_lr = text_encoder_lr if text_encoder_lr is not None else default_lr
+            named_params = self.named_parameters(
+                vae=False, unet=False, text_encoder=text_encoder, state_dict_keys=True
+            )
+            text_encoder_lr = (
+                text_encoder_lr if text_encoder_lr is not None else default_lr
+            )
             params = []
             for key, diffusers_key in ldm_diffusers_keymap.items():
-                if diffusers_key in named_params and diffusers_key not in DO_NOT_TRAIN_WEIGHTS:
+                if (
+                    diffusers_key in named_params
+                    and diffusers_key not in DO_NOT_TRAIN_WEIGHTS
+                ):
                     if named_params[diffusers_key].requires_grad:
                         params.append(named_params[diffusers_key])
             param_data = {"params": params, "lr": text_encoder_lr}
@@ -2865,13 +3334,21 @@ class StableDiffusion:
             print_acc(f"Found {len(params)} trainable parameter in text encoder")
 
         if refiner:
-            named_params = self.named_parameters(vae=False, unet=False, text_encoder=False, refiner=True,
-                                                 state_dict_keys=True)
+            named_params = self.named_parameters(
+                vae=False,
+                unet=False,
+                text_encoder=False,
+                refiner=True,
+                state_dict_keys=True,
+            )
             refiner_lr = refiner_lr if refiner_lr is not None else default_lr
             params = []
             for key, diffusers_key in ldm_diffusers_keymap.items():
                 diffusers_key = f"refiner_{diffusers_key}"
-                if diffusers_key in named_params and diffusers_key not in DO_NOT_TRAIN_WEIGHTS:
+                if (
+                    diffusers_key in named_params
+                    and diffusers_key not in DO_NOT_TRAIN_WEIGHTS
+                ):
                     if named_params[diffusers_key].requires_grad:
                         params.append(named_params[diffusers_key])
             param_data = {"params": params, "lr": refiner_lr}
@@ -2888,48 +3365,62 @@ class StableDiffusion:
 
         self.device_state = {
             **empty_preset,
-            'vae': {
-                'training': self.vae.training,
-                'device': self.vae.device,
+            "vae": {
+                "training": self.vae.training,
+                "device": self.vae.device,
             },
-            'unet': {
-                'training': self.unet.training,
-                'device': self.unet.device,
-                'requires_grad': unet_has_grad,
+            "unet": {
+                "training": self.unet.training,
+                "device": self.unet.device,
+                "requires_grad": unet_has_grad,
             },
         }
         if isinstance(self.text_encoder, list):
-            self.device_state['text_encoder']: List[dict] = []
+            self.device_state["text_encoder"]: list[dict] = []
             for encoder in self.text_encoder:
                 if isinstance(encoder, LlamaModel):
                     te_has_grad = encoder.layers[0].mlp.gate_proj.weight.requires_grad
                 else:
                     try:
-                        te_has_grad = encoder.text_model.final_layer_norm.weight.requires_grad
+                        te_has_grad = (
+                            encoder.text_model.final_layer_norm.weight.requires_grad
+                        )
                     except:
                         te_has_grad = False
-                self.device_state['text_encoder'].append({
-                    'training': encoder.training,
-                    'device': encoder.device,
-                    # todo there has to be a better way to do this
-                    'requires_grad': te_has_grad
-                })
+                self.device_state["text_encoder"].append(
+                    {
+                        "training": encoder.training,
+                        "device": encoder.device,
+                        # todo there has to be a better way to do this
+                        "requires_grad": te_has_grad,
+                    }
+                )
         else:
-            if isinstance(self.text_encoder, T5EncoderModel) or isinstance(self.text_encoder, UMT5EncoderModel):
-                te_has_grad = self.text_encoder.encoder.block[0].layer[0].SelfAttention.q.weight.requires_grad
-            elif isinstance(self.text_encoder, Gemma2Model):
-                te_has_grad = self.text_encoder.layers[0].mlp.gate_proj.weight.requires_grad
-            elif isinstance(self.text_encoder, Qwen2Model):
-                te_has_grad = self.text_encoder.layers[0].mlp.gate_proj.weight.requires_grad
-            elif isinstance(self.text_encoder, LlamaModel):
-                te_has_grad = self.text_encoder.layers[0].mlp.gate_proj.weight.requires_grad
+            if isinstance(self.text_encoder, T5EncoderModel) or isinstance(
+                self.text_encoder, UMT5EncoderModel
+            ):
+                te_has_grad = (
+                    self.text_encoder.encoder.block[0]
+                    .layer[0]
+                    .SelfAttention.q.weight.requires_grad
+                )
+            elif (
+                isinstance(self.text_encoder, Gemma2Model)
+                or isinstance(self.text_encoder, Qwen2Model)
+                or isinstance(self.text_encoder, LlamaModel)
+            ):
+                te_has_grad = self.text_encoder.layers[
+                    0
+                ].mlp.gate_proj.weight.requires_grad
             else:
-                te_has_grad = self.text_encoder.text_model.final_layer_norm.weight.requires_grad
+                te_has_grad = (
+                    self.text_encoder.text_model.final_layer_norm.weight.requires_grad
+                )
 
-            self.device_state['text_encoder'] = {
-                'training': self.text_encoder.training,
-                'device': self.text_encoder.device,
-                'requires_grad': te_has_grad
+            self.device_state["text_encoder"] = {
+                "training": self.text_encoder.training,
+                "device": self.text_encoder.device,
+                "requires_grad": te_has_grad,
             }
         if self.adapter is not None:
             if isinstance(self.adapter, IPAdapter):
@@ -2953,17 +3444,17 @@ class StableDiffusion:
                 adapter_device = self.adapter.device
             else:
                 raise ValueError(f"Unknown adapter type: {type(self.adapter)}")
-            self.device_state['adapter'] = {
-                'training': self.adapter.training,
-                'device': adapter_device,
-                'requires_grad': requires_grad,
+            self.device_state["adapter"] = {
+                "training": self.adapter.training,
+                "device": adapter_device,
+                "requires_grad": requires_grad,
             }
 
         if self.refiner_unet is not None:
-            self.device_state['refiner_unet'] = {
-                'training': self.refiner_unet.training,
-                'device': self.refiner_unet.device,
-                'requires_grad': self.refiner_unet.conv_in.weight.requires_grad,
+            self.device_state["refiner_unet"] = {
+                "training": self.refiner_unet.training,
+                "device": self.refiner_unet.device,
+                "requires_grad": self.refiner_unet.conv_in.weight.requires_grad,
             }
 
     def restore_device_state(self):
@@ -2975,56 +3466,56 @@ class StableDiffusion:
         self.device_state = None
 
     def set_device_state(self, state):
-        if state['vae']['training']:
+        if state["vae"]["training"]:
             self.vae.train()
         else:
             self.vae.eval()
-        self.vae.to(state['vae']['device'])
-        if state['unet']['training']:
+        self.vae.to(state["vae"]["device"])
+        if state["unet"]["training"]:
             self.unet.train()
         else:
             self.unet.eval()
-        self.unet.to(state['unet']['device'])
-        if state['unet']['requires_grad']:
+        self.unet.to(state["unet"]["device"])
+        if state["unet"]["requires_grad"]:
             self.unet.requires_grad_(True)
         else:
             self.unet.requires_grad_(False)
         if isinstance(self.text_encoder, list):
             for i, encoder in enumerate(self.text_encoder):
-                if isinstance(state['text_encoder'], list):
-                    if state['text_encoder'][i]['training']:
+                if isinstance(state["text_encoder"], list):
+                    if state["text_encoder"][i]["training"]:
                         encoder.train()
                     else:
                         encoder.eval()
-                    encoder.to(state['text_encoder'][i]['device'])
-                    encoder.requires_grad_(state['text_encoder'][i]['requires_grad'])
+                    encoder.to(state["text_encoder"][i]["device"])
+                    encoder.requires_grad_(state["text_encoder"][i]["requires_grad"])
                 else:
-                    if state['text_encoder']['training']:
+                    if state["text_encoder"]["training"]:
                         encoder.train()
                     else:
                         encoder.eval()
-                    encoder.to(state['text_encoder']['device'])
-                    encoder.requires_grad_(state['text_encoder']['requires_grad'])
+                    encoder.to(state["text_encoder"]["device"])
+                    encoder.requires_grad_(state["text_encoder"]["requires_grad"])
         else:
-            if state['text_encoder']['training']:
+            if state["text_encoder"]["training"]:
                 self.text_encoder.train()
             else:
                 self.text_encoder.eval()
-            self.text_encoder.to(state['text_encoder']['device'])
-            self.text_encoder.requires_grad_(state['text_encoder']['requires_grad'])
+            self.text_encoder.to(state["text_encoder"]["device"])
+            self.text_encoder.requires_grad_(state["text_encoder"]["requires_grad"])
 
         if self.adapter is not None:
-            self.adapter.to(state['adapter']['device'])
-            self.adapter.requires_grad_(state['adapter']['requires_grad'])
-            if state['adapter']['training']:
+            self.adapter.to(state["adapter"]["device"])
+            self.adapter.requires_grad_(state["adapter"]["requires_grad"])
+            if state["adapter"]["training"]:
                 self.adapter.train()
             else:
                 self.adapter.eval()
 
         if self.refiner_unet is not None:
-            self.refiner_unet.to(state['refiner_unet']['device'])
-            self.refiner_unet.requires_grad_(state['refiner_unet']['requires_grad'])
-            if state['refiner_unet']['training']:
+            self.refiner_unet.to(state["refiner_unet"]["device"])
+            self.refiner_unet.requires_grad_(state["refiner_unet"]["requires_grad"])
+            if state["refiner_unet"]["training"]:
                 self.refiner_unet.train()
             else:
                 self.refiner_unet.eval()
@@ -3038,60 +3529,68 @@ class StableDiffusion:
 
         active_modules = []
         training_modules = []
-        if device_state_preset in ['cache_latents']:
-            active_modules = ['vae']
-        if device_state_preset in ['cache_clip']:
-            active_modules = ['clip']
-        if device_state_preset in ['cache_text_encoder']:
-            active_modules = ['text_encoder']
-        if device_state_preset in ['unload']:
+        if device_state_preset in ["cache_latents"]:
+            active_modules = ["vae"]
+        if device_state_preset in ["cache_clip"]:
+            active_modules = ["clip"]
+        if device_state_preset in ["cache_text_encoder"]:
+            active_modules = ["text_encoder"]
+        if device_state_preset in ["unload"]:
             active_modules = []
-        if device_state_preset in ['generate']:
-            active_modules = ['vae', 'unet', 'text_encoder', 'adapter', 'refiner_unet']
+        if device_state_preset in ["generate"]:
+            active_modules = ["vae", "unet", "text_encoder", "adapter", "refiner_unet"]
 
         state = copy.deepcopy(empty_preset)
         # vae
-        state['vae'] = {
-            'training': 'vae' in training_modules,
-            'device': self.vae_device_torch if 'vae' in active_modules else 'cpu',
-            'requires_grad': 'vae' in training_modules,
+        state["vae"] = {
+            "training": "vae" in training_modules,
+            "device": self.vae_device_torch if "vae" in active_modules else "cpu",
+            "requires_grad": "vae" in training_modules,
         }
 
         # unet
-        state['unet'] = {
-            'training': 'unet' in training_modules,
-            'device': self.device_torch if 'unet' in active_modules else 'cpu',
-            'requires_grad': 'unet' in training_modules,
+        state["unet"] = {
+            "training": "unet" in training_modules,
+            "device": self.device_torch if "unet" in active_modules else "cpu",
+            "requires_grad": "unet" in training_modules,
         }
 
         if self.refiner_unet is not None:
-            state['refiner_unet'] = {
-                'training': 'refiner_unet' in training_modules,
-                'device': self.device_torch if 'refiner_unet' in active_modules else 'cpu',
-                'requires_grad': 'refiner_unet' in training_modules,
+            state["refiner_unet"] = {
+                "training": "refiner_unet" in training_modules,
+                "device": self.device_torch
+                if "refiner_unet" in active_modules
+                else "cpu",
+                "requires_grad": "refiner_unet" in training_modules,
             }
 
         # text encoder
         if isinstance(self.text_encoder, list):
-            state['text_encoder'] = []
+            state["text_encoder"] = []
             for i, encoder in enumerate(self.text_encoder):
-                state['text_encoder'].append({
-                    'training': 'text_encoder' in training_modules,
-                    'device': self.te_device_torch if 'text_encoder' in active_modules else 'cpu',
-                    'requires_grad': 'text_encoder' in training_modules,
-                })
+                state["text_encoder"].append(
+                    {
+                        "training": "text_encoder" in training_modules,
+                        "device": self.te_device_torch
+                        if "text_encoder" in active_modules
+                        else "cpu",
+                        "requires_grad": "text_encoder" in training_modules,
+                    }
+                )
         else:
-            state['text_encoder'] = {
-                'training': 'text_encoder' in training_modules,
-                'device': self.te_device_torch if 'text_encoder' in active_modules else 'cpu',
-                'requires_grad': 'text_encoder' in training_modules,
+            state["text_encoder"] = {
+                "training": "text_encoder" in training_modules,
+                "device": self.te_device_torch
+                if "text_encoder" in active_modules
+                else "cpu",
+                "requires_grad": "text_encoder" in training_modules,
             }
 
         if self.adapter is not None:
-            state['adapter'] = {
-                'training': 'adapter' in training_modules,
-                'device': self.device_torch if 'adapter' in active_modules else 'cpu',
-                'requires_grad': 'adapter' in training_modules,
+            state["adapter"] = {
+                "training": "adapter" in training_modules,
+                "device": self.device_torch if "adapter" in active_modules else "cpu",
+                "requires_grad": "adapter" in training_modules,
             }
 
         self.set_device_state(state)
@@ -3102,43 +3601,45 @@ class StableDiffusion:
                 encoder.to(*args, **kwargs)
         else:
             self.text_encoder.to(*args, **kwargs)
-            
+
     def convert_lora_weights_before_save(self, state_dict):
         # can be overridden in child classes to convert weights before saving
         return state_dict
-    
+
     def convert_lora_weights_before_load(self, state_dict):
         # can be overridden in child classes to convert weights before loading
         return state_dict
-    
-    def condition_noisy_latents(self, latents: torch.Tensor, batch:'DataLoaderBatchDTO'):
+
+    def condition_noisy_latents(
+        self, latents: torch.Tensor, batch: "DataLoaderBatchDTO"
+    ):
         # can be overridden in child classes to condition latents before noise prediction
         return latents
-    
-    def get_transformer_block_names(self) -> Optional[List[str]]:
+
+    def get_transformer_block_names(self) -> list[str] | None:
         # override in child classes to get transformer block names for lora targeting
         return None
-    
+
     def get_base_model_version(self) -> str:
         if self.is_pixart:
-            return 'pixart'
+            return "pixart"
         if self.is_v3:
-            return 'sd_3'
+            return "sd_3"
         if self.is_auraflow:
-            return 'auraflow'
+            return "auraflow"
         if self.is_flux:
-            return 'flux.1'
+            return "flux.1"
         if self.is_lumina2:
-            return 'lumina2'
+            return "lumina2"
         if self.is_ssd:
-            return 'ssd'
+            return "ssd"
         if self.is_vega:
-            return 'vega'
+            return "vega"
         if self.is_xl:
-            return 'sdxl_1.0'
+            return "sdxl_1.0"
         if self.is_v2:
-            return 'sd_2.1'
-        return 'sd_1.5'
+            return "sd_2.1"
+        return "sd_1.5"
 
     def get_model_to_train(self):
         return self.unet

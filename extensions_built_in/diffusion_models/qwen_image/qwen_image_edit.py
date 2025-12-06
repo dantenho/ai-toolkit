@@ -1,30 +1,15 @@
 import math
-import torch
-from .qwen_image import QwenImageModel
-import os
-from typing import TYPE_CHECKING, List, Optional
-import yaml
-from toolkit import train_tools
-from toolkit.config_modules import GenerateImageConfig, ModelConfig
-from PIL import Image
-from toolkit.models.base_model import BaseModel
-from toolkit.basic import flush
-from toolkit.prompt_utils import PromptEmbeds
-from toolkit.samplers.custom_flowmatch_sampler import (
-    CustomFlowMatchEulerDiscreteScheduler,
-)
-from toolkit.accelerator import get_accelerator, unwrap_model
-from optimum.quanto import freeze, QTensor
-from toolkit.util.quantize import quantize, get_qtype, quantize_model
-import torch.nn.functional as F
+from typing import TYPE_CHECKING
 
-from diffusers import (
-    QwenImagePipeline,
-    QwenImageTransformer2DModel,
-    AutoencoderKLQwenImage,
-)
-from transformers import Qwen2_5_VLForConditionalGeneration, Qwen2Tokenizer
-from tqdm import tqdm
+import torch
+import torch.nn.functional as F
+from PIL import Image
+from toolkit.accelerator import unwrap_model
+from toolkit.basic import flush
+from toolkit.config_modules import GenerateImageConfig, ModelConfig
+from toolkit.prompt_utils import PromptEmbeds
+
+from .qwen_image import QwenImageModel
 
 if TYPE_CHECKING:
     from toolkit.data_transfer_object.data_loader import DataLoaderBatchDTO
@@ -239,8 +224,10 @@ class QwenImageEditModel(QwenImageModel):
 
         img_h2, img_w2 = height // 2, width // 2
         control_img_h2, control_img_w2 = control_height // 2, control_width // 2
-        
-        img_shapes = [[(1, img_h2, img_w2), (1, control_img_h2, control_img_w2)]] * batch_size
+
+        img_shapes = [
+            [(1, img_h2, img_w2), (1, control_img_h2, control_img_w2)]
+        ] * batch_size
 
         latents = latent_model_input
         latent_model_input = torch.cat([latent_model_input, control], dim=1)
@@ -251,7 +238,9 @@ class QwenImageEditModel(QwenImageModel):
         )
         txt_seq_lens = prompt_embeds_mask.sum(dim=1).tolist()
         enc_hs = text_embeddings.text_embeds.to(self.device_torch, self.torch_dtype)
-        prompt_embeds_mask = text_embeddings.attention_mask.to(self.device_torch, dtype=torch.int64)
+        prompt_embeds_mask = text_embeddings.attention_mask.to(
+            self.device_torch, dtype=torch.int64
+        )
 
         noise_pred = self.transformer(
             hidden_states=latent_model_input.to(self.device_torch, self.torch_dtype),

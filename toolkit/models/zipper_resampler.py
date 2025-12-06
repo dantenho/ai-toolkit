@@ -4,8 +4,8 @@ import torch.nn as nn
 
 class ContextualAlphaMask(nn.Module):
     def __init__(
-            self,
-            dim: int = 768,
+        self,
+        dim: int = 768,
     ):
         super(ContextualAlphaMask, self).__init__()
         self.dim = dim
@@ -46,14 +46,14 @@ class ContextualAlphaMask(nn.Module):
 
 class ZipperModule(nn.Module):
     def __init__(
-            self,
-            in_size,
-            in_tokens,
-            out_size,
-            out_tokens,
-            hidden_size,
-            hidden_tokens,
-            use_residual=False,
+        self,
+        in_size,
+        in_tokens,
+        out_size,
+        out_tokens,
+        hidden_size,
+        hidden_tokens,
+        use_residual=False,
     ):
         super().__init__()
         self.in_size = in_size
@@ -92,22 +92,21 @@ class ZipperModule(nn.Module):
 
 class ZipperResampler(nn.Module):
     def __init__(
-            self,
-            in_size,
-            in_tokens,
-            out_size,
-            out_tokens,
-            hidden_size,
-            hidden_tokens,
-            num_blocks=1,
-            is_conv_input=False,
+        self,
+        in_size,
+        in_tokens,
+        out_size,
+        out_tokens,
+        hidden_size,
+        hidden_tokens,
+        num_blocks=1,
+        is_conv_input=False,
     ):
         super().__init__()
         self.is_conv_input = is_conv_input
 
         module_list = []
         for i in range(num_blocks):
-
             this_in_size = in_size
             this_in_tokens = in_tokens
             this_out_size = out_size
@@ -142,15 +141,17 @@ class ZipperResampler(nn.Module):
                 this_in_tokens = hidden_tokens
                 use_residual = True
 
-            module_list.append(ZipperModule(
-                in_size=this_in_size,
-                in_tokens=this_in_tokens,
-                out_size=this_out_size,
-                out_tokens=this_out_tokens,
-                hidden_size=this_hidden_size,
-                hidden_tokens=this_hidden_tokens,
-                use_residual=use_residual
-            ))
+            module_list.append(
+                ZipperModule(
+                    in_size=this_in_size,
+                    in_tokens=this_in_tokens,
+                    out_size=this_out_size,
+                    out_tokens=this_out_tokens,
+                    hidden_size=this_hidden_size,
+                    hidden_tokens=this_hidden_tokens,
+                    use_residual=use_residual,
+                )
+            )
 
         self.blocks = nn.ModuleList(module_list)
 

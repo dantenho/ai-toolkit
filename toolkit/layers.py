@@ -1,6 +1,6 @@
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
 from torch.utils.checkpoint import checkpoint
 
 
@@ -29,7 +29,9 @@ class ReductionKernel(nn.Module):
         return kernel
 
     def forward(self, x):
-        return nn.functional.conv2d(x, self.kernel, stride=self.kernel_size, padding=0, groups=1)
+        return nn.functional.conv2d(
+            x, self.kernel, stride=self.kernel_size, padding=0, groups=1
+        )
 
 
 class CheckpointGradients(nn.Module):

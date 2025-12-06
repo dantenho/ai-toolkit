@@ -1,13 +1,12 @@
 import torch
-from torch import Tensor
-from typing import Optional
 from optimum.quanto import QBytesTensor
+from torch import Tensor
 
 
 def compute_scale_for_dtype(tensor, dtype):
     """
     Compute appropriate scale for the given tensor and target dtype.
-    
+
     Args:
         tensor: Input tensor to be quantized
         dtype: Target dtype for quantization
@@ -32,15 +31,16 @@ def compute_scale_for_dtype(tensor, dtype):
         else:  # torch.float8_e5m2
             # e5m2 has range [-57344, 57344] with infinities
             max_representable = 57344.0
-        
+
         return abs_max / max_representable if abs_max > 0 else 1.0
     else:
         raise ValueError(f"Unsupported dtype for quantization: {dtype}")
 
+
 def quantize_tensor(tensor, dtype):
     """
     Quantize a floating-point tensor to the target dtype with appropriate scaling.
-    
+
     Args:
         tensor: Input tensor (float)
         dtype: Target dtype for quantization
@@ -49,7 +49,7 @@ def quantize_tensor(tensor, dtype):
         scale: Scale factor used
     """
     scale = compute_scale_for_dtype(tensor, dtype)
-    
+
     if dtype == torch.int8:
         quantized_data = torch.clamp(torch.round(tensor / scale), -128, 127).to(dtype)
     elif dtype == torch.uint8:
@@ -61,7 +61,7 @@ def quantize_tensor(tensor, dtype):
         quantized_data = scaled_tensor.to(dtype)
     else:
         raise ValueError(f"Unsupported dtype for quantization: {dtype}")
-        
+
     return quantized_data, scale
 
 
@@ -69,7 +69,7 @@ def update_parameter(target, result_float):
     """
     Updates a parameter tensor, handling both regular torch.Tensor and QBytesTensor cases
     with proper rescaling for quantized tensors.
-    
+
     Args:
         target: The parameter to update (either torch.Tensor or QBytesTensor)
         result_float: The new values to assign (torch.Tensor)
@@ -77,14 +77,14 @@ def update_parameter(target, result_float):
     if isinstance(target, QBytesTensor):
         # Get the target dtype from the existing quantized tensor
         target_dtype = target._data.dtype
-        
+
         # Handle device placement
         device = target._data.device
         result_float = result_float.to(device)
-        
+
         # Compute new quantized values and scale
         quantized_data, new_scale = quantize_tensor(result_float, target_dtype)
-        
+
         # Update the internal tensors with newly computed values
         target._data.copy_(quantized_data)
         target._scale.copy_(new_scale)
@@ -112,7 +112,8 @@ def get_format_params(dtype: torch.dtype) -> tuple[int, int]:
         return 0, 8  # Int8 doesn't have mantissa bits
     else:
         raise ValueError(f"Unsupported dtype: {dtype}")
-    
+
+
 def copy_stochastic_bf16(target: torch.Tensor, source: torch.Tensor):
     # adapted from https://github.com/Nerogar/OneTrainer/blob/411532e85f3cf2b52baa37597f9c145073d54511/modules/util/bf16_stochastic_rounding.py#L5
     # create a random 16 bit integer
@@ -135,12 +136,14 @@ def copy_stochastic_bf16(target: torch.Tensor, source: torch.Tensor):
     del result
 
 
-def copy_stochastic(target: torch.Tensor, source: torch.Tensor, eps: Optional[float] = None) -> None:
+def copy_stochastic(
+    target: torch.Tensor, source: torch.Tensor, eps: float | None = None
+) -> None:
     with torch.no_grad():
         # assert if target is on cpu, throw error
-        assert target.device.type != 'cpu', "Target is on cpu!"
-        assert source.device.type != 'cpu', "Source is on cpu!"
-        
+        assert target.device.type != "cpu", "Target is on cpu!"
+        assert source.device.type != "cpu", "Source is on cpu!"
+
         if target.dtype == torch.float32:
             target.copy_(source)
             return
@@ -186,9 +189,9 @@ class Auto8bitTensor:
         if args and isinstance(args[0], torch.dtype):
             dtype = args[0]
             args = args[1:]
-        elif 'dtype' in kwargs:
-            dtype = kwargs['dtype']
-            del kwargs['dtype']
+        elif "dtype" in kwargs:
+            dtype = kwargs["dtype"]
+            del kwargs["dtype"]
 
         if dtype is not None:
             # First dequantize then convert to requested dtype
@@ -200,16 +203,16 @@ class Auto8bitTensor:
     def state_dict(self):
         """Returns a dictionary containing the current state of the tensor."""
         return {
-            'quantized': self.quantized,
-            'scale': self.scale,
-            'orig_dtype': self.orig_dtype
+            "quantized": self.quantized,
+            "scale": self.scale,
+            "orig_dtype": self.orig_dtype,
         }
 
     def _load_from_state_dict(self, state_dict):
         """Loads the tensor state from a state dictionary."""
-        self.quantized = state_dict['quantized']
-        self.scale = state_dict['scale']
-        self.orig_dtype = state_dict['orig_dtype']
+        self.quantized = state_dict["quantized"]
+        self.scale = state_dict["scale"]
+        self.orig_dtype = state_dict["orig_dtype"]
 
     def __str__(self):
         return f"Auto8bitTensor({self.dequantize()})"

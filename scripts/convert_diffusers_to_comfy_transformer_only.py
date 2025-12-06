@@ -19,27 +19,35 @@
 
 
 import argparse
-from datetime import date
 import json
 import os
+from collections import OrderedDict
+from datetime import date
 from pathlib import Path
+
 import safetensors
 import safetensors.torch
 import torch
 import tqdm
-from collections import OrderedDict
-
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument("diffusers_path", type=str,
-                    help="Path to the original Flux diffusers folder.")
-parser.add_argument("flux_path", type=str,
-                    help="Output path for the Flux safetensors file.")
-parser.add_argument("--do_8_bit", action="store_true",
-                    help="Use 8-bit weights with stochastic rounding instead of bf16.")
-parser.add_argument("--do_8bit_scaled", action="store_true",
-                    help="Use scaled 8-bit weights instead of bf16.")
+parser.add_argument(
+    "diffusers_path", type=str, help="Path to the original Flux diffusers folder."
+)
+parser.add_argument(
+    "flux_path", type=str, help="Output path for the Flux safetensors file."
+)
+parser.add_argument(
+    "--do_8_bit",
+    action="store_true",
+    help="Use 8-bit weights with stochastic rounding instead of bf16.",
+)
+parser.add_argument(
+    "--do_8bit_scaled",
+    action="store_true",
+    help="Use scaled 8-bit weights instead of bf16.",
+)
 args = parser.parse_args()
 
 flux_path = Path(args.flux_path)
@@ -64,13 +72,14 @@ if not diffusers_path.exists():
     exit()
 
 original_json_path = Path.joinpath(
-    diffusers_path, "diffusion_pytorch_model.safetensors.index.json")
+    diffusers_path, "diffusion_pytorch_model.safetensors.index.json"
+)
 
 if not original_json_path.exists():
     print(f"Error: Missing transformer index json: {original_json_path}")
     exit()
 
-with open(original_json_path, "r", encoding="utf-8") as f:
+with open(original_json_path, encoding="utf-8") as f:
     original_json = json.load(f)
 
 diffusers_map = {
@@ -258,15 +267,18 @@ def is_in_diffusers_map(k):
     return False
 
 
-diffusers = {k: Path.joinpath(diffusers_path, v)
-             for k, v in original_json["weight_map"].items() if is_in_diffusers_map(k)}
+diffusers = {
+    k: Path.joinpath(diffusers_path, v)
+    for k, v in original_json["weight_map"].items()
+    if is_in_diffusers_map(k)
+}
 
 original_safetensors = set(diffusers.values())
 
 # determine the number of transformer blocks
 transformer_blocks = 0
 single_transformer_blocks = 0
-for key in diffusers.keys():
+for key in diffusers:
     print(key)
     if key.startswith("transformer_blocks."):
         print(key)
@@ -286,8 +298,10 @@ for file in original_safetensors:
         print(f"Error: Missing transformer safetensors file: {file}")
         exit()
 
-original_safetensors = {f: safetensors.safe_open(
-    f, framework="pt", device="cpu") for f in original_safetensors}
+original_safetensors = {
+    f: safetensors.safe_open(f, framework="pt", device="cpu")
+    for f in original_safetensors
+}
 
 
 def swap_scale_shift(weight):
@@ -304,28 +318,30 @@ for b in range(transformer_blocks):
             block_prefix = f"transformer_blocks.{b}."
             found = True
             for weight in weights:
-                if not (f"{block_prefix}{weight}" in diffusers):
+                if f"{block_prefix}{weight}" not in diffusers:
                     found = False
             if found:
                 flux_values[key.replace("()", f"{b}")] = [
-                    f"{block_prefix}{weight}" for weight in weights]
+                    f"{block_prefix}{weight}" for weight in weights
+                ]
 for b in range(single_transformer_blocks):
     for key, weights in diffusers_map.items():
         if key.startswith("single_blocks."):
             block_prefix = f"single_transformer_blocks.{b}."
             found = True
             for weight in weights:
-                if not (f"{block_prefix}{weight}" in diffusers):
+                if f"{block_prefix}{weight}" not in diffusers:
                     found = False
             if found:
                 flux_values[key.replace("()", f"{b}")] = [
-                    f"{block_prefix}{weight}" for weight in weights]
+                    f"{block_prefix}{weight}" for weight in weights
+                ]
 
 for key, weights in diffusers_map.items():
     if not (key.startswith("double_blocks.") or key.startswith("single_blocks.")):
         found = True
         for weight in weights:
-            if not (f"{weight}" in diffusers):
+            if f"{weight}" not in diffusers:
                 found = False
         if found:
             flux_values[key] = [f"{weight}" for weight in weights]
@@ -334,26 +350,28 @@ flux = {}
 
 for key, values in tqdm.tqdm(flux_values.items()):
     if len(values) == 1:
-        flux[key] = original_safetensors[diffusers[values[0]]
-                                         ].get_tensor(values[0]).to("cpu")
+        flux[key] = (
+            original_safetensors[diffusers[values[0]]].get_tensor(values[0]).to("cpu")
+        )
     else:
         flux[key] = torch.cat(
             [
-                original_safetensors[diffusers[value]
-                                     ].get_tensor(value).to("cpu")
+                original_safetensors[diffusers[value]].get_tensor(value).to("cpu")
                 for value in values
             ]
         )
 
 if "norm_out.linear.weight" in diffusers:
     flux["final_layer.adaLN_modulation.1.weight"] = swap_scale_shift(
-        original_safetensors[diffusers["norm_out.linear.weight"]].get_tensor(
-            "norm_out.linear.weight").to("cpu")
+        original_safetensors[diffusers["norm_out.linear.weight"]]
+        .get_tensor("norm_out.linear.weight")
+        .to("cpu")
     )
 if "norm_out.linear.bias" in diffusers:
     flux["final_layer.adaLN_modulation.1.bias"] = swap_scale_shift(
-        original_safetensors[diffusers["norm_out.linear.bias"]].get_tensor(
-            "norm_out.linear.bias").to("cpu")
+        original_safetensors[diffusers["norm_out.linear.bias"]]
+        .get_tensor("norm_out.linear.bias")
+        .to("cpu")
     )
 
 
@@ -387,25 +405,26 @@ def stochastic_round_to(tensor, dtype=torch.float8_e4m3fn):
 
 # List of keys that should not be scaled (usually embedding layers and biases)
 blacklist = []
-for key in flux.keys():
+for key in flux:
     if not key.endswith(".weight") or "embed" in key:
         blacklist.append(key)
+
 
 # Function to scale weights for 8-bit quantization
 def scale_weights_to_8bit(tensor, max_value=416.0, dtype=torch.float8_e4m3fn):
     # Get the limits of the dtype
     min_val = torch.finfo(dtype).min
     max_val = torch.finfo(dtype).max
-    
+
     # Only process 2D tensors that are not in the blacklist
     if tensor.dim() == 2:
         # Calculate the scaling factor
         abs_max = torch.max(torch.abs(tensor))
         scale = abs_max / max_value
-        
+
         # Scale the tensor and clip to float8 range
         scaled_tensor = (tensor / scale).clip(min=min_val, max=max_val).to(dtype)
-        
+
         return scaled_tensor, scale
     else:
         # For tensors that shouldn't be scaled, just convert to float8
@@ -415,9 +434,8 @@ def scale_weights_to_8bit(tensor, max_value=416.0, dtype=torch.float8_e4m3fn):
 # set all the keys to appropriate dtype
 if do_8_bit:
     print("Converting to 8-bit with stochastic rounding...")
-    for key in flux.keys():
-        flux[key] = stochastic_round_to(
-            flux[key], torch.float8_e4m3fn).to('cpu')
+    for key in flux:
+        flux[key] = stochastic_round_to(flux[key], torch.float8_e4m3fn).to("cpu")
 elif do_8bit_scaled:
     print("Converting to scaled 8-bit...")
     scales = {}
@@ -425,28 +443,33 @@ elif do_8bit_scaled:
         if key.endswith(".weight") and key not in blacklist:
             flux[key], scale = scale_weights_to_8bit(flux[key])
             if scale is not None:
-                scale_key = key[:-len(".weight")] + ".scale_weight"
+                scale_key = key[: -len(".weight")] + ".scale_weight"
                 scales[scale_key] = scale
         else:
             # For non-weight tensors or blacklisted ones, just convert without scaling
             min_val = torch.finfo(torch.float8_e4m3fn).min
             max_val = torch.finfo(torch.float8_e4m3fn).max
-            flux[key] = flux[key].clip(min=min_val, max=max_val).to(torch.float8_e4m3fn).to('cpu')
-    
+            flux[key] = (
+                flux[key]
+                .clip(min=min_val, max=max_val)
+                .to(torch.float8_e4m3fn)
+                .to("cpu")
+            )
+
     # Add all the scales to the flux dictionary
     flux.update(scales)
-    
+
     # Add a marker tensor to indicate this is a scaled fp8 model
     flux["scaled_fp8"] = torch.tensor([]).to(torch.float8_e4m3fn)
 else:
     print("Converting to bfloat16...")
-    for key in flux.keys():
-        flux[key] = flux[key].clone().to('cpu', torch.bfloat16)
+    for key in flux:
+        flux[key] = flux[key].clone().to("cpu", torch.bfloat16)
 
 meta = OrderedDict()
-meta['format'] = 'pt'
+meta["format"] = "pt"
 # date format like 2024-08-01 YYYY-MM-DD
-meta['modelspec.date'] = date.today().strftime("%Y-%m-%d")
+meta["modelspec.date"] = date.today().strftime("%Y-%m-%d")
 
 os.makedirs(os.path.dirname(flux_path), exist_ok=True)
 

@@ -6,10 +6,11 @@ https://github.com/lodestone-rock/RamTorch/blob/main/ramtorch/modules/linear.py
 I simply modified it to work with a memory management model and with AI Toolkit's models
 """
 
+from typing import TYPE_CHECKING
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import TYPE_CHECKING, Optional, Tuple
 from torch.overrides import has_torch_function_unary  # (ADD) torchao detection
 
 if TYPE_CHECKING:
@@ -57,7 +58,7 @@ def _get_device_state(device: torch.device):
 
 
 # (ADD) detect torchao wrapper tensors
-def _is_ao_quantized_tensor(t: Optional[torch.Tensor]) -> bool:
+def _is_ao_quantized_tensor(t: torch.Tensor | None) -> bool:
     if t is None:
         return False
     try:
@@ -79,7 +80,7 @@ def _is_ao_quantized_tensor(t: Optional[torch.Tensor]) -> bool:
     return False
 
 
-def _is_quantized_tensor(t: Optional[torch.Tensor]) -> bool:
+def _is_quantized_tensor(t: torch.Tensor | None) -> bool:
     if t is None:
         return False
     # torch quantized tensors
@@ -95,7 +96,7 @@ def _is_quantized_tensor(t: Optional[torch.Tensor]) -> bool:
     return not t.dtype.is_floating_point
 
 
-def _ensure_cpu_pinned(t: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
+def _ensure_cpu_pinned(t: torch.Tensor | None) -> torch.Tensor | None:
     if t is None:
         return None
     if t.device.type != "cpu":
@@ -305,9 +306,9 @@ class _BouncingConv2dFn(torch.autograd.Function):
         weight_cpu,
         bias_cpu,
         device: torch.device,
-        stride: Tuple[int, int],
-        padding: Tuple[int, int],
-        dilation: Tuple[int, int],
+        stride: tuple[int, int],
+        padding: tuple[int, int],
+        dilation: tuple[int, int],
         groups: int,
     ):
         target_dtype = (
@@ -538,7 +539,7 @@ class BaseLayerMemoryManager:
         manager: "MemoryManager",
     ):
         self.module: nn.Module = module
-        self.manager: "MemoryManager" = manager
+        self.manager: MemoryManager = manager
 
     @classmethod
     def attach(cls, module: nn.Module, manager: "MemoryManager"):
@@ -565,9 +566,9 @@ class LinearLayerMemoryManager(BaseLayerMemoryManager):
         # 2) Hijack forward
         if hasattr(self.module, "ara_lora_ref"):
             # ARA, we need to replace the lora forward
-            self._original_forward = getattr(self.module.ara_lora_ref(), "org_forward")
+            self._original_forward = self.module.ara_lora_ref().org_forward
         else:
-            self._original_forward = getattr(self.module, "forward")
+            self._original_forward = self.module.forward
 
         def _mm_forward(x, *args, **kwargs):
             # ensure we only use expected signature (Linear: x)
@@ -586,7 +587,7 @@ class LinearLayerMemoryManager(BaseLayerMemoryManager):
             self.module.ara_lora_ref().org_forward = _mm_forward
         else:
             self.module.forward = _mm_forward
-        
+
         self.module._memory_management_device = self.manager.process_device
 
 
@@ -622,9 +623,9 @@ class ConvLayerMemoryManager(BaseLayerMemoryManager):
         # 2) Hijack forward
         if hasattr(self.module, "ara_lora_ref"):
             # ARA, we need to replace the lora forward
-            self._original_forward = getattr(self.module.ara_lora_ref(), "org_forward")
+            self._original_forward = self.module.ara_lora_ref().org_forward
         else:
-            self._original_forward = getattr(self.module, "forward")
+            self._original_forward = self.module.forward
 
         def _mm_forward(x, *args, **kwargs):
             # Support the typical Conv2d(x) call; if user passes uncommon extras, fallback.
@@ -643,5 +644,5 @@ class ConvLayerMemoryManager(BaseLayerMemoryManager):
             self.module.ara_lora_ref().org_forward = _mm_forward
         else:
             self.module.forward = _mm_forward
-        
+
         self.module._memory_management_device = self.manager.process_device

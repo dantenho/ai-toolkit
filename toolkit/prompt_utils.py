@@ -1,13 +1,13 @@
+import itertools
 import os
-from typing import Optional, TYPE_CHECKING, List, Union, Tuple
+import random
+from typing import TYPE_CHECKING
 
 import torch
 from safetensors.torch import load_file, save_file
 from tqdm import tqdm
-import random
 
 from toolkit.train_tools import get_torch_dtype
-import itertools
 
 if TYPE_CHECKING:
     from toolkit.config_modules import SliderTargetConfig
@@ -23,7 +23,11 @@ class PromptEmbeds:
     # pooled_embeds: Union[torch.Tensor, None]
     # attention_mask: Union[torch.Tensor, List[torch.Tensor], None]
 
-    def __init__(self, args: Union[Tuple[torch.Tensor], List[torch.Tensor], torch.Tensor], attention_mask=None) -> None:
+    def __init__(
+        self,
+        args: tuple[torch.Tensor] | list[torch.Tensor] | torch.Tensor,
+        attention_mask=None,
+    ) -> None:
         if isinstance(args, list) or isinstance(args, tuple):
             # xl
             self.text_embeds = args[0]
@@ -43,23 +47,33 @@ class PromptEmbeds:
         if self.pooled_embeds is not None:
             self.pooled_embeds = self.pooled_embeds.to(*args, **kwargs)
         if self.attention_mask is not None:
-            if isinstance(self.attention_mask, list) or isinstance(self.attention_mask, tuple):
-                self.attention_mask = [t.to(*args, **kwargs) for t in self.attention_mask]
+            if isinstance(self.attention_mask, list) or isinstance(
+                self.attention_mask, tuple
+            ):
+                self.attention_mask = [
+                    t.to(*args, **kwargs) for t in self.attention_mask
+                ]
             else:
                 self.attention_mask = self.attention_mask.to(*args, **kwargs)
         return self
 
     def detach(self):
         new_embeds = self.clone()
-        if isinstance(new_embeds.text_embeds, list) or isinstance(new_embeds.text_embeds, tuple):
+        if isinstance(new_embeds.text_embeds, list) or isinstance(
+            new_embeds.text_embeds, tuple
+        ):
             new_embeds.text_embeds = [t.detach() for t in new_embeds.text_embeds]
         else:
             new_embeds.text_embeds = new_embeds.text_embeds.detach()
         if new_embeds.pooled_embeds is not None:
             new_embeds.pooled_embeds = new_embeds.pooled_embeds.detach()
         if new_embeds.attention_mask is not None:
-            if isinstance(new_embeds.attention_mask, list) or isinstance(new_embeds.attention_mask, tuple):
-                new_embeds.attention_mask = [t.detach() for t in new_embeds.attention_mask]
+            if isinstance(new_embeds.attention_mask, list) or isinstance(
+                new_embeds.attention_mask, tuple
+            ):
+                new_embeds.attention_mask = [
+                    t.detach() for t in new_embeds.attention_mask
+                ]
             else:
                 new_embeds.attention_mask = new_embeds.attention_mask.detach()
         return new_embeds
@@ -70,15 +84,21 @@ class PromptEmbeds:
         else:
             cloned_text_embeds = self.text_embeds.clone()
         if self.pooled_embeds is not None:
-            prompt_embeds = PromptEmbeds([cloned_text_embeds, self.pooled_embeds.clone()])
+            prompt_embeds = PromptEmbeds(
+                [cloned_text_embeds, self.pooled_embeds.clone()]
+            )
         else:
-            if isinstance(cloned_text_embeds, list) or isinstance(cloned_text_embeds, tuple):
+            if isinstance(cloned_text_embeds, list) or isinstance(
+                cloned_text_embeds, tuple
+            ):
                 prompt_embeds = PromptEmbeds([cloned_text_embeds, None])
             else:
                 prompt_embeds = PromptEmbeds(cloned_text_embeds)
 
         if self.attention_mask is not None:
-            if isinstance(self.attention_mask, list) or isinstance(self.attention_mask, tuple):
+            if isinstance(self.attention_mask, list) or isinstance(
+                self.attention_mask, tuple
+            ):
                 prompt_embeds.attention_mask = [t.clone() for t in self.attention_mask]
             else:
                 prompt_embeds.attention_mask = self.attention_mask.clone()
@@ -108,8 +128,12 @@ class PromptEmbeds:
         if pe.pooled_embeds is not None:
             pe.pooled_embeds = pe.pooled_embeds.expand(batch_size, -1)
         if pe.attention_mask is not None:
-            if isinstance(pe.attention_mask, list) or isinstance(pe.attention_mask, tuple):
-                pe.attention_mask = [t.expand(batch_size, -1) for t in pe.attention_mask]
+            if isinstance(pe.attention_mask, list) or isinstance(
+                pe.attention_mask, tuple
+            ):
+                pe.attention_mask = [
+                    t.expand(batch_size, -1) for t in pe.attention_mask
+                ]
             else:
                 pe.attention_mask = pe.attention_mask.expand(batch_size, -1)
         return pe
@@ -126,26 +150,28 @@ class PromptEmbeds:
                 state_dict[f"text_embed_{i}"] = text_embed.cpu()
         else:
             state_dict["text_embed"] = pe.text_embeds.cpu()
-            
+
         if pe.pooled_embeds is not None:
             state_dict["pooled_embed"] = pe.pooled_embeds.cpu()
         if pe.attention_mask is not None:
-            if isinstance(pe.attention_mask, list) or isinstance(pe.attention_mask, tuple):
+            if isinstance(pe.attention_mask, list) or isinstance(
+                pe.attention_mask, tuple
+            ):
                 for i, attn in enumerate(pe.attention_mask):
                     state_dict[f"attention_mask_{i}"] = attn.cpu()
             else:
                 state_dict["attention_mask"] = pe.attention_mask.cpu()
         os.makedirs(os.path.dirname(path), exist_ok=True)
         save_file(state_dict, path)
-    
+
     @classmethod
-    def load(cls, path: str) -> 'PromptEmbeds':
+    def load(cls, path: str) -> "PromptEmbeds":
         """
         Load the prompt embeds from a file.
         :param path: The path to load the prompt embeds from.
         :return: An instance of PromptEmbeds.
         """
-        state_dict = load_file(path, device='cpu')
+        state_dict = load_file(path, device="cpu")
         text_embeds = []
         pooled_embeds = None
         attention_mask = []
@@ -158,9 +184,7 @@ class PromptEmbeds:
                 text_embeds.append(state_dict[key])
             elif key == "pooled_embed":
                 pooled_embeds = state_dict[key]
-            elif key.startswith("attention_mask_"):
-                attention_mask.append(state_dict[key])
-            elif key == "attention_mask":
+            elif key.startswith("attention_mask_") or key == "attention_mask":
                 attention_mask.append(state_dict[key])
         pe = cls(None)
         pe.text_embeds = text_embeds
@@ -176,25 +200,24 @@ class PromptEmbeds:
         return pe
 
 
-
 class EncodedPromptPair:
     def __init__(
-            self,
-            target_class,
-            target_class_with_neutral,
-            positive_target,
-            positive_target_with_neutral,
-            negative_target,
-            negative_target_with_neutral,
-            neutral,
-            empty_prompt,
-            both_targets,
-            action=ACTION_TYPES_SLIDER.ERASE_NEGATIVE,
-            action_list=None,
-            multiplier=1.0,
-            multiplier_list=None,
-            weight=1.0,
-            target: 'SliderTargetConfig' = None,
+        self,
+        target_class,
+        target_class_with_neutral,
+        positive_target,
+        positive_target_with_neutral,
+        negative_target,
+        negative_target_with_neutral,
+        neutral,
+        empty_prompt,
+        both_targets,
+        action=ACTION_TYPES_SLIDER.ERASE_NEGATIVE,
+        action_list=None,
+        multiplier=1.0,
+        multiplier_list=None,
+        weight=1.0,
+        target: "SliderTargetConfig" = None,
     ):
         self.target_class: PromptEmbeds = target_class
         self.target_class_with_neutral: PromptEmbeds = target_class_with_neutral
@@ -206,7 +229,7 @@ class EncodedPromptPair:
         self.empty_prompt: PromptEmbeds = empty_prompt
         self.both_targets: PromptEmbeds = both_targets
         self.multiplier: float = multiplier
-        self.target: 'SliderTargetConfig' = target
+        self.target: SliderTargetConfig = target
         if multiplier_list is not None:
             self.multiplier_list: list[float] = multiplier_list
         else:
@@ -221,11 +244,17 @@ class EncodedPromptPair:
     # simulate torch to for tensors
     def to(self, *args, **kwargs):
         self.target_class = self.target_class.to(*args, **kwargs)
-        self.target_class_with_neutral = self.target_class_with_neutral.to(*args, **kwargs)
+        self.target_class_with_neutral = self.target_class_with_neutral.to(
+            *args, **kwargs
+        )
         self.positive_target = self.positive_target.to(*args, **kwargs)
-        self.positive_target_with_neutral = self.positive_target_with_neutral.to(*args, **kwargs)
+        self.positive_target_with_neutral = self.positive_target_with_neutral.to(
+            *args, **kwargs
+        )
         self.negative_target = self.negative_target.to(*args, **kwargs)
-        self.negative_target_with_neutral = self.negative_target_with_neutral.to(*args, **kwargs)
+        self.negative_target_with_neutral = self.negative_target_with_neutral.to(
+            *args, **kwargs
+        )
         self.neutral = self.neutral.to(*args, **kwargs)
         self.empty_prompt = self.empty_prompt.to(*args, **kwargs)
         self.both_targets = self.both_targets.to(*args, **kwargs)
@@ -309,11 +338,17 @@ def concat_prompt_embeds(prompt_embeds: list["PromptEmbeds"]):
 def concat_prompt_pairs(prompt_pairs: list[EncodedPromptPair]):
     weight = prompt_pairs[0].weight
     target_class = concat_prompt_embeds([p.target_class for p in prompt_pairs])
-    target_class_with_neutral = concat_prompt_embeds([p.target_class_with_neutral for p in prompt_pairs])
+    target_class_with_neutral = concat_prompt_embeds(
+        [p.target_class_with_neutral for p in prompt_pairs]
+    )
     positive_target = concat_prompt_embeds([p.positive_target for p in prompt_pairs])
-    positive_target_with_neutral = concat_prompt_embeds([p.positive_target_with_neutral for p in prompt_pairs])
+    positive_target_with_neutral = concat_prompt_embeds(
+        [p.positive_target_with_neutral for p in prompt_pairs]
+    )
     negative_target = concat_prompt_embeds([p.negative_target for p in prompt_pairs])
-    negative_target_with_neutral = concat_prompt_embeds([p.negative_target_with_neutral for p in prompt_pairs])
+    negative_target_with_neutral = concat_prompt_embeds(
+        [p.negative_target_with_neutral for p in prompt_pairs]
+    )
     neutral = concat_prompt_embeds([p.neutral for p in prompt_pairs])
     empty_prompt = concat_prompt_embeds([p.empty_prompt for p in prompt_pairs])
     both_targets = concat_prompt_embeds([p.both_targets for p in prompt_pairs])
@@ -337,20 +372,23 @@ def concat_prompt_pairs(prompt_pairs: list[EncodedPromptPair]):
         action_list=action_list,
         multiplier_list=multiplier_list,
         weight=weight,
-        target=prompt_pairs[0].target
+        target=prompt_pairs[0].target,
     )
 
 
-def split_prompt_embeds(concatenated: PromptEmbeds, num_parts=None) -> List[PromptEmbeds]:
+def split_prompt_embeds(
+    concatenated: PromptEmbeds, num_parts=None
+) -> list[PromptEmbeds]:
     if num_parts is None:
         # use batch size
         num_parts = concatenated.text_embeds.shape[0]
-        
-    if isinstance(concatenated.text_embeds, list) or isinstance(concatenated.text_embeds, tuple):
+
+    if isinstance(concatenated.text_embeds, list) or isinstance(
+        concatenated.text_embeds, tuple
+    ):
         # split each part
         text_embeds_splits = [
-            torch.chunk(text, num_parts, dim=0)
-            for text in concatenated.text_embeds
+            torch.chunk(text, num_parts, dim=0) for text in concatenated.text_embeds
         ]
         text_embeds_splits = list(zip(*text_embeds_splits))
     else:
@@ -369,21 +407,35 @@ def split_prompt_embeds(concatenated: PromptEmbeds, num_parts=None) -> List[Prom
     return prompt_embeds_list
 
 
-def split_prompt_pairs(concatenated: EncodedPromptPair, num_embeds=None) -> List[EncodedPromptPair]:
+def split_prompt_pairs(
+    concatenated: EncodedPromptPair, num_embeds=None
+) -> list[EncodedPromptPair]:
     target_class_splits = split_prompt_embeds(concatenated.target_class, num_embeds)
-    target_class_with_neutral_splits = split_prompt_embeds(concatenated.target_class_with_neutral, num_embeds)
-    positive_target_splits = split_prompt_embeds(concatenated.positive_target, num_embeds)
-    positive_target_with_neutral_splits = split_prompt_embeds(concatenated.positive_target_with_neutral, num_embeds)
-    negative_target_splits = split_prompt_embeds(concatenated.negative_target, num_embeds)
-    negative_target_with_neutral_splits = split_prompt_embeds(concatenated.negative_target_with_neutral, num_embeds)
+    target_class_with_neutral_splits = split_prompt_embeds(
+        concatenated.target_class_with_neutral, num_embeds
+    )
+    positive_target_splits = split_prompt_embeds(
+        concatenated.positive_target, num_embeds
+    )
+    positive_target_with_neutral_splits = split_prompt_embeds(
+        concatenated.positive_target_with_neutral, num_embeds
+    )
+    negative_target_splits = split_prompt_embeds(
+        concatenated.negative_target, num_embeds
+    )
+    negative_target_with_neutral_splits = split_prompt_embeds(
+        concatenated.negative_target_with_neutral, num_embeds
+    )
     neutral_splits = split_prompt_embeds(concatenated.neutral, num_embeds)
     empty_prompt_splits = split_prompt_embeds(concatenated.empty_prompt, num_embeds)
     both_targets_splits = split_prompt_embeds(concatenated.both_targets, num_embeds)
 
     prompt_pairs = []
     for i in range(len(target_class_splits)):
-        action_list_split = concatenated.action_list[i::len(target_class_splits)]
-        multiplier_list_split = concatenated.multiplier_list[i::len(target_class_splits)]
+        action_list_split = concatenated.action_list[i :: len(target_class_splits)]
+        multiplier_list_split = concatenated.multiplier_list[
+            i :: len(target_class_splits)
+        ]
 
         prompt_pair = EncodedPromptPair(
             target_class=target_class_splits[i],
@@ -398,7 +450,7 @@ def split_prompt_pairs(concatenated: EncodedPromptPair, num_embeds=None) -> List
             action_list=action_list_split,
             multiplier_list=multiplier_list_split,
             weight=concatenated.weight,
-            target=concatenated.target
+            target=concatenated.target,
         )
         prompt_pairs.append(prompt_pair)
 
@@ -411,7 +463,7 @@ class PromptEmbedsCache:
     def __setitem__(self, __name: str, __value: PromptEmbeds) -> None:
         self.prompts[__name] = __value
 
-    def __getitem__(self, __name: str) -> Optional[PromptEmbeds]:
+    def __getitem__(self, __name: str) -> PromptEmbeds | None:
         if __name in self.prompts:
             return self.prompts[__name]
         else:
@@ -419,13 +471,7 @@ class PromptEmbedsCache:
 
 
 class EncodedAnchor:
-    def __init__(
-            self,
-            prompt,
-            neg_prompt,
-            multiplier=1.0,
-            multiplier_list=None
-    ):
+    def __init__(self, prompt, neg_prompt, multiplier=1.0, multiplier_list=None):
         self.prompt = prompt
         self.neg_prompt = neg_prompt
         self.multiplier = multiplier
@@ -447,21 +493,25 @@ def concat_anchors(anchors: list[EncodedAnchor]):
     return EncodedAnchor(
         prompt=prompt,
         neg_prompt=neg_prompt,
-        multiplier_list=[a.multiplier for a in anchors]
+        multiplier_list=[a.multiplier for a in anchors],
     )
 
 
-def split_anchors(concatenated: EncodedAnchor, num_anchors: int = 4) -> List[EncodedAnchor]:
+def split_anchors(
+    concatenated: EncodedAnchor, num_anchors: int = 4
+) -> list[EncodedAnchor]:
     prompt_splits = split_prompt_embeds(concatenated.prompt, num_anchors)
     neg_prompt_splits = split_prompt_embeds(concatenated.neg_prompt, num_anchors)
-    multiplier_list_splits = torch.chunk(torch.tensor(concatenated.multiplier_list), num_anchors)
+    multiplier_list_splits = torch.chunk(
+        torch.tensor(concatenated.multiplier_list), num_anchors
+    )
 
     anchors = []
-    for prompt, neg_prompt, multiplier in zip(prompt_splits, neg_prompt_splits, multiplier_list_splits):
+    for prompt, neg_prompt, multiplier in zip(
+        prompt_splits, neg_prompt_splits, multiplier_list_splits
+    ):
         anchor = EncodedAnchor(
-            prompt=prompt,
-            neg_prompt=neg_prompt,
-            multiplier=multiplier.tolist()
+            prompt=prompt, neg_prompt=neg_prompt, multiplier=multiplier.tolist()
         )
         anchors.append(anchor)
 
@@ -470,7 +520,7 @@ def split_anchors(concatenated: EncodedAnchor, num_anchors: int = 4) -> List[Enc
 
 def get_permutations(s, max_permutations=8):
     # Split the string by comma
-    phrases = [phrase.strip() for phrase in s.split(',')]
+    phrases = [phrase.strip() for phrase in s.split(",")]
 
     # remove empty strings
     phrases = [phrase for phrase in phrases if len(phrase) > 0]
@@ -478,16 +528,25 @@ def get_permutations(s, max_permutations=8):
     random.shuffle(phrases)
 
     # Get all permutations
-    permutations = list([p for p in itertools.islice(itertools.permutations(phrases), max_permutations)])
+    permutations = list(
+        [p for p in itertools.islice(itertools.permutations(phrases), max_permutations)]
+    )
 
     # Convert the tuples back to comma separated strings
-    return [', '.join(permutation) for permutation in permutations]
+    return [", ".join(permutation) for permutation in permutations]
 
 
-def get_slider_target_permutations(target: 'SliderTargetConfig', max_permutations=8) -> List['SliderTargetConfig']:
+def get_slider_target_permutations(
+    target: "SliderTargetConfig", max_permutations=8
+) -> list["SliderTargetConfig"]:
     from toolkit.config_modules import SliderTargetConfig
-    pos_permutations = get_permutations(target.positive, max_permutations=max_permutations)
-    neg_permutations = get_permutations(target.negative, max_permutations=max_permutations)
+
+    pos_permutations = get_permutations(
+        target.positive, max_permutations=max_permutations
+    )
+    neg_permutations = get_permutations(
+        target.negative, max_permutations=max_permutations
+    )
 
     permutations = []
     for pos, neg in itertools.product(pos_permutations, neg_permutations):
@@ -497,7 +556,7 @@ def get_slider_target_permutations(target: 'SliderTargetConfig', max_permutation
                 positive=pos,
                 negative=neg,
                 multiplier=target.multiplier,
-                weight=target.weight
+                weight=target.weight,
             )
         )
 
@@ -516,10 +575,10 @@ if TYPE_CHECKING:
 
 @torch.no_grad()
 def encode_prompts_to_cache(
-        prompt_list: list[str],
-        sd: "StableDiffusion",
-        cache: Optional[PromptEmbedsCache] = None,
-        prompt_tensor_file: Optional[str] = None,
+    prompt_list: list[str],
+    sd: "StableDiffusion",
+    cache: PromptEmbedsCache | None = None,
+    prompt_tensor_file: str | None = None,
 ) -> PromptEmbedsCache:
     # TODO: add support for larger prompts
     if cache is None:
@@ -530,9 +589,11 @@ def encode_prompts_to_cache(
         if os.path.exists(prompt_tensor_file):
             # load it.
             print(f"Loading prompt tensors from {prompt_tensor_file}")
-            prompt_tensors = load_file(prompt_tensor_file, device='cpu')
+            prompt_tensors = load_file(prompt_tensor_file, device="cpu")
             # add them to the cache
-            for prompt_txt, prompt_tensor in tqdm(prompt_tensors.items(), desc="Loading prompts", leave=False):
+            for prompt_txt, prompt_tensor in tqdm(
+                prompt_tensors.items(), desc="Loading prompts", leave=False
+            ):
                 if prompt_txt.startswith("te:"):
                     prompt = prompt_txt[3:]
                     # text_embeds
@@ -544,7 +605,7 @@ def encode_prompts_to_cache(
 
                     # make it
                     prompt_embeds = PromptEmbeds([text_embeds, pooled_embeds])
-                    cache[prompt] = prompt_embeds.to(device='cpu', dtype=torch.float32)
+                    cache[prompt] = prompt_embeds.to(device="cpu", dtype=torch.float32)
 
     if len(cache.prompts) == 0:
         print("Prompt tensors not found. Encoding prompts..")
@@ -563,12 +624,11 @@ def encode_prompts_to_cache(
             state_dict = {}
             for prompt_txt, prompt_embeds in cache.prompts.items():
                 state_dict[f"te:{prompt_txt}"] = prompt_embeds.text_embeds.to(
-                    "cpu", dtype=get_torch_dtype('fp16')
+                    "cpu", dtype=get_torch_dtype("fp16")
                 )
                 if prompt_embeds.pooled_embeds is not None:
                     state_dict[f"pe:{prompt_txt}"] = prompt_embeds.pooled_embeds.to(
-                        "cpu",
-                        dtype=get_torch_dtype('fp16')
+                        "cpu", dtype=get_torch_dtype("fp16")
                     )
             save_file(state_dict, prompt_tensor_file)
 
@@ -577,9 +637,9 @@ def encode_prompts_to_cache(
 
 @torch.no_grad()
 def build_prompt_pair_batch_from_cache(
-        cache: PromptEmbedsCache,
-        target: 'SliderTargetConfig',
-        neutral: Optional[str] = '',
+    cache: PromptEmbedsCache,
+    target: "SliderTargetConfig",
+    neutral: str | None = "",
 ) -> list[EncodedPromptPair]:
     erase_negative = len(target.positive.strip()) == 0
     enhance_positive = len(target.negative.strip()) == 0
@@ -605,7 +665,7 @@ def build_prompt_pair_batch_from_cache(
                 both_targets=cache[f"{target.positive} {target.negative}"],
                 empty_prompt=cache[""],
                 weight=target.weight,
-                target=target
+                target=target,
             ),
         ]
     if both or enhance_positive:
@@ -625,7 +685,7 @@ def build_prompt_pair_batch_from_cache(
                 both_targets=cache[f"{target.positive} {target.negative}"],
                 empty_prompt=cache[""],
                 weight=target.weight,
-                target=target
+                target=target,
             ),
         ]
     if both or enhance_positive:
@@ -645,7 +705,7 @@ def build_prompt_pair_batch_from_cache(
                 empty_prompt=cache[""],
                 multiplier=target.multiplier * -1.0,
                 weight=target.weight,
-                target=target
+                target=target,
             ),
         ]
     if both or erase_negative:
@@ -665,7 +725,7 @@ def build_prompt_pair_batch_from_cache(
                 empty_prompt=cache[""],
                 multiplier=target.multiplier * -1.0,
                 weight=target.weight,
-                target=target
+                target=target,
             ),
         ]
 
@@ -673,10 +733,7 @@ def build_prompt_pair_batch_from_cache(
 
 
 def build_latent_image_batch_for_prompt_pair(
-        pos_latent,
-        neg_latent,
-        prompt_pair: EncodedPromptPair,
-        prompt_chunk_size
+    pos_latent, neg_latent, prompt_pair: EncodedPromptPair, prompt_chunk_size
 ):
     erase_negative = len(prompt_pair.target.positive.strip()) == 0
     enhance_positive = len(prompt_pair.target.negative.strip()) == 0
@@ -702,10 +759,12 @@ def build_latent_image_batch_for_prompt_pair(
     return torch.cat(latent_list, dim=0)
 
 
-def inject_trigger_into_prompt(prompt, trigger=None, to_replace_list=None, add_if_not_present=True):
+def inject_trigger_into_prompt(
+    prompt, trigger=None, to_replace_list=None, add_if_not_present=True
+):
     if trigger is None:
         # process as empty string to remove any [trigger] tokens
-        trigger = ''
+        trigger = ""
     output_prompt = prompt
     default_replacements = ["[name]", "[trigger]"]
 

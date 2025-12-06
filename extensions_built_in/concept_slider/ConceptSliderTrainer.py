@@ -1,8 +1,6 @@
 from collections import OrderedDict
-from typing import Optional
 
 import torch
-
 from extensions_built_in.sd_trainer.DiffusionTrainer import DiffusionTrainer
 from toolkit.data_transfer_object.data_loader import DataLoaderBatchDTO
 from toolkit.prompt_utils import PromptEmbeds, concat_prompt_embeds
@@ -16,7 +14,7 @@ class ConceptSliderTrainerConfig:
         self.positive_prompt: str = kwargs.get("positive_prompt", "")
         self.negative_prompt: str = kwargs.get("negative_prompt", "")
         self.target_class: str = kwargs.get("target_class", "")
-        self.anchor_class: Optional[str] = kwargs.get("anchor_class", None)
+        self.anchor_class: str | None = kwargs.get("anchor_class")
 
 
 def norm_like_tensor(tensor: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
@@ -41,13 +39,13 @@ class ConceptSliderTrainer(DiffusionTrainer):
         )
 
         self.positive_prompt = self.slider.positive_prompt
-        self.positive_prompt_embeds: Optional[PromptEmbeds] = None
+        self.positive_prompt_embeds: PromptEmbeds | None = None
         self.negative_prompt = self.slider.negative_prompt
-        self.negative_prompt_embeds: Optional[PromptEmbeds] = None
+        self.negative_prompt_embeds: PromptEmbeds | None = None
         self.target_class = self.slider.target_class
-        self.target_class_embeds: Optional[PromptEmbeds] = None
+        self.target_class_embeds: PromptEmbeds | None = None
         self.anchor_class = self.slider.anchor_class
-        self.anchor_class_embeds: Optional[PromptEmbeds] = None
+        self.anchor_class_embeds: PromptEmbeds | None = None
 
     def hook_before_train_loop(self):
         # do this before calling parent as it unloads the text encoder if requested
@@ -103,7 +101,7 @@ class ConceptSliderTrainer(DiffusionTrainer):
         pred_kwargs: dict,
         batch: "DataLoaderBatchDTO",
         noise: torch.Tensor,
-        unconditional_embeds: Optional[PromptEmbeds] = None,
+        unconditional_embeds: PromptEmbeds | None = None,
         **kwargs,
     ):
         # todo for embeddings, we need to run without trigger words
@@ -194,7 +192,7 @@ class ConceptSliderTrainer(DiffusionTrainer):
             enhance_negative_target = neutral_pred + guidance_scale * negative
             erase_negative_target = neutral_pred - guidance_scale * negative
             erase_positive_target = neutral_pred - guidance_scale * positive
-            
+
             # normalize to neutral std/mean
             enhance_positive_target = norm_like_tensor(
                 enhance_positive_target, neutral_pred

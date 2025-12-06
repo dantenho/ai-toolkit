@@ -1,5 +1,4 @@
-from .pipeline import FLitePipeline, FLitePipelineOutput, APGConfig
 from .model import DiT
+from .pipeline import APGConfig, FLitePipeline, FLitePipelineOutput
 
-
-__all__ = ["FLitePipeline", "FLitePipelineOutput", "APGConfig", "DiT"] 
+__all__ = ["FLitePipeline", "FLitePipelineOutput", "APGConfig", "DiT"]

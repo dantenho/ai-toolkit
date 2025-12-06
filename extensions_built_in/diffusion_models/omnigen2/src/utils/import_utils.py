@@ -24,6 +24,7 @@ if sys.version_info < (3, 8):
 else:
     import importlib.metadata as importlib_metadata
 
+
 def _is_package_available(pkg_name: str):
     pkg_exists = importlib.util.find_spec(pkg_name) is not None
     pkg_version = "N/A"
@@ -36,11 +37,14 @@ def _is_package_available(pkg_name: str):
 
     return pkg_exists, pkg_version
 
+
 _triton_available, _triton_version = _is_package_available("triton")
 _flash_attn_available, _flash_attn_version = _is_package_available("flash_attn")
 
+
 def is_triton_available():
     return _triton_available
+
 
 def is_flash_attn_available():
     return _flash_attn_available

@@ -14,7 +14,6 @@
 
 import math
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -65,26 +64,39 @@ class FlashFlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
 
     @register_to_config
     def __init__(
-            self,
-            num_train_timesteps: int = 1000,
-            shift: float = 1.0,
-            use_dynamic_shifting=False,
-            base_shift: Optional[float] = 0.5,
-            max_shift: Optional[float] = 1.15,
-            base_image_seq_len: Optional[int] = 256,
-            max_image_seq_len: Optional[int] = 4096,
-            invert_sigmas: bool = False,
-            use_karras_sigmas: Optional[bool] = False,
-            use_exponential_sigmas: Optional[bool] = False,
-            use_beta_sigmas: Optional[bool] = False,
+        self,
+        num_train_timesteps: int = 1000,
+        shift: float = 1.0,
+        use_dynamic_shifting=False,
+        base_shift: float | None = 0.5,
+        max_shift: float | None = 1.15,
+        base_image_seq_len: int | None = 256,
+        max_image_seq_len: int | None = 4096,
+        invert_sigmas: bool = False,
+        use_karras_sigmas: bool | None = False,
+        use_exponential_sigmas: bool | None = False,
+        use_beta_sigmas: bool | None = False,
     ):
         if self.config.use_beta_sigmas and not is_scipy_available():
-            raise ImportError("Make sure to install scipy if you want to use beta sigmas.")
-        if sum([self.config.use_beta_sigmas, self.config.use_exponential_sigmas, self.config.use_karras_sigmas]) > 1:
+            raise ImportError(
+                "Make sure to install scipy if you want to use beta sigmas."
+            )
+        if (
+            sum(
+                [
+                    self.config.use_beta_sigmas,
+                    self.config.use_exponential_sigmas,
+                    self.config.use_karras_sigmas,
+                ]
+            )
+            > 1
+        ):
             raise ValueError(
                 "Only one of `config.use_beta_sigmas`, `config.use_exponential_sigmas`, `config.use_karras_sigmas` can be used."
             )
-        timesteps = np.linspace(1, num_train_timesteps, num_train_timesteps, dtype=np.float32)[::-1].copy()
+        timesteps = np.linspace(
+            1, num_train_timesteps, num_train_timesteps, dtype=np.float32
+        )[::-1].copy()
         timesteps = torch.from_numpy(timesteps).to(dtype=torch.float32)
 
         sigmas = timesteps / num_train_timesteps
@@ -127,10 +139,10 @@ class FlashFlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         self._begin_index = begin_index
 
     def scale_noise(
-            self,
-            sample: torch.FloatTensor,
-            timestep: Union[float, torch.FloatTensor],
-            noise: Optional[torch.FloatTensor] = None,
+        self,
+        sample: torch.FloatTensor,
+        timestep: float | torch.FloatTensor,
+        noise: torch.FloatTensor | None = None,
     ) -> torch.FloatTensor:
         """
         Forward process in flow-matching
@@ -158,7 +170,9 @@ class FlashFlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
 
         # self.begin_index is None when scheduler is used for training, or pipeline does not implement set_begin_index
         if self.begin_index is None:
-            step_indices = [self.index_for_timestep(t, schedule_timesteps) for t in timestep]
+            step_indices = [
+                self.index_for_timestep(t, schedule_timesteps) for t in timestep
+            ]
         elif self.step_index is not None:
             # add_noise is called after first denoising step (for inpainting)
             step_indices = [self.step_index] * timestep.shape[0]
@@ -181,11 +195,11 @@ class FlashFlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         return math.exp(mu) / (math.exp(mu) + (1 / t - 1) ** sigma)
 
     def set_timesteps(
-            self,
-            num_inference_steps: int = None,
-            device: Union[str, torch.device] = None,
-            sigmas: Optional[List[float]] = None,
-            mu: Optional[float] = None,
+        self,
+        num_inference_steps: int = None,
+        device: str | torch.device = None,
+        sigmas: list[float] | None = None,
+        mu: float | None = None,
     ):
         """
         Sets the discrete timesteps used for the diffusion chain (to be run before inference).
@@ -197,11 +211,15 @@ class FlashFlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
                 The device to which the timesteps should be moved to. If `None`, the timesteps are not moved.
         """
         if self.config.use_dynamic_shifting and mu is None:
-            raise ValueError(" you have a pass a value for `mu` when `use_dynamic_shifting` is set to be `True`")
+            raise ValueError(
+                " you have a pass a value for `mu` when `use_dynamic_shifting` is set to be `True`"
+            )
 
         if sigmas is None:
             timesteps = np.linspace(
-                self._sigma_to_t(self.sigma_max), self._sigma_to_t(self.sigma_min), num_inference_steps
+                self._sigma_to_t(self.sigma_max),
+                self._sigma_to_t(self.sigma_min),
+                num_inference_steps,
             )
 
             sigmas = timesteps / self.config.num_train_timesteps
@@ -216,13 +234,19 @@ class FlashFlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
             sigmas = self.config.shift * sigmas / (1 + (self.config.shift - 1) * sigmas)
 
         if self.config.use_karras_sigmas:
-            sigmas = self._convert_to_karras(in_sigmas=sigmas, num_inference_steps=num_inference_steps)
+            sigmas = self._convert_to_karras(
+                in_sigmas=sigmas, num_inference_steps=num_inference_steps
+            )
 
         elif self.config.use_exponential_sigmas:
-            sigmas = self._convert_to_exponential(in_sigmas=sigmas, num_inference_steps=num_inference_steps)
+            sigmas = self._convert_to_exponential(
+                in_sigmas=sigmas, num_inference_steps=num_inference_steps
+            )
 
         elif self.config.use_beta_sigmas:
-            sigmas = self._convert_to_beta(in_sigmas=sigmas, num_inference_steps=num_inference_steps)
+            sigmas = self._convert_to_beta(
+                in_sigmas=sigmas, num_inference_steps=num_inference_steps
+            )
 
         sigmas = torch.from_numpy(sigmas).to(dtype=torch.float32, device=device)
         timesteps = sigmas * self.config.num_train_timesteps
@@ -262,17 +286,17 @@ class FlashFlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
             self._step_index = self._begin_index
 
     def step(
-            self,
-            model_output: torch.FloatTensor,
-            timestep: Union[float, torch.FloatTensor],
-            sample: torch.FloatTensor,
-            s_churn: float = 0.0,
-            s_tmin: float = 0.0,
-            s_tmax: float = float("inf"),
-            s_noise: float = 1.0,
-            generator: Optional[torch.Generator] = None,
-            return_dict: bool = True,
-    ) -> Union[FlashFlowMatchEulerDiscreteSchedulerOutput, Tuple]:
+        self,
+        model_output: torch.FloatTensor,
+        timestep: float | torch.FloatTensor,
+        sample: torch.FloatTensor,
+        s_churn: float = 0.0,
+        s_tmin: float = 0.0,
+        s_tmax: float = float("inf"),
+        s_noise: float = 1.0,
+        generator: torch.Generator | None = None,
+        return_dict: bool = True,
+    ) -> FlashFlowMatchEulerDiscreteSchedulerOutput | tuple:
         """
         Predict the sample from the previous timestep by reversing the SDE. This function propagates the diffusion
         process from the learned model outputs (most often the predicted noise).
@@ -302,9 +326,9 @@ class FlashFlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         """
 
         if (
-                isinstance(timestep, int)
-                or isinstance(timestep, torch.IntTensor)
-                or isinstance(timestep, torch.LongTensor)
+            isinstance(timestep, int)
+            or isinstance(timestep, torch.IntTensor)
+            or isinstance(timestep, torch.LongTensor)
         ):
             raise ValueError(
                 (
@@ -345,7 +369,9 @@ class FlashFlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         return FlashFlowMatchEulerDiscreteSchedulerOutput(prev_sample=sample)
 
     # Copied from diffusers.schedulers.scheduling_euler_discrete.EulerDiscreteScheduler._convert_to_karras
-    def _convert_to_karras(self, in_sigmas: torch.Tensor, num_inference_steps) -> torch.Tensor:
+    def _convert_to_karras(
+        self, in_sigmas: torch.Tensor, num_inference_steps
+    ) -> torch.Tensor:
         """Constructs the noise schedule of Karras et al. (2022)."""
 
         # Hack to make sure that other schedulers which copy this function don't break
@@ -371,7 +397,9 @@ class FlashFlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         return sigmas
 
     # Copied from diffusers.schedulers.scheduling_euler_discrete.EulerDiscreteScheduler._convert_to_exponential
-    def _convert_to_exponential(self, in_sigmas: torch.Tensor, num_inference_steps: int) -> torch.Tensor:
+    def _convert_to_exponential(
+        self, in_sigmas: torch.Tensor, num_inference_steps: int
+    ) -> torch.Tensor:
         """Constructs an exponential noise schedule."""
 
         # Hack to make sure that other schedulers which copy this function don't break
@@ -389,12 +417,18 @@ class FlashFlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         sigma_min = sigma_min if sigma_min is not None else in_sigmas[-1].item()
         sigma_max = sigma_max if sigma_max is not None else in_sigmas[0].item()
 
-        sigmas = np.exp(np.linspace(math.log(sigma_max), math.log(sigma_min), num_inference_steps))
+        sigmas = np.exp(
+            np.linspace(math.log(sigma_max), math.log(sigma_min), num_inference_steps)
+        )
         return sigmas
 
     # Copied from diffusers.schedulers.scheduling_euler_discrete.EulerDiscreteScheduler._convert_to_beta
     def _convert_to_beta(
-            self, in_sigmas: torch.Tensor, num_inference_steps: int, alpha: float = 0.6, beta: float = 0.6
+        self,
+        in_sigmas: torch.Tensor,
+        num_inference_steps: int,
+        alpha: float = 0.6,
+        beta: float = 0.6,
     ) -> torch.Tensor:
         """From "Beta Sampling is All You Need" [arXiv:2407.12173] (Lee et. al, 2024)"""
 
@@ -417,9 +451,9 @@ class FlashFlowMatchEulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
             [
                 sigma_min + (ppf * (sigma_max - sigma_min))
                 for ppf in [
-                scipy.stats.beta.ppf(timestep, alpha, beta)
-                for timestep in 1 - np.linspace(0, 1, num_inference_steps)
-            ]
+                    scipy.stats.beta.ppf(timestep, alpha, beta)
+                    for timestep in 1 - np.linspace(0, 1, num_inference_steps)
+                ]
             ]
         )
         return sigmas

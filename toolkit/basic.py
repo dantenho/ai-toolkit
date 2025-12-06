@@ -18,12 +18,12 @@ def get_mean_std(tensor):
     if len(tensor.shape) == 3:
         tensor = tensor.unsqueeze(0)
     elif len(tensor.shape) != 4:
-        raise Exception("Expected tensor of shape (batch_size, channels, width, height)")
-    mean, variance = torch.mean(
-        tensor, dim=[2, 3], keepdim=True
-    ), torch.var(
-        tensor, dim=[2, 3],
-        keepdim=True
+        raise Exception(
+            "Expected tensor of shape (batch_size, channels, width, height)"
+        )
+    mean, variance = (
+        torch.mean(tensor, dim=[2, 3], keepdim=True),
+        torch.var(tensor, dim=[2, 3], keepdim=True),
     )
     std = torch.sqrt(variance + 1e-5)
     return mean, std
@@ -39,12 +39,15 @@ def adain(content_features, style_features):
         dims = [1]
 
     # Step 1: Calculate mean and variance of content features
-    content_mean, content_var = torch.mean(content_features, dim=dims, keepdim=True), torch.var(content_features,
-                                                                                                  dim=dims,
-                                                                                                  keepdim=True)
+    content_mean, content_var = (
+        torch.mean(content_features, dim=dims, keepdim=True),
+        torch.var(content_features, dim=dims, keepdim=True),
+    )
     # Step 2: Calculate mean and variance of style features
-    style_mean, style_var = torch.mean(style_features, dim=dims, keepdim=True), torch.var(style_features, dim=dims,
-                                                                                            keepdim=True)
+    style_mean, style_var = (
+        torch.mean(style_features, dim=dims, keepdim=True),
+        torch.var(style_features, dim=dims, keepdim=True),
+    )
 
     # Step 3: Normalize content features
     content_std = torch.sqrt(content_var + 1e-5)
@@ -55,6 +58,7 @@ def adain(content_features, style_features):
     stylized_content = normalized_content * style_std + style_mean
 
     return stylized_content
+
 
 def get_quick_signature_string(file_path):
     try:

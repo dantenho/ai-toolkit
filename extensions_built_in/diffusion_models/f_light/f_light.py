@@ -3,22 +3,24 @@ from typing import TYPE_CHECKING
 
 import torch
 import yaml
-from toolkit.config_modules import GenerateImageConfig, ModelConfig
-from PIL import Image
-from toolkit.models.base_model import BaseModel
-from toolkit.basic import flush
 from diffusers import AutoencoderKL
-from toolkit.prompt_utils import PromptEmbeds
-from toolkit.samplers.custom_flowmatch_sampler import CustomFlowMatchEulerDiscreteScheduler
-from toolkit.dequantize import patch_dequantization_on_save
+from optimum.quanto import QTensor, freeze
 from toolkit.accelerator import unwrap_model
-from optimum.quanto import freeze, QTensor
-from toolkit.util.quantize import quantize, get_qtype
-from transformers import T5TokenizerFast, T5EncoderModel
-from .src import FLitePipeline, DiT
+from toolkit.basic import flush
+from toolkit.config_modules import GenerateImageConfig, ModelConfig
+from toolkit.dequantize import patch_dequantization_on_save
+from toolkit.models.base_model import BaseModel
+from toolkit.prompt_utils import PromptEmbeds
+from toolkit.samplers.custom_flowmatch_sampler import (
+    CustomFlowMatchEulerDiscreteScheduler,
+)
+from toolkit.util.quantize import get_qtype, quantize
+from transformers import T5EncoderModel, T5TokenizerFast
+
+from .src import DiT, FLitePipeline
 
 if TYPE_CHECKING:
-    from toolkit.data_transfer_object.data_loader import DataLoaderBatchDTO
+    pass
 
 scheduler_config = {
     "base_image_seq_len": 256,
@@ -27,7 +29,7 @@ scheduler_config = {
     "max_shift": 1.15,
     "num_train_timesteps": 1000,
     "shift": 3.0,
-    "use_dynamic_shifting": True
+    "use_dynamic_shifting": True,
 }
 
 
@@ -35,41 +37,36 @@ class FLiteModel(BaseModel):
     arch = "f-lite"
 
     def __init__(
-            self,
-            device,
-            model_config: ModelConfig,
-            dtype='bf16',
-            custom_pipeline=None,
-            noise_scheduler=None,
-            **kwargs
+        self,
+        device,
+        model_config: ModelConfig,
+        dtype="bf16",
+        custom_pipeline=None,
+        noise_scheduler=None,
+        **kwargs,
     ):
         super().__init__(
-            device,
-            model_config,
-            dtype,
-            custom_pipeline,
-            noise_scheduler,
-            **kwargs
+            device, model_config, dtype, custom_pipeline, noise_scheduler, **kwargs
         )
         self.is_flow_matching = True
         self.is_transformer = True
-        self.target_lora_modules = ['DiT']
+        self.target_lora_modules = ["DiT"]
 
     # static method to get the noise scheduler
     @staticmethod
     def get_train_scheduler():
         return CustomFlowMatchEulerDiscreteScheduler(**scheduler_config)
-    
+
     def get_bucket_divisibility(self):
         # return the bucket divisibility for the model
         return 16
 
     def load_model(self):
         dtype = self.torch_dtype
-        
+
         # will be updated if we detect a existing checkpoint in training folder
         model_path = self.model_config.name_or_path
-        
+
         extras_path = self.model_config.extras_name_or_path
 
         self.print_and_status_update("Loading transformer")
@@ -79,7 +76,7 @@ class FLiteModel(BaseModel):
             subfolder="dit_model",
             torch_dtype=dtype,
         )
-        
+
         transformer.to(self.quantize_device, dtype=dtype)
 
         if self.model_config.quantize:
@@ -87,8 +84,11 @@ class FLiteModel(BaseModel):
             patch_dequantization_on_save(transformer)
             quantization_type = get_qtype(self.model_config.qtype)
             self.print_and_status_update("Quantizing transformer")
-            quantize(transformer, weights=quantization_type,
-                     **self.model_config.quantize_kwargs)
+            quantize(
+                transformer,
+                weights=quantization_type,
+                **self.model_config.quantize_kwargs,
+            )
             freeze(transformer)
             transformer.to(self.device_torch)
         else:
@@ -108,18 +108,15 @@ class FLiteModel(BaseModel):
 
         if self.model_config.quantize_te:
             self.print_and_status_update("Quantizing T5")
-            quantize(text_encoder, weights=get_qtype(
-                self.model_config.qtype))
+            quantize(text_encoder, weights=get_qtype(self.model_config.qtype))
             freeze(text_encoder)
             flush()
 
         self.noise_scheduler = FLiteModel.get_train_scheduler()
-        
+
         self.print_and_status_update("Loading VAE")
         vae = AutoencoderKL.from_pretrained(
-            extras_path,
-            subfolder="vae",
-            torch_dtype=dtype
+            extras_path, subfolder="vae", torch_dtype=dtype
         )
         vae = vae.to(self.device_torch, dtype=dtype)
 
@@ -135,7 +132,7 @@ class FLiteModel(BaseModel):
         pipe.text_encoder = text_encoder
         pipe.dit_model = transformer
         pipe.transformer = transformer
-        pipe.scheduler = self.noise_scheduler,
+        pipe.scheduler = (self.noise_scheduler,)
 
         self.print_and_status_update("Preparing Model")
 
@@ -167,7 +164,7 @@ class FLiteModel(BaseModel):
             text_encoder=unwrap_model(self.text_encoder[0]),
             tokenizer=self.tokenizer[0],
             vae=unwrap_model(self.vae),
-            dit_model=unwrap_model(self.transformer)
+            dit_model=unwrap_model(self.transformer),
         )
         pipeline.transformer = pipeline.dit_model
         pipeline.scheduler = scheduler
@@ -183,9 +180,8 @@ class FLiteModel(BaseModel):
         generator: torch.Generator,
         extra: dict,
     ):
+        extra["negative_prompt_embeds"] = unconditional_embeds.text_embeds
 
-        extra['negative_prompt_embeds'] = unconditional_embeds.text_embeds
-        
         img = pipeline(
             prompt_embeds=conditional_embeds.text_embeds,
             negative_prompt_embeds=unconditional_embeds.text_embeds,
@@ -203,25 +199,21 @@ class FLiteModel(BaseModel):
         latent_model_input: torch.Tensor,
         timestep: torch.Tensor,  # 0 to 1000 scale
         text_embeddings: PromptEmbeds,
-        **kwargs
+        **kwargs,
     ):
         cast_dtype = self.unet.dtype
 
         noise_pred = self.unet(
-            latent_model_input.to(
-                self.device_torch, cast_dtype
-            ),
-            text_embeddings.text_embeds.to(
-                self.device_torch, cast_dtype
-            ),
+            latent_model_input.to(self.device_torch, cast_dtype),
+            text_embeddings.text_embeds.to(self.device_torch, cast_dtype),
             timestep / 1000,
         )
 
         if isinstance(noise_pred, QTensor):
             noise_pred = noise_pred.dequantize()
-        
+
         return noise_pred
-    
+
     def get_prompt_embeds(self, prompt: str) -> PromptEmbeds:
         if isinstance(prompt, str):
             prompts = [prompt]
@@ -231,16 +223,16 @@ class FLiteModel(BaseModel):
             self.pipeline.text_encoder.to(self.device_torch)
 
         prompt_embeds, negative_embeds = self.pipeline.encode_prompt(
-            prompt=prompts, 
-            negative_prompt=None, 
-            device=self.text_encoder[0].device, 
+            prompt=prompts,
+            negative_prompt=None,
+            device=self.text_encoder[0].device,
             dtype=self.torch_dtype,
         )
-        
+
         pe = PromptEmbeds(prompt_embeds)
-        
+
         return pe
-    
+
     def get_model_has_grad(self):
         # return from a weight if it has grad
         return False
@@ -248,7 +240,7 @@ class FLiteModel(BaseModel):
     def get_te_has_grad(self):
         # return from a weight if it has grad
         return False
-    
+
     def save_model(self, output_path, meta, save_dtype):
         # only save the unet
         transformer: DiT = unwrap_model(self.model)
@@ -256,20 +248,20 @@ class FLiteModel(BaseModel):
         # only save the unet
         transformer: DiT = unwrap_model(self.transformer)
         transformer.save_pretrained(
-            save_directory=os.path.join(output_path, 'dit_model'),
+            save_directory=os.path.join(output_path, "dit_model"),
             safe_serialization=True,
         )
         # save out meta config
-        meta_path = os.path.join(output_path, 'aitk_meta.yaml')
-        with open(meta_path, 'w') as f:
+        meta_path = os.path.join(output_path, "aitk_meta.yaml")
+        with open(meta_path, "w") as f:
             yaml.dump(meta, f)
 
     def get_loss_target(self, *args, **kwargs):
-        noise = kwargs.get('noise')
-        batch = kwargs.get('batch')
+        noise = kwargs.get("noise")
+        batch = kwargs.get("batch")
         # return (noise - batch.latents).detach()
         return (batch.latents - noise).detach()
-    
+
     def convert_lora_weights_before_save(self, state_dict):
         # currently starte with transformer. but needs to start with diffusion_model. for comfyui
         new_sd = {}
@@ -285,10 +277,10 @@ class FLiteModel(BaseModel):
             new_key = key.replace("diffusion_model.", "transformer.")
             new_sd[new_key] = value
         return new_sd
-    
+
     def get_base_model_version(self):
         return "f-lite"
-    
+
     def get_stepped_pred(self, pred, noise):
         # just used for DFE support
         latents = pred + noise

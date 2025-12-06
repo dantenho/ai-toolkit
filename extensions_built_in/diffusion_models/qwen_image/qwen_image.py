@@ -1,38 +1,33 @@
 import os
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 
 import torch
 import yaml
-from toolkit import train_tools
-from toolkit.config_modules import GenerateImageConfig, ModelConfig
+from diffusers import (
+    AutoencoderKLQwenImage,
+    QwenImagePipeline,
+    QwenImageTransformer2DModel,
+)
+from optimum.quanto import freeze
 from PIL import Image
-from toolkit.models.base_model import BaseModel
+from toolkit.accelerator import unwrap_model
 from toolkit.basic import flush
+from toolkit.config_modules import GenerateImageConfig, ModelConfig
+from toolkit.memory_management import MemoryManager
+from toolkit.models.base_model import BaseModel
 from toolkit.prompt_utils import PromptEmbeds
 from toolkit.samplers.custom_flowmatch_sampler import (
     CustomFlowMatchEulerDiscreteScheduler,
 )
-from toolkit.accelerator import get_accelerator, unwrap_model
-from optimum.quanto import freeze, QTensor
-from toolkit.util.quantize import quantize, get_qtype, quantize_model
-import torch.nn.functional as F
-from toolkit.memory_management import MemoryManager
-from safetensors.torch import load_file
-
-from diffusers import (
-    QwenImagePipeline,
-    QwenImageTransformer2DModel,
-    AutoencoderKLQwenImage,
-)
+from toolkit.util.quantize import get_qtype, quantize, quantize_model
 from transformers import (
     Qwen2_5_VLForConditionalGeneration,
     Qwen2Tokenizer,
     Qwen2VLProcessor,
 )
-from tqdm import tqdm
 
 if TYPE_CHECKING:
-    from toolkit.data_transfer_object.data_loader import DataLoaderBatchDTO
+    pass
 
 scheduler_config = {
     "base_image_seq_len": 256,
@@ -125,11 +120,14 @@ class QwenImageModel(BaseModel):
             quantize_model(self, transformer)
             flush()
 
-        if self.model_config.layer_offloading and self.model_config.layer_offloading_transformer_percent > 0:
+        if (
+            self.model_config.layer_offloading
+            and self.model_config.layer_offloading_transformer_percent > 0
+        ):
             MemoryManager.attach(
                 transformer,
                 self.device_torch,
-                offload_percent=self.model_config.layer_offloading_transformer_percent
+                offload_percent=self.model_config.layer_offloading_transformer_percent,
             )
 
         if self.model_config.low_vram:
@@ -151,11 +149,14 @@ class QwenImageModel(BaseModel):
         if not self._qwen_image_keep_visual:
             text_encoder.model.visual = None
 
-        if self.model_config.layer_offloading and self.model_config.layer_offloading_text_encoder_percent > 0:
+        if (
+            self.model_config.layer_offloading
+            and self.model_config.layer_offloading_text_encoder_percent > 0
+        ):
             MemoryManager.attach(
                 text_encoder,
                 self.device_torch,
-                offload_percent=self.model_config.layer_offloading_text_encoder_percent
+                offload_percent=self.model_config.layer_offloading_text_encoder_percent,
             )
 
         text_encoder.to(self.device_torch, dtype=dtype)
@@ -390,7 +391,7 @@ class QwenImageModel(BaseModel):
     def get_base_model_version(self):
         return "qwen_image"
 
-    def get_transformer_block_names(self) -> Optional[List[str]]:
+    def get_transformer_block_names(self) -> list[str] | None:
         return ["transformer_blocks"]
 
     def convert_lora_weights_before_save(self, state_dict):
@@ -407,7 +408,7 @@ class QwenImageModel(BaseModel):
             new_sd[new_key] = value
         return new_sd
 
-    def encode_images(self, image_list: List[torch.Tensor], device=None, dtype=None):
+    def encode_images(self, image_list: list[torch.Tensor], device=None, dtype=None):
         if device is None:
             device = self.vae_device_torch
         if dtype is None:

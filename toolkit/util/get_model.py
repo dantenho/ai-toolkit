@@ -1,14 +1,13 @@
-import os
-from typing import List
-from toolkit.models.base_model import BaseModel
-from toolkit.stable_diffusion_model import StableDiffusion
-from toolkit.config_modules import ModelConfig
-from toolkit.paths import TOOLKIT_ROOT
 import importlib
+import os
 import pkgutil
 
-from toolkit.models.wan21 import Wan21, Wan21I2V
+from toolkit.config_modules import ModelConfig
+from toolkit.models.base_model import BaseModel
 from toolkit.models.cogview4 import CogView4
+from toolkit.models.wan21 import Wan21, Wan21I2V
+from toolkit.paths import TOOLKIT_ROOT
+from toolkit.stable_diffusion_model import StableDiffusion
 
 BUILT_IN_MODELS = [
     Wan21,
@@ -17,16 +16,16 @@ BUILT_IN_MODELS = [
 ]
 
 
-def get_all_models() -> List[BaseModel]:
-    extension_folders = ['extensions', 'extensions_built_in']
+def get_all_models() -> list[BaseModel]:
+    extension_folders = ["extensions", "extensions_built_in"]
 
     # This will hold the classes from all extension modules
-    all_model_classes: List[BaseModel] = BUILT_IN_MODELS
+    all_model_classes: list[BaseModel] = BUILT_IN_MODELS
 
     # Iterate over all directories (i.e., packages) in the "extensions" directory
     for sub_dir in extension_folders:
         extensions_dir = os.path.join(TOOLKIT_ROOT, sub_dir)
-        for (_, name, _) in pkgutil.iter_modules([extensions_dir]):
+        for _, name, _ in pkgutil.iter_modules([extensions_dir]):
             try:
                 # Import the module
                 module = importlib.import_module(f"{sub_dir}.{name}")

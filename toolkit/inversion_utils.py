@@ -1,7 +1,7 @@
 # ref https://huggingface.co/spaces/editing-images/ledits/blob/main/inversion_utils.py
 
+
 import torch
-import os
 from tqdm import tqdm
 
 from toolkit import train_tools
@@ -11,17 +11,27 @@ from toolkit.stable_diffusion_model import StableDiffusion
 
 def mu_tilde(model, xt, x0, timestep):
     "mu_tilde(x_t, x_0) DDPM paper eq. 7"
-    prev_timestep = timestep - model.scheduler.config.num_train_timesteps // model.scheduler.num_inference_steps
-    alpha_prod_t_prev = model.scheduler.alphas_cumprod[
-        prev_timestep] if prev_timestep >= 0 else model.scheduler.final_alpha_cumprod
+    prev_timestep = (
+        timestep
+        - model.scheduler.config.num_train_timesteps
+        // model.scheduler.num_inference_steps
+    )
+    alpha_prod_t_prev = (
+        model.scheduler.alphas_cumprod[prev_timestep]
+        if prev_timestep >= 0
+        else model.scheduler.final_alpha_cumprod
+    )
     alpha_t = model.scheduler.alphas[timestep]
     beta_t = 1 - alpha_t
     alpha_bar = model.scheduler.alphas_cumprod[timestep]
-    return ((alpha_prod_t_prev ** 0.5 * beta_t) / (1 - alpha_bar)) * x0 + (
-            (alpha_t ** 0.5 * (1 - alpha_prod_t_prev)) / (1 - alpha_bar)) * xt
+    return ((alpha_prod_t_prev**0.5 * beta_t) / (1 - alpha_bar)) * x0 + (
+        (alpha_t**0.5 * (1 - alpha_prod_t_prev)) / (1 - alpha_bar)
+    ) * xt
 
 
-def sample_xts_from_x0(sd: StableDiffusion, sample: torch.Tensor, num_inference_steps=50):
+def sample_xts_from_x0(
+    sd: StableDiffusion, sample: torch.Tensor, num_inference_steps=50
+):
     """
     Samples from P(x_1:T|x_0)
     """
@@ -43,7 +53,11 @@ def sample_xts_from_x0(sd: StableDiffusion, sample: torch.Tensor, num_inference_
     xts = torch.zeros(variance_noise_shape).to(sample.device, dtype=torch.float16)
     for t in reversed(timesteps):
         idx = t_to_idx[int(t)]
-        xts[idx] = sample * (alpha_bar[t] ** 0.5) + torch.randn_like(sample, dtype=torch.float16) * sqrt_one_minus_alpha_bar[t]
+        xts[idx] = (
+            sample * (alpha_bar[t] ** 0.5)
+            + torch.randn_like(sample, dtype=torch.float16)
+            * sqrt_one_minus_alpha_bar[t]
+        )
     xts = torch.cat([xts, sample], dim=0)
 
     return xts
@@ -64,8 +78,10 @@ def encode_text(model, prompts):
 
 def forward_step(sd: StableDiffusion, model_output, timestep, sample):
     next_timestep = min(
-        sd.noise_scheduler.config['num_train_timesteps'] - 2,
-        timestep + sd.noise_scheduler.config['num_train_timesteps'] // sd.noise_scheduler.num_inference_steps
+        sd.noise_scheduler.config["num_train_timesteps"] - 2,
+        timestep
+        + sd.noise_scheduler.config["num_train_timesteps"]
+        // sd.noise_scheduler.num_inference_steps,
     )
 
     # 2. compute alphas, betas
@@ -76,21 +92,29 @@ def forward_step(sd: StableDiffusion, model_output, timestep, sample):
 
     # 3. compute predicted original sample from predicted noise also called
     # "predicted x_0" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
-    pred_original_sample = (sample - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
+    pred_original_sample = (
+        sample - beta_prod_t ** (0.5) * model_output
+    ) / alpha_prod_t ** (0.5)
 
     # 5. TODO: simple noising implementation
     next_sample = sd.noise_scheduler.add_noise(
-        pred_original_sample,
-        model_output,
-        torch.LongTensor([next_timestep]))
+        pred_original_sample, model_output, torch.LongTensor([next_timestep])
+    )
     return next_sample
 
 
 def get_variance(sd: StableDiffusion, timestep):  # , prev_timestep):
-    prev_timestep = timestep - sd.noise_scheduler.config['num_train_timesteps'] // sd.noise_scheduler.num_inference_steps
+    prev_timestep = (
+        timestep
+        - sd.noise_scheduler.config["num_train_timesteps"]
+        // sd.noise_scheduler.num_inference_steps
+    )
     alpha_prod_t = sd.noise_scheduler.alphas_cumprod[timestep]
-    alpha_prod_t_prev = sd.noise_scheduler.alphas_cumprod[
-        prev_timestep] if prev_timestep >= 0 else sd.noise_scheduler.final_alpha_cumprod
+    alpha_prod_t_prev = (
+        sd.noise_scheduler.alphas_cumprod[prev_timestep]
+        if prev_timestep >= 0
+        else sd.noise_scheduler.final_alpha_cumprod
+    )
     beta_prod_t = 1 - alpha_prod_t
     beta_prod_t_prev = 1 - alpha_prod_t_prev
     variance = (beta_prod_t_prev / beta_prod_t) * (1 - alpha_prod_t / alpha_prod_t_prev)
@@ -98,7 +122,7 @@ def get_variance(sd: StableDiffusion, timestep):  # , prev_timestep):
 
 
 def get_time_ids_from_latents(sd: StableDiffusion, latents: torch.Tensor):
-    VAE_SCALE_FACTOR = 2 ** (len(sd.vae.config['block_out_channels']) - 1)
+    VAE_SCALE_FACTOR = 2 ** (len(sd.vae.config["block_out_channels"]) - 1)
     if sd.is_xl:
         bs, ch, h, w = list(latents.shape)
 
@@ -114,23 +138,22 @@ def get_time_ids_from_latents(sd: StableDiffusion, latents: torch.Tensor):
         add_time_ids = torch.tensor([add_time_ids])
         add_time_ids = add_time_ids.to(latents.device, dtype=dtype)
 
-        batch_time_ids = torch.cat(
-            [add_time_ids for _ in range(bs)]
-        )
+        batch_time_ids = torch.cat([add_time_ids for _ in range(bs)])
         return batch_time_ids
     else:
         return None
 
 
 def inversion_forward_process(
-        sd: StableDiffusion,
-        sample: torch.Tensor,
-        conditional_embeddings: PromptEmbeds,
-        unconditional_embeddings: PromptEmbeds,
-        etas=None,
-        prog_bar=False,
-        cfg_scale=3.5,
-        num_inference_steps=50, eps=None
+    sd: StableDiffusion,
+    sample: torch.Tensor,
+    conditional_embeddings: PromptEmbeds,
+    unconditional_embeddings: PromptEmbeds,
+    etas=None,
+    prog_bar=False,
+    cfg_scale=3.5,
+    num_inference_steps=50,
+    eps=None,
 ):
     current_num_timesteps = len(sd.noise_scheduler.timesteps)
     sd.noise_scheduler.set_timesteps(num_inference_steps, device=sd.device)
@@ -149,14 +172,21 @@ def inversion_forward_process(
         zs = None
     else:
         eta_is_zero = False
-        if type(etas) in [int, float]: etas = [etas] * sd.noise_scheduler.num_inference_steps
+        if type(etas) in [int, float]:
+            etas = [etas] * sd.noise_scheduler.num_inference_steps
         xts = sample_xts_from_x0(sd, sample, num_inference_steps=num_inference_steps)
         alpha_bar = sd.noise_scheduler.alphas_cumprod
-        zs = torch.zeros(size=variance_noise_shape, device=sd.device, dtype=torch.float16)
+        zs = torch.zeros(
+            size=variance_noise_shape, device=sd.device, dtype=torch.float16
+        )
 
     t_to_idx = {int(v): k for k, v in enumerate(timesteps)}
     noisy_sample = sample
-    op = tqdm(reversed(timesteps), desc="Inverting...") if prog_bar else reversed(timesteps)
+    op = (
+        tqdm(reversed(timesteps), desc="Inverting...")
+        if prog_bar
+        else reversed(timesteps)
+    )
 
     for timestep in op:
         idx = t_to_idx[int(timestep)]
@@ -175,9 +205,7 @@ def inversion_forward_process(
             if sd.is_xl:
                 add_time_ids = get_time_ids_from_latents(sd, noisy_sample)
                 # add extra for cfg
-                add_time_ids = torch.cat(
-                    [add_time_ids] * 2, dim=0
-                )
+                add_time_ids = torch.cat([add_time_ids] * 2, dim=0)
 
                 added_cond_kwargs = {
                     "text_embeds": text_embeddings.pooled_embeds,
@@ -185,9 +213,7 @@ def inversion_forward_process(
                 }
 
             # double up for cfg
-            latent_model_input = torch.cat(
-                [noisy_sample] * 2, dim=0
-            )
+            latent_model_input = torch.cat([noisy_sample] * 2, dim=0)
 
             noise_pred = sd.unet(
                 latent_model_input,
@@ -201,7 +227,9 @@ def inversion_forward_process(
             # out = sd.unet.forward(noisy_sample, timestep=timestep, encoder_hidden_states=uncond_embedding)
             # cond_out = sd.unet.forward(noisy_sample, timestep=timestep, encoder_hidden_states=text_embeddings)
 
-        noise_pred = noise_pred_uncond + cfg_scale * (noise_pred_text - noise_pred_uncond)
+        noise_pred = noise_pred_uncond + cfg_scale * (
+            noise_pred_text - noise_pred_uncond
+        )
 
         if eta_is_zero:
             # 2. compute more noisy image and set x_t -> x_t+1
@@ -211,28 +239,40 @@ def inversion_forward_process(
         else:
             xtm1 = xts[idx + 1][None]
             # pred of x0
-            pred_original_sample = (noisy_sample - (1 - alpha_bar[timestep]) ** 0.5 * noise_pred) / alpha_bar[
-                timestep] ** 0.5
+            pred_original_sample = (
+                noisy_sample - (1 - alpha_bar[timestep]) ** 0.5 * noise_pred
+            ) / alpha_bar[timestep] ** 0.5
 
             # direction to xt
-            prev_timestep = timestep - sd.noise_scheduler.config[
-                'num_train_timesteps'] // sd.noise_scheduler.num_inference_steps
-            alpha_prod_t_prev = sd.noise_scheduler.alphas_cumprod[
-                prev_timestep] if prev_timestep >= 0 else sd.noise_scheduler.final_alpha_cumprod
+            prev_timestep = (
+                timestep
+                - sd.noise_scheduler.config["num_train_timesteps"]
+                // sd.noise_scheduler.num_inference_steps
+            )
+            alpha_prod_t_prev = (
+                sd.noise_scheduler.alphas_cumprod[prev_timestep]
+                if prev_timestep >= 0
+                else sd.noise_scheduler.final_alpha_cumprod
+            )
 
             variance = get_variance(sd, timestep)
-            pred_sample_direction = (1 - alpha_prod_t_prev - etas[idx] * variance) ** (0.5) * noise_pred
+            pred_sample_direction = (1 - alpha_prod_t_prev - etas[idx] * variance) ** (
+                0.5
+            ) * noise_pred
 
-            mu_xt = alpha_prod_t_prev ** (0.5) * pred_original_sample + pred_sample_direction
+            mu_xt = (
+                alpha_prod_t_prev ** (0.5) * pred_original_sample
+                + pred_sample_direction
+            )
 
-            z = (xtm1 - mu_xt) / (etas[idx] * variance ** 0.5)
+            z = (xtm1 - mu_xt) / (etas[idx] * variance**0.5)
             zs[idx] = z
 
             # correction to avoid error accumulation
-            xtm1 = mu_xt + (etas[idx] * variance ** 0.5) * z
+            xtm1 = mu_xt + (etas[idx] * variance**0.5) * z
             xts[idx + 1] = xtm1
 
-    if not zs is None:
+    if zs is not None:
         zs[-1] = torch.zeros_like(zs[-1])
 
     # restore timesteps
@@ -325,15 +365,24 @@ def inversion_forward_process(
 
 def reverse_step(model, model_output, timestep, sample, eta=0, variance_noise=None):
     # 1. get previous step value (=t-1)
-    prev_timestep = timestep - model.scheduler.config.num_train_timesteps // model.scheduler.num_inference_steps
+    prev_timestep = (
+        timestep
+        - model.scheduler.config.num_train_timesteps
+        // model.scheduler.num_inference_steps
+    )
     # 2. compute alphas, betas
     alpha_prod_t = model.scheduler.alphas_cumprod[timestep]
-    alpha_prod_t_prev = model.scheduler.alphas_cumprod[
-        prev_timestep] if prev_timestep >= 0 else model.scheduler.final_alpha_cumprod
+    alpha_prod_t_prev = (
+        model.scheduler.alphas_cumprod[prev_timestep]
+        if prev_timestep >= 0
+        else model.scheduler.final_alpha_cumprod
+    )
     beta_prod_t = 1 - alpha_prod_t
     # 3. compute predicted original sample from predicted noise also called
     # "predicted x_0" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
-    pred_original_sample = (sample - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
+    pred_original_sample = (
+        sample - beta_prod_t ** (0.5) * model_output
+    ) / alpha_prod_t ** (0.5)
     # 5. compute variance: "sigma_t(η)" -> see formula (16)
     # σ_t = sqrt((1 − α_t−1)/(1 − α_t)) * sqrt(1 − α_t/α_t−1)
     # variance = self.scheduler._get_variance(timestep, prev_timestep)
@@ -343,13 +392,19 @@ def reverse_step(model, model_output, timestep, sample, eta=0, variance_noise=No
     model_output_direction = model_output
     # 6. compute "direction pointing to x_t" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
     # pred_sample_direction = (1 - alpha_prod_t_prev - std_dev_t**2) ** (0.5) * model_output_direction
-    pred_sample_direction = (1 - alpha_prod_t_prev - eta * variance) ** (0.5) * model_output_direction
+    pred_sample_direction = (1 - alpha_prod_t_prev - eta * variance) ** (
+        0.5
+    ) * model_output_direction
     # 7. compute x_t without "random noise" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
-    prev_sample = alpha_prod_t_prev ** (0.5) * pred_original_sample + pred_sample_direction
+    prev_sample = (
+        alpha_prod_t_prev ** (0.5) * pred_original_sample + pred_sample_direction
+    )
     # 8. Add noice if eta > 0
     if eta > 0:
         if variance_noise is None:
-            variance_noise = torch.randn(model_output.shape, device=model.device, dtype=torch.float16)
+            variance_noise = torch.randn(
+                model_output.shape, device=model.device, dtype=torch.float16
+            )
         sigma_z = eta * variance ** (0.5) * variance_noise
         prev_sample = prev_sample + sigma_z
 
@@ -357,50 +412,59 @@ def reverse_step(model, model_output, timestep, sample, eta=0, variance_noise=No
 
 
 def inversion_reverse_process(
-        model,
-        xT,
-        etas=0,
-        prompts="",
-        cfg_scales=None,
-        prog_bar=False,
-        zs=None,
-        controller=None,
-        asyrp=False):
+    model,
+    xT,
+    etas=0,
+    prompts="",
+    cfg_scales=None,
+    prog_bar=False,
+    zs=None,
+    controller=None,
+    asyrp=False,
+):
     batch_size = len(prompts)
 
-    cfg_scales_tensor = torch.Tensor(cfg_scales).view(-1, 1, 1, 1).to(model.device, dtype=torch.float16)
+    cfg_scales_tensor = (
+        torch.Tensor(cfg_scales).view(-1, 1, 1, 1).to(model.device, dtype=torch.float16)
+    )
 
     text_embeddings = encode_text(model, prompts)
     uncond_embedding = encode_text(model, [""] * batch_size)
 
-    if etas is None: etas = 0
-    if type(etas) in [int, float]: etas = [etas] * model.scheduler.num_inference_steps
+    if etas is None:
+        etas = 0
+    if type(etas) in [int, float]:
+        etas = [etas] * model.scheduler.num_inference_steps
     assert len(etas) == model.scheduler.num_inference_steps
     timesteps = model.scheduler.timesteps.to(model.device)
 
     xt = xT.expand(batch_size, -1, -1, -1)
-    op = tqdm(timesteps[-zs.shape[0]:]) if prog_bar else timesteps[-zs.shape[0]:]
+    op = tqdm(timesteps[-zs.shape[0] :]) if prog_bar else timesteps[-zs.shape[0] :]
 
-    t_to_idx = {int(v): k for k, v in enumerate(timesteps[-zs.shape[0]:])}
+    t_to_idx = {int(v): k for k, v in enumerate(timesteps[-zs.shape[0] :])}
 
     for t in op:
         idx = t_to_idx[int(t)]
         ## Unconditional embedding
         with torch.no_grad():
-            uncond_out = model.unet.forward(xt, timestep=t,
-                                            encoder_hidden_states=uncond_embedding)
+            uncond_out = model.unet.forward(
+                xt, timestep=t, encoder_hidden_states=uncond_embedding
+            )
 
             ## Conditional embedding
         if prompts:
             with torch.no_grad():
-                cond_out = model.unet.forward(xt, timestep=t,
-                                              encoder_hidden_states=text_embeddings)
+                cond_out = model.unet.forward(
+                    xt, timestep=t, encoder_hidden_states=text_embeddings
+                )
 
-        z = zs[idx] if not zs is None else None
+        z = zs[idx] if zs is not None else None
         z = z.expand(batch_size, -1, -1, -1)
         if prompts:
             ## classifier free guidance
-            noise_pred = uncond_out.sample + cfg_scales_tensor * (cond_out.sample - uncond_out.sample)
+            noise_pred = uncond_out.sample + cfg_scales_tensor * (
+                cond_out.sample - uncond_out.sample
+            )
         else:
             noise_pred = uncond_out.sample
         # 2. compute less noisy image and set x_t -> x_t-1

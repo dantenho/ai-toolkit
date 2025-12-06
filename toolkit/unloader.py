@@ -1,7 +1,8 @@
-import torch
-from toolkit.basic import flush
 from typing import TYPE_CHECKING
 
+import torch
+
+from toolkit.basic import flush
 
 if TYPE_CHECKING:
     from toolkit.models.base_model import BaseModel
@@ -24,11 +25,11 @@ class FakeTextEncoder(torch.nn.Module):
     @property
     def device(self):
         return self._device
-    
+
     @property
     def dtype(self):
         return self._dtype
-    
+
     def to(self, *args, **kwargs):
         return self
 
@@ -47,7 +48,7 @@ def unload_text_encoder(model: "BaseModel"):
             if hasattr(pipe, "text_encoder"):
                 te = FakeTextEncoder(device=model.device_torch, dtype=model.torch_dtype)
                 text_encoder_list.append(te)
-                pipe.text_encoder.to('cpu')
+                pipe.text_encoder.to("cpu")
                 pipe.text_encoder = te
 
             i = 2
@@ -59,6 +60,8 @@ def unload_text_encoder(model: "BaseModel"):
             model.text_encoder = text_encoder_list
         else:
             # only has a single text encoder
-            model.text_encoder = FakeTextEncoder(device=model.device_torch, dtype=model.torch_dtype)
+            model.text_encoder = FakeTextEncoder(
+                device=model.device_torch, dtype=model.torch_dtype
+            )
 
     flush()

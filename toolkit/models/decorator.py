@@ -15,7 +15,9 @@ class Decorator(torch.nn.Module):
         # ensure it is float32
         self.weight.data = self.weight.data.float()
 
-    def forward(self, text_embeds: torch.Tensor, is_unconditional=False) -> torch.Tensor:
+    def forward(
+        self, text_embeds: torch.Tensor, is_unconditional=False
+    ) -> torch.Tensor:
         # make sure the param is float32
         if self.weight.dtype != text_embeds.dtype:
             self.weight.data = self.weight.data.float()

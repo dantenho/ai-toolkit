@@ -1,19 +1,17 @@
+import gc
 import glob
 import os
-from collections import OrderedDict
 import random
-from typing import Optional, List
-
-from safetensors.torch import save_file, load_file
-from tqdm import tqdm
-
-from toolkit.layers import ReductionKernel
-from toolkit.stable_diffusion_model import PromptEmbeds
-from toolkit.train_tools import get_torch_dtype, apply_noise_offset
-import gc
-from toolkit import train_tools
+from collections import OrderedDict
 
 import torch
+from safetensors.torch import load_file, save_file
+from toolkit import train_tools
+from toolkit.layers import ReductionKernel
+from toolkit.stable_diffusion_model import PromptEmbeds
+from toolkit.train_tools import get_torch_dtype
+from tqdm import tqdm
+
 from .BaseSDTrainProcess import BaseSDTrainProcess, StableDiffusion
 
 
@@ -23,16 +21,15 @@ def flush():
 
 
 class RescaleConfig:
-    def __init__(
-            self,
-            **kwargs
-    ):
-        self.from_resolution = kwargs.get('from_resolution', 512)
-        self.scale = kwargs.get('scale', 0.5)
-        self.latent_tensor_dir = kwargs.get('latent_tensor_dir', None)
-        self.num_latent_tensors = kwargs.get('num_latent_tensors', 1000)
-        self.to_resolution = kwargs.get('to_resolution', int(self.from_resolution * self.scale))
-        self.prompt_dropout = kwargs.get('prompt_dropout', 0.1)
+    def __init__(self, **kwargs):
+        self.from_resolution = kwargs.get("from_resolution", 512)
+        self.scale = kwargs.get("scale", 0.5)
+        self.latent_tensor_dir = kwargs.get("latent_tensor_dir")
+        self.num_latent_tensors = kwargs.get("num_latent_tensors", 1000)
+        self.to_resolution = kwargs.get(
+            "to_resolution", int(self.from_resolution * self.scale)
+        )
+        self.prompt_dropout = kwargs.get("prompt_dropout", 0.1)
 
 
 class PromptEmbedsCache:
@@ -41,7 +38,7 @@ class PromptEmbedsCache:
     def __setitem__(self, __name: str, __value: PromptEmbeds) -> None:
         self.prompts[__name] = __value
 
-    def __getitem__(self, __name: str) -> Optional[PromptEmbeds]:
+    def __getitem__(self, __name: str) -> PromptEmbeds | None:
         if __name in self.prompts:
             return self.prompts[__name]
         else:
@@ -54,17 +51,19 @@ class TrainSDRescaleProcess(BaseSDTrainProcess):
         super().__init__(process_id, job, config)
         self.step_num = 0
         self.start_step = 0
-        self.device = self.get_conf('device', self.job.device)
+        self.device = self.get_conf("device", self.job.device)
         self.device_torch = torch.device(self.device)
-        self.rescale_config = RescaleConfig(**self.get_conf('rescale', required=True))
+        self.rescale_config = RescaleConfig(**self.get_conf("rescale", required=True))
         self.reduce_size_fn = ReductionKernel(
             in_channels=4,
-            kernel_size=int(self.rescale_config.from_resolution // self.rescale_config.to_resolution),
+            kernel_size=int(
+                self.rescale_config.from_resolution // self.rescale_config.to_resolution
+            ),
             dtype=get_torch_dtype(self.train_config.dtype),
             device=self.device_torch,
         )
 
-        self.latent_paths: List[str] = []
+        self.latent_paths: list[str] = []
         self.empty_embedding: PromptEmbeds = None
 
     def before_model_load(self):
@@ -80,15 +79,21 @@ class TrainSDRescaleProcess(BaseSDTrainProcess):
             num_to_generate = self.rescale_config.num_latent_tensors
         else:
             # find existing
-            current_tensor_list = glob.glob(os.path.join(self.rescale_config.latent_tensor_dir, "*.safetensors"))
-            num_to_generate = self.rescale_config.num_latent_tensors - len(current_tensor_list)
+            current_tensor_list = glob.glob(
+                os.path.join(self.rescale_config.latent_tensor_dir, "*.safetensors")
+            )
+            num_to_generate = self.rescale_config.num_latent_tensors - len(
+                current_tensor_list
+            )
             self.latent_paths = current_tensor_list
 
         if num_to_generate > 0:
-            print(f"Generating {num_to_generate}/{self.rescale_config.num_latent_tensors} latent tensors")
+            print(
+                f"Generating {num_to_generate}/{self.rescale_config.num_latent_tensors} latent tensors"
+            )
 
             # unload other model
-            self.sd.unet.to('cpu')
+            self.sd.unet.to("cpu")
 
             # load aux network
             self.sd_parent = StableDiffusion(
@@ -108,7 +113,9 @@ class TrainSDRescaleProcess(BaseSDTrainProcess):
 
             # save current seed state for training
             rng_state = torch.get_rng_state()
-            cuda_rng_state = torch.cuda.get_rng_state() if torch.cuda.is_available() else None
+            cuda_rng_state = (
+                torch.cuda.get_rng_state() if torch.cuda.is_available() else None
+            )
 
             text_embeddings = train_tools.concat_prompt_embeddings(
                 self.empty_embedding,  # unconditional (negative prompt)
@@ -120,7 +127,7 @@ class TrainSDRescaleProcess(BaseSDTrainProcess):
             for i in tqdm(range(num_to_generate)):
                 dtype = get_torch_dtype(self.train_config.dtype)
                 # get a random seed
-                seed = torch.randint(0, 2 ** 32, (1,)).item()
+                seed = torch.randint(0, 2**32, (1,)).item()
                 # zero pad seed string to max length
                 seed_string = str(seed).zfill(10)
                 # set seed
@@ -157,20 +164,32 @@ class TrainSDRescaleProcess(BaseSDTrainProcess):
                     latents,
                     text_embeddings=text_embeddings,
                     timestep=timestep,
-                    guidance_scale=guidance_scale
+                    guidance_scale=guidance_scale,
                 )
 
                 # build state dict
                 state_dict = OrderedDict()
-                state_dict['noise_pred_target'] = noise_pred_target.to('cpu', dtype=torch.float16)
-                state_dict['latents'] = latents.to('cpu', dtype=torch.float16)
-                state_dict['guidance_scale'] = torch.tensor(guidance_scale).to('cpu', dtype=torch.float16)
-                state_dict['timestep'] = torch.tensor(timestep).to('cpu', dtype=torch.float16)
-                state_dict['timesteps_to'] = torch.tensor(timesteps_to).to('cpu', dtype=torch.float16)
-                state_dict['seed'] = torch.tensor(seed).to('cpu', dtype=torch.float32) # must be float 32 to prevent overflow
+                state_dict["noise_pred_target"] = noise_pred_target.to(
+                    "cpu", dtype=torch.float16
+                )
+                state_dict["latents"] = latents.to("cpu", dtype=torch.float16)
+                state_dict["guidance_scale"] = torch.tensor(guidance_scale).to(
+                    "cpu", dtype=torch.float16
+                )
+                state_dict["timestep"] = torch.tensor(timestep).to(
+                    "cpu", dtype=torch.float16
+                )
+                state_dict["timesteps_to"] = torch.tensor(timesteps_to).to(
+                    "cpu", dtype=torch.float16
+                )
+                state_dict["seed"] = torch.tensor(seed).to(
+                    "cpu", dtype=torch.float32
+                )  # must be float 32 to prevent overflow
 
                 file_name = f"{seed_string}_{i}.safetensors"
-                file_path = os.path.join(self.rescale_config.latent_tensor_dir, file_name)
+                file_path = os.path.join(
+                    self.rescale_config.latent_tensor_dir, file_name
+                )
                 save_file(state_dict, file_path)
                 self.latent_paths.append(file_path)
 
@@ -187,17 +206,18 @@ class TrainSDRescaleProcess(BaseSDTrainProcess):
     def hook_before_train_loop(self):
         # encode our empty prompt
         self.empty_embedding = self.sd.encode_prompt("")
-        self.empty_embedding = self.empty_embedding.to(self.device_torch,
-                                                       dtype=get_torch_dtype(self.train_config.dtype))
+        self.empty_embedding = self.empty_embedding.to(
+            self.device_torch, dtype=get_torch_dtype(self.train_config.dtype)
+        )
 
         # Move train model encoder to cpu
         if isinstance(self.sd.text_encoder, list):
             for encoder in self.sd.text_encoder:
-                encoder.to('cpu')
+                encoder.to("cpu")
                 encoder.eval()
                 encoder.requires_grad_(False)
         else:
-            self.sd.text_encoder.to('cpu')
+            self.sd.text_encoder.to("cpu")
             self.sd.text_encoder.eval()
             self.sd.text_encoder.requires_grad_(False)
 
@@ -227,11 +247,13 @@ class TrainSDRescaleProcess(BaseSDTrainProcess):
             latent_path = random.choice(self.latent_paths)
             latent_tensor = load_file(latent_path)
 
-            noise_pred_target = (latent_tensor['noise_pred_target']).to(self.device_torch, dtype=dtype)
-            latents = (latent_tensor['latents']).to(self.device_torch, dtype=dtype)
-            guidance_scale = (latent_tensor['guidance_scale']).item()
-            timestep = int((latent_tensor['timestep']).item())
-            timesteps_to = int((latent_tensor['timesteps_to']).item())
+            noise_pred_target = (latent_tensor["noise_pred_target"]).to(
+                self.device_torch, dtype=dtype
+            )
+            latents = (latent_tensor["latents"]).to(self.device_torch, dtype=dtype)
+            guidance_scale = (latent_tensor["guidance_scale"]).item()
+            timestep = int((latent_tensor["timestep"]).item())
+            timesteps_to = int((latent_tensor["timesteps_to"]).item())
             # seed = int((latent_tensor['seed']).item())
 
             text_embeddings = train_tools.concat_prompt_embeddings(
@@ -243,7 +265,9 @@ class TrainSDRescaleProcess(BaseSDTrainProcess):
                 timesteps_to, device=self.device_torch
             )
 
-            denoised_target = self.sd.noise_scheduler.step(noise_pred_target, timestep, latents).prev_sample
+            denoised_target = self.sd.noise_scheduler.step(
+                noise_pred_target, timestep, latents
+            ).prev_sample
 
             # get the reduced latents
             # reduced_pred = self.reduce_size_fn(noise_pred_target.detach())
@@ -256,9 +280,11 @@ class TrainSDRescaleProcess(BaseSDTrainProcess):
             reduced_latents,
             text_embeddings=text_embeddings,
             timestep=timestep,
-            guidance_scale=guidance_scale
+            guidance_scale=guidance_scale,
         )
-        denoised_pred = self.sd.noise_scheduler.step(noise_pred_train, timestep, reduced_latents).prev_sample
+        denoised_pred = self.sd.noise_scheduler.step(
+            noise_pred_train, timestep, reduced_latents
+        ).prev_sample
         loss = loss_function(denoised_pred, denoised_target)
         loss_float = loss.item()
         loss.backward()
@@ -269,7 +295,7 @@ class TrainSDRescaleProcess(BaseSDTrainProcess):
         flush()
 
         loss_dict = OrderedDict(
-            {'loss': loss_float},
+            {"loss": loss_float},
         )
 
         return loss_dict

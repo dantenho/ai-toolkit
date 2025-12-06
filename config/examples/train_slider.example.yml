@@ -10,10 +10,10 @@ config:
   name: detail_slider_v1
   # folder will be created with name above in folder below
   # it can be relative to the project root or absolute
-  training_folder: "output/LoRA"
+  training_folder: 'output/LoRA'
   device: cuda:0 # cpu, cuda:0, etc
   # for tensorboard logging, we will make a subfolder for this job
-  log_dir: "output/.tensorboard"
+  log_dir: 'output/.tensorboard'
   # you can stack processes for other jobs, It is not tested with sliders though
   # just use one for now
   process:
@@ -21,14 +21,14 @@ config:
       # network is the LoRA network for a slider, I recommend to leave this be
       network:
         # network type lierla is traditional LoRA that works everywhere, only linear layers
-        type: "lierla"
+        type: 'lierla'
         # rank / dim of the network. Bigger is not always better. Especially for sliders. 8 is good
         linear: 8
         linear_alpha: 4 # Do about half of rank
       # training config
       train:
         # this is also used in sampling. Stick with ddpm unless you know what you are doing
-        noise_scheduler: "ddpm" # or "ddpm", "lms", "euler_a"
+        noise_scheduler: 'ddpm' # or "ddpm", "lms", "euler_a"
         # how many steps to train. More is not always better. I rarely go over 1000
         steps: 500
         # I have had good results with 4e-4 to 1e-4 at 500 steps
@@ -46,9 +46,9 @@ config:
         # just leave unless you know what you are doing
         # also supports "dadaptation" but set lr to 1 if you use that,
         # but it learns too fast and I don't recommend it
-        optimizer: "adamw"
+        optimizer: 'adamw'
         # only constant for now
-        lr_scheduler: "constant"
+        lr_scheduler: 'constant'
         # we randomly denoise random num of steps form 1 to this number
         # while training. Just leave it
         max_denoising_steps: 40
@@ -56,24 +56,24 @@ config:
         # higher may not work right with newer single batch stacking code anyway
         batch_size: 1
         # bf16 works best if your GPU supports it (modern)
-        dtype: bf16  # fp32, bf16, fp16
+        dtype: bf16 # fp32, bf16, fp16
         # if you have it, use it. It is faster and better
         # torch 2.0 doesnt need xformers anymore, only use if you have lower version
-#        xformers: true
+        #        xformers: true
         # I don't recommend using unless you are trying to make a darker lora. Then do 0.1 MAX
         # although, the way we train sliders is comparative, so it probably won't work anyway
         noise_offset: 0.0
-#        noise_offset: 0.0357  # SDXL was trained with offset of 0.0357. So use that when training on SDXL
+      #        noise_offset: 0.0357  # SDXL was trained with offset of 0.0357. So use that when training on SDXL
 
       # the model to train the LoRA network on
       model:
         # huggingface name, relative prom project path, or absolute path to .safetensors or .ckpt
-        name_or_path: "runwayml/stable-diffusion-v1-5"
-        is_v2: false  # for v2 models
+        name_or_path: 'runwayml/stable-diffusion-v1-5'
+        is_v2: false # for v2 models
         is_v_pred: false # for v-prediction models (most v2 models)
         # has some issues with the dual text encoder and the way we train sliders
         # it works bit weights need to probably be higher to see it.
-        is_xl: false  # for SDXL models
+        is_xl: false # for SDXL models
 
       # saving config
       save:
@@ -87,7 +87,7 @@ config:
       sample:
         # must match train.noise_scheduler, this is not used here
         # but may be in future and in other processes
-        sampler: "ddpm"
+        sampler: 'ddpm'
         # sample every this many steps
         sample_every: 20
         # image size
@@ -103,20 +103,20 @@ config:
         # I like to do a wide positive and negative spread so I can see a good range and stop
         # early if the network is braking down
         prompts:
-          - "a woman in a coffee shop, black hat, blonde hair, blue jacket --m -5"
-          - "a woman in a coffee shop, black hat, blonde hair, blue jacket --m -3"
-          - "a woman in a coffee shop, black hat, blonde hair, blue jacket --m 3"
-          - "a woman in a coffee shop, black hat, blonde hair, blue jacket --m 5"
-          - "a golden retriever sitting on a leather couch, --m -5"
-          - "a golden retriever sitting on a leather couch --m -3"
-          - "a golden retriever sitting on a leather couch --m 3"
-          - "a golden retriever sitting on a leather couch --m 5"
-          - "a man with a beard and red flannel shirt, wearing vr goggles, walking into traffic --m -5"
-          - "a man with a beard and red flannel shirt, wearing vr goggles, walking into traffic --m -3"
-          - "a man with a beard and red flannel shirt, wearing vr goggles, walking into traffic --m 3"
-          - "a man with a beard and red flannel shirt, wearing vr goggles, walking into traffic --m 5"
+          - 'a woman in a coffee shop, black hat, blonde hair, blue jacket --m -5'
+          - 'a woman in a coffee shop, black hat, blonde hair, blue jacket --m -3'
+          - 'a woman in a coffee shop, black hat, blonde hair, blue jacket --m 3'
+          - 'a woman in a coffee shop, black hat, blonde hair, blue jacket --m 5'
+          - 'a golden retriever sitting on a leather couch, --m -5'
+          - 'a golden retriever sitting on a leather couch --m -3'
+          - 'a golden retriever sitting on a leather couch --m 3'
+          - 'a golden retriever sitting on a leather couch --m 5'
+          - 'a man with a beard and red flannel shirt, wearing vr goggles, walking into traffic --m -5'
+          - 'a man with a beard and red flannel shirt, wearing vr goggles, walking into traffic --m -3'
+          - 'a man with a beard and red flannel shirt, wearing vr goggles, walking into traffic --m 3'
+          - 'a man with a beard and red flannel shirt, wearing vr goggles, walking into traffic --m 5'
         # negative prompt used on all prompts above as default if they don't have one
-        neg: "cartoon, fake, drawing, illustration, cgi, animated, anime, monochrome"
+        neg: 'cartoon, fake, drawing, illustration, cgi, animated, anime, monochrome'
         # seed for sampling. 42 is the answer for everything
         seed: 42
         # walks the seed so s1 is 42, s2 is 43, s3 is 44, etc
@@ -146,9 +146,9 @@ config:
         # and [ 1024, 1024 ] for sd_xl
         # you can do as many as you want here
         resolutions:
-          - [ 512, 512 ]
-#          - [ 512, 768 ]
-#          - [ 768, 768 ]
+          - [512, 512]
+        #          - [ 512, 768 ]
+        #          - [ 768, 768 ]
         # slider training uses 4 combined steps for a single round. This will do it in one gradient
         # step. It is highly optimized and shouldn't take anymore vram than doing without it,
         # since we break down batches for gradient accumulation now. so just leave it on.
@@ -157,15 +157,15 @@ config:
         # but they can conflict outweigh each other. Other than experimenting, I recommend
         # just doing one for good results
         targets:
-            # target_class is the base concept we are adjusting the representation of
-            # for example, if we are adjusting the representation of a person, we would use "person"
-            # if we are adjusting the representation of a cat, we would use "cat" It is not
-            # a keyword necessarily but what the model understands the concept to represent.
-            # "person" will affect men, women, children, etc but will not affect cats, dogs, etc
-            # it is the models base general understanding of the concept and everything it represents
-            # you can leave it blank to affect everything. In this example, we are adjusting
-            # detail, so we will leave it blank to affect everything
-          - target_class: ""
+          # target_class is the base concept we are adjusting the representation of
+          # for example, if we are adjusting the representation of a person, we would use "person"
+          # if we are adjusting the representation of a cat, we would use "cat" It is not
+          # a keyword necessarily but what the model understands the concept to represent.
+          # "person" will affect men, women, children, etc but will not affect cats, dogs, etc
+          # it is the models base general understanding of the concept and everything it represents
+          # you can leave it blank to affect everything. In this example, we are adjusting
+          # detail, so we will leave it blank to affect everything
+          - target_class: ''
             # positive is the prompt for the positive side of the slider.
             # It is the concept that will be excited and amplified in the model when we slide the slider
             # to the positive side and forgotten / inverted when we slide
@@ -174,12 +174,12 @@ config:
             # if you want to train on fat people, you would use "an extremely fat, morbidly obese person"
             # as the prompt. Not just "fat person"
             # max 75 tokens for now
-            positive: "high detail, 8k, intricate, detailed, high resolution, high res, high quality"
+            positive: 'high detail, 8k, intricate, detailed, high resolution, high res, high quality'
             # negative is the prompt for the negative side of the slider and works the same as positive
             # it does not necessarily work the same as a negative prompt when generating images
             # these need to be polar opposites.
             # max 76 tokens for now
-            negative: "blurry, boring, fuzzy, low detail, low resolution, low res, low quality"
+            negative: 'blurry, boring, fuzzy, low detail, low resolution, low res, low quality'
             # the loss for this target is multiplied by this number.
             # if you are doing more than one target it may be good to set less important ones
             # to a lower number like 0.1 so they don't outweigh the primary target
@@ -188,7 +188,6 @@ config:
             # this will make the LoRA more robust. You probably want this on unless prompt order
             # is important for some reason
             shuffle: true
-
 
         # anchors are prompts that we will try to hold on to while training the slider
         # these are NOT necessary and can prevent the slider from converging if not done right
@@ -222,7 +221,7 @@ config:
 # plus some other information for you automatically
 meta:
   # [name] gets replaced with the name above
-  name: "[name]"
+  name: '[name]'
 #  version: '1.0'
 #  creator:
 #    name: Your Name

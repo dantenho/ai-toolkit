@@ -1,9 +1,12 @@
 import math
-from typing import List
-import torch
-from toolkit.optimizers.optimizer_utils import copy_stochastic, stochastic_grad_accummulation
-from optimum.quanto import QBytesTensor
 import random
+
+import torch
+from optimum.quanto import QBytesTensor
+from toolkit.optimizers.optimizer_utils import (
+    copy_stochastic,
+    stochastic_grad_accummulation,
+)
 
 
 class Adafactor(torch.optim.Optimizer):
@@ -114,10 +117,10 @@ class Adafactor(torch.optim.Optimizer):
         self.stochastic_rounding = stochastic_rounding
         if lr is not None and relative_step:
             raise ValueError(
-                "Cannot combine manual `lr` and `relative_step=True` options")
+                "Cannot combine manual `lr` and `relative_step=True` options"
+            )
         if warmup_init and not relative_step:
-            raise ValueError(
-                "`warmup_init=True` requires `relative_step=True`")
+            raise ValueError("`warmup_init=True` requires `relative_step=True`")
 
         defaults = {
             "lr": lr,
@@ -131,58 +134,57 @@ class Adafactor(torch.optim.Optimizer):
             "warmup_init": warmup_init,
         }
         super().__init__(params, defaults)
-        
-        self.base_lrs: List[float] = [
-            lr for group in self.param_groups
-        ]
+
+        self.base_lrs: list[float] = [lr for group in self.param_groups]
 
         self.is_stochastic_rounding_accumulation = False
 
         # setup stochastic grad accum hooks
         if stochastic_accumulation:
             for group in self.param_groups:
-                for param in group['params']:
+                for param in group["params"]:
                     if param.requires_grad and param.dtype != torch.float32:
                         self.is_stochastic_rounding_accumulation = True
                         param.register_post_accumulate_grad_hook(
                             stochastic_grad_accummulation
                         )
-    
+
         self.do_paramiter_swapping = do_paramiter_swapping
         self.paramiter_swapping_factor = paramiter_swapping_factor
         self._total_paramiter_size = 0
         # count total paramiters
         for group in self.param_groups:
-            for param in group['params']:
+            for param in group["params"]:
                 self._total_paramiter_size += torch.numel(param)
         # pretty print total paramiters with comma seperation
         print(f"Total training paramiters: {self._total_paramiter_size:,}")
-        
+
         # needs to be enabled to count paramiters
         if self.do_paramiter_swapping:
             self.enable_paramiter_swapping(self.paramiter_swapping_factor)
-        
-    
+
     def enable_paramiter_swapping(self, paramiter_swapping_factor=0.1):
         self.do_paramiter_swapping = True
         self.paramiter_swapping_factor = paramiter_swapping_factor
         # call it an initial time
         self.swap_paramiters()
-                    
+
     def swap_paramiters(self):
         all_params = []
         # deactivate all paramiters
         for group in self.param_groups:
-            for param in group['params']:
+            for param in group["params"]:
                 param.requires_grad_(False)
                 # remove any grad
                 param.grad = None
                 all_params.append(param)
         # shuffle all paramiters
         random.shuffle(all_params)
-        
+
         # keep activating paramiters until we are going to go over the target paramiters
-        target_paramiters = int(self._total_paramiter_size * self.paramiter_swapping_factor)
+        target_paramiters = int(
+            self._total_paramiter_size * self.paramiter_swapping_factor
+        )
         total_paramiters = 0
         for param in all_params:
             total_paramiters += torch.numel(param)
@@ -195,8 +197,9 @@ class Adafactor(torch.optim.Optimizer):
     def _get_lr(param_group, param_state):
         rel_step_sz = param_group["lr"]
         if param_group["relative_step"]:
-            min_step = 1e-6 * \
-                param_state["step"] if param_group["warmup_init"] else 1e-2
+            min_step = (
+                1e-6 * param_state["step"] if param_group["warmup_init"] else 1e-2
+            )
             rel_step_sz = min(min_step, 1.0 / math.sqrt(param_state["step"]))
         param_scale = 1.0
         if param_group["scale_parameter"]:
@@ -217,8 +220,11 @@ class Adafactor(torch.optim.Optimizer):
     def _approx_sq_grad(exp_avg_sq_row, exp_avg_sq_col):
         # copy from fairseq's adafactor implementation:
         # https://github.com/huggingface/transformers/blob/8395f14de6068012787d83989c3627c3df6a252b/src/transformers/optimization.py#L505
-        r_factor = (exp_avg_sq_row / exp_avg_sq_row.mean(dim=-
-                    1, keepdim=True)).rsqrt_().unsqueeze(-1)
+        r_factor = (
+            (exp_avg_sq_row / exp_avg_sq_row.mean(dim=-1, keepdim=True))
+            .rsqrt_()
+            .unsqueeze(-1)
+        )
         c_factor = exp_avg_sq_col.unsqueeze(-2).rsqrt()
         return torch.mul(r_factor, c_factor)
 
@@ -227,7 +233,7 @@ class Adafactor(torch.optim.Optimizer):
             return
         # copy over stochastically rounded grads
         for group in self.param_groups:
-            for param in group['params']:
+            for param in group["params"]:
                 if param.requires_grad and hasattr(param, "_accum_grad"):
                     param.grad = param._accum_grad
                     del param._accum_grad
@@ -266,9 +272,8 @@ class Adafactor(torch.optim.Optimizer):
                 if grad.dtype != torch.float32:
                     grad = grad.to(torch.float32)
                 if grad.is_sparse:
-                    raise RuntimeError(
-                        "Adafactor does not support sparse gradients.")
-                
+                    raise RuntimeError("Adafactor does not support sparse gradients.")
+
                 # if p has atts _scale then it is quantized. We need to divide the grad by the scale
                 # if hasattr(p, "_scale"):
                 #     grad = grad / p._scale
@@ -276,8 +281,7 @@ class Adafactor(torch.optim.Optimizer):
                 state = self.state[p]
                 grad_shape = grad.shape
 
-                factored, use_first_moment = self._get_options(
-                    group, grad_shape)
+                factored, use_first_moment = self._get_options(group, grad_shape)
                 # State Initialization
                 if len(state) == 0:
                     state["step"] = 0
@@ -286,10 +290,10 @@ class Adafactor(torch.optim.Optimizer):
                         # Exponential moving average of gradient values
                         state["exp_avg"] = torch.zeros_like(grad)
                     if factored:
-                        state["exp_avg_sq_row"] = torch.zeros(
-                            grad_shape[:-1]).to(grad)
+                        state["exp_avg_sq_row"] = torch.zeros(grad_shape[:-1]).to(grad)
                         state["exp_avg_sq_col"] = torch.zeros(
-                            grad_shape[:-2] + grad_shape[-1:]).to(grad)
+                            grad_shape[:-2] + grad_shape[-1:]
+                        ).to(grad)
                     else:
                         state["exp_avg_sq"] = torch.zeros_like(grad)
 
@@ -298,15 +302,13 @@ class Adafactor(torch.optim.Optimizer):
                     if use_first_moment:
                         state["exp_avg"] = state["exp_avg"].to(grad)
                     if factored:
-                        state["exp_avg_sq_row"] = state["exp_avg_sq_row"].to(
-                            grad)
-                        state["exp_avg_sq_col"] = state["exp_avg_sq_col"].to(
-                            grad)
+                        state["exp_avg_sq_row"] = state["exp_avg_sq_row"].to(grad)
+                        state["exp_avg_sq_col"] = state["exp_avg_sq_col"].to(grad)
                     else:
                         state["exp_avg_sq"] = state["exp_avg_sq"].to(grad)
 
                 p_data_fp32 = p
-                
+
                 if isinstance(p_data_fp32, QBytesTensor):
                     p_data_fp32 = p_data_fp32.dequantize()
                 if p.dtype != torch.float32:
@@ -326,13 +328,14 @@ class Adafactor(torch.optim.Optimizer):
                     exp_avg_sq_col = state["exp_avg_sq_col"]
 
                     exp_avg_sq_row.mul_(beta2t).add_(
-                        update.mean(dim=-1), alpha=(1.0 - beta2t))
+                        update.mean(dim=-1), alpha=(1.0 - beta2t)
+                    )
                     exp_avg_sq_col.mul_(beta2t).add_(
-                        update.mean(dim=-2), alpha=(1.0 - beta2t))
+                        update.mean(dim=-2), alpha=(1.0 - beta2t)
+                    )
 
                     # Approximation of exponential moving average of square of gradient
-                    update = self._approx_sq_grad(
-                        exp_avg_sq_row, exp_avg_sq_col)
+                    update = self._approx_sq_grad(exp_avg_sq_row, exp_avg_sq_col)
                     update.mul_(grad)
                 else:
                     exp_avg_sq = state["exp_avg_sq"]
@@ -341,18 +344,19 @@ class Adafactor(torch.optim.Optimizer):
                     update = exp_avg_sq.rsqrt().mul_(grad)
 
                 update.div_(
-                    (self._rms(update) / group["clip_threshold"]).clamp_(min=1.0))
+                    (self._rms(update) / group["clip_threshold"]).clamp_(min=1.0)
+                )
                 update.mul_(lr)
 
                 if use_first_moment:
                     exp_avg = state["exp_avg"]
                     exp_avg.mul_(group["beta1"]).add_(
-                        update, alpha=(1 - group["beta1"]))
+                        update, alpha=(1 - group["beta1"])
+                    )
                     update = exp_avg
 
                 if group["weight_decay"] != 0:
-                    p_data_fp32.add_(
-                        p_data_fp32, alpha=(-group["weight_decay"] * lr))
+                    p_data_fp32.add_(p_data_fp32, alpha=(-group["weight_decay"] * lr))
 
                 p_data_fp32.add_(-update)
 

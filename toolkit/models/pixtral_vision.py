@@ -1,12 +1,13 @@
+import json
 import math
-from typing import List, Optional, Tuple, Any, Union, TYPE_CHECKING
 import os
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Optional
+
 import torch
 import torch.nn as nn
-from dataclasses import dataclass
 from huggingface_hub import snapshot_download
 from safetensors.torch import load_file
-import json
 
 if TYPE_CHECKING:
     from xformers.ops.fmha.attn_bias import BlockDiagonalMask
@@ -39,17 +40,19 @@ class FeedForward(nn.Module):
         return self.w2(nn.functional.silu(self.w1(x)) * self.w3(x))
 
 
-def repeat_kv(keys: torch.Tensor, values: torch.Tensor, repeats: int, dim: int) -> Tuple[torch.Tensor, torch.Tensor]:
+def repeat_kv(
+    keys: torch.Tensor, values: torch.Tensor, repeats: int, dim: int
+) -> tuple[torch.Tensor, torch.Tensor]:
     keys = torch.repeat_interleave(keys, repeats=repeats, dim=dim)
     values = torch.repeat_interleave(values, repeats=repeats, dim=dim)
     return keys, values
 
 
 def apply_rotary_emb(
-        xq: torch.Tensor,
-        xk: torch.Tensor,
-        freqs_cis: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+    xq: torch.Tensor,
+    xk: torch.Tensor,
+    freqs_cis: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
     xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
     xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
     freqs_cis = freqs_cis[:, None, :]
@@ -60,12 +63,12 @@ def apply_rotary_emb(
 
 class Attention(nn.Module):
     def __init__(
-            self,
-            dim: int,
-            n_heads: int,
-            head_dim: int,
-            n_kv_heads: int,
-            **kwargs,
+        self,
+        dim: int,
+        n_heads: int,
+        head_dim: int,
+        n_kv_heads: int,
+        **kwargs,
     ):
         super().__init__()
 
@@ -75,7 +78,7 @@ class Attention(nn.Module):
 
         self.repeats = self.n_heads // self.n_kv_heads
 
-        self.scale = self.head_dim ** -0.5
+        self.scale = self.head_dim**-0.5
 
         self.wq = nn.Linear(dim, n_heads * head_dim, bias=False)
         self.wk = nn.Linear(dim, n_kv_heads * head_dim, bias=False)
@@ -83,13 +86,14 @@ class Attention(nn.Module):
         self.wo = nn.Linear(n_heads * head_dim, dim, bias=False)
 
     def forward(
-            self,
-            x: torch.Tensor,
-            freqs_cis: torch.Tensor,
-            cache: Optional[Any] = None,
-            mask: Optional['BlockDiagonalMask'] = None,
+        self,
+        x: torch.Tensor,
+        freqs_cis: torch.Tensor,
+        cache: Any | None = None,
+        mask: Optional["BlockDiagonalMask"] = None,
     ) -> torch.Tensor:
         from xformers.ops.fmha import memory_efficient_attention
+
         assert mask is None or cache is None
         seqlen_sum, _ = x.shape
 
@@ -107,10 +111,12 @@ class Attention(nn.Module):
         else:
             cache.update(xk, xv)
             key, val = cache.key, cache.value
-            key = key.view(seqlen_sum * cache.max_seq_len,
-                           self.n_kv_heads, self.head_dim)
-            val = val.view(seqlen_sum * cache.max_seq_len,
-                           self.n_kv_heads, self.head_dim)
+            key = key.view(
+                seqlen_sum * cache.max_seq_len, self.n_kv_heads, self.head_dim
+            )
+            val = val.view(
+                seqlen_sum * cache.max_seq_len, self.n_kv_heads, self.head_dim
+            )
 
         # Repeat keys and values to match number of query heads
         key, val = repeat_kv(key, val, self.repeats, dim=1)
@@ -118,7 +124,8 @@ class Attention(nn.Module):
         # xformers requires (B=1, S, H, D)
         xq, key, val = xq[None, ...], key[None, ...], val[None, ...]
         output = memory_efficient_attention(
-            xq, key, val, mask if cache is None else cache.mask)
+            xq, key, val, mask if cache is None else cache.mask
+        )
         output = output.view(seqlen_sum, self.n_heads * self.head_dim)
 
         assert isinstance(output, torch.Tensor)
@@ -128,14 +135,14 @@ class Attention(nn.Module):
 
 class TransformerBlock(nn.Module):
     def __init__(
-            self,
-            dim: int,
-            hidden_dim: int,
-            n_heads: int,
-            n_kv_heads: int,
-            head_dim: int,
-            norm_eps: float,
-            **kwargs,
+        self,
+        dim: int,
+        hidden_dim: int,
+        n_heads: int,
+        n_kv_heads: int,
+        head_dim: int,
+        norm_eps: float,
+        **kwargs,
     ):
         super().__init__()
         self.n_heads = n_heads
@@ -153,11 +160,11 @@ class TransformerBlock(nn.Module):
         self.feed_forward = FeedForward(dim=dim, hidden_dim=hidden_dim)
 
     def forward(
-            self,
-            x: torch.Tensor,
-            freqs_cis: torch.Tensor,
-            cache: Optional[Any] = None,
-            mask: Optional['BlockDiagonalMask'] = None,
+        self,
+        x: torch.Tensor,
+        freqs_cis: torch.Tensor,
+        cache: Any | None = None,
+        mask: Optional["BlockDiagonalMask"] = None,
     ) -> torch.Tensor:
         r = self.attention.forward(self.attention_norm(x), freqs_cis, cache)
         h = x + r
@@ -180,10 +187,10 @@ class VisionEncoderArgs:
 
 
 def precompute_freqs_cis_2d(
-        dim: int,
-        height: int,
-        width: int,
-        theta: float,
+    dim: int,
+    height: int,
+    width: int,
+    theta: float,
 ) -> torch.Tensor:
     """
     freqs_cis: 2D complex tensor of shape (height, width, dim // 2) to be indexed by
@@ -208,7 +215,7 @@ def precompute_freqs_cis_2d(
 
 
 def position_meshgrid(
-        patch_embeds_list: list[torch.Tensor],
+    patch_embeds_list: list[torch.Tensor],
 ) -> torch.Tensor:
     positions = torch.cat(
         [
@@ -228,17 +235,17 @@ def position_meshgrid(
 
 class PixtralVisionEncoder(nn.Module):
     def __init__(
-            self,
-            hidden_size: int = 1024,
-            num_channels: int = 3,
-            image_size: int = 1024,
-            patch_size: int = 16,
-            intermediate_size: int = 4096,
-            num_hidden_layers: int = 24,
-            num_attention_heads: int = 16,
-            rope_theta: float = 1e4,  # for rope-2D
-            image_token_id: int = 10,
-            **kwargs,
+        self,
+        hidden_size: int = 1024,
+        num_channels: int = 3,
+        image_size: int = 1024,
+        patch_size: int = 16,
+        intermediate_size: int = 4096,
+        num_hidden_layers: int = 24,
+        num_attention_heads: int = 16,
+        rope_theta: float = 1e4,  # for rope-2D
+        image_token_id: int = 10,
+        **kwargs,
     ):
         super().__init__()
         self.args = VisionEncoderArgs(
@@ -265,10 +272,12 @@ class PixtralVisionEncoder(nn.Module):
 
         head_dim = self.args.hidden_size // self.args.num_attention_heads
         assert head_dim % 2 == 0, "ROPE requires even head_dim"
-        self._freqs_cis: Optional[torch.Tensor] = None
+        self._freqs_cis: torch.Tensor | None = None
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path: str) -> 'PixtralVisionEncoder':
+    def from_pretrained(
+        cls, pretrained_model_name_or_path: str
+    ) -> "PixtralVisionEncoder":
         if os.path.isdir(pretrained_model_name_or_path):
             model_folder = pretrained_model_name_or_path
         else:
@@ -279,15 +288,14 @@ class PixtralVisionEncoder(nn.Module):
             raise ValueError(f"Could not find config.json in {model_folder}")
 
         # load config
-        with open(os.path.join(model_folder, "config.json"), "r") as f:
+        with open(os.path.join(model_folder, "config.json")) as f:
             config = json.load(f)
 
         model = cls(**config)
 
         # see if there is a state_dict
         if os.path.exists(os.path.join(model_folder, "model.safetensors")):
-            state_dict = load_file(os.path.join(
-                model_folder, "model.safetensors"))
+            state_dict = load_file(os.path.join(model_folder, "model.safetensors"))
             model.load_state_dict(state_dict)
 
         return model
@@ -316,10 +324,11 @@ class PixtralVisionEncoder(nn.Module):
         return self._freqs_cis
 
     def forward(
-            self,
-            images: List[torch.Tensor],
+        self,
+        images: list[torch.Tensor],
     ) -> torch.Tensor:
         from xformers.ops.fmha.attn_bias import BlockDiagonalMask
+
         """
         Args:
             images: list of N_img images of variable sizes, each of shape (C, H, W)
@@ -328,17 +337,19 @@ class PixtralVisionEncoder(nn.Module):
             image_features: tensor of token features for all tokens of all images of
                 shape (N_toks, D)
         """
-        assert isinstance(
-            images, list), f"Expected list of images, got {type(images)}"
-        assert all(len(img.shape) == 3 for img in
-                   images), f"Expected images with shape (C, H, W), got {[img.shape for img in images]}"
+        assert isinstance(images, list), f"Expected list of images, got {type(images)}"
+        assert all(len(img.shape) == 3 for img in images), (
+            f"Expected images with shape (C, H, W), got {[img.shape for img in images]}"
+        )
         # pass images through initial convolution independently
-        patch_embeds_list = [self.patch_conv(
-            img.unsqueeze(0)).squeeze(0) for img in images]
+        patch_embeds_list = [
+            self.patch_conv(img.unsqueeze(0)).squeeze(0) for img in images
+        ]
 
         # flatten to a single sequence
-        patch_embeds = torch.cat([p.flatten(1).permute(1, 0)
-                                 for p in patch_embeds_list], dim=0)
+        patch_embeds = torch.cat(
+            [p.flatten(1).permute(1, 0) for p in patch_embeds_list], dim=0
+        )
         patch_embeds = self.ln_pre(patch_embeds)
 
         # positional embeddings
@@ -388,10 +399,10 @@ class VisionTransformerBlocks(nn.Module):
             )
 
     def forward(
-            self,
-            x: torch.Tensor,
-            mask: 'BlockDiagonalMask',
-            freqs_cis: Optional[torch.Tensor],
+        self,
+        x: torch.Tensor,
+        mask: "BlockDiagonalMask",
+        freqs_cis: torch.Tensor | None,
     ) -> torch.Tensor:
         for layer in self.layers:
             x = layer(x, mask=mask, freqs_cis=freqs_cis)
@@ -402,7 +413,9 @@ DATASET_MEAN = [0.48145466, 0.4578275, 0.40821073]  # RGB
 DATASET_STD = [0.26862954, 0.26130258, 0.27577711]  # RGB
 
 
-def normalize(image: torch.Tensor, mean: torch.Tensor, std: torch.Tensor) -> torch.Tensor:
+def normalize(
+    image: torch.Tensor, mean: torch.Tensor, std: torch.Tensor
+) -> torch.Tensor:
     """
     Normalize a tensor image with mean and standard deviation.
 
@@ -414,8 +427,9 @@ def normalize(image: torch.Tensor, mean: torch.Tensor, std: torch.Tensor) -> tor
     Returns:
     torch.Tensor: Normalized image with shape (C, H, W).
     """
-    assert image.shape[0] == len(mean) == len(
-        std), f"{image.shape=}, {mean.shape=}, {std.shape=}"
+    assert image.shape[0] == len(mean) == len(std), (
+        f"{image.shape=}, {mean.shape=}, {std.shape=}"
+    )
 
     # Reshape mean and std to (C, 1, 1) for broadcasting
     mean = mean.view(-1, 1, 1)
@@ -437,17 +451,14 @@ def transform_image(image: torch.Tensor, new_size: tuple[int, int]) -> torch.Ten
     """
     # Resize the image
     resized_image = torch.nn.functional.interpolate(
-        image.unsqueeze(0),
-        size=new_size,
-        mode='bicubic',
-        align_corners=False
+        image.unsqueeze(0), size=new_size, mode="bicubic", align_corners=False
     ).squeeze(0)
 
     # Normalize the image
     normalized_image = normalize(
         resized_image,
         torch.tensor(DATASET_MEAN, device=image.device, dtype=image.dtype),
-        torch.tensor(DATASET_STD, device=image.device, dtype=image.dtype)
+        torch.tensor(DATASET_STD, device=image.device, dtype=image.dtype),
     )
 
     return normalized_image
@@ -459,10 +470,12 @@ class PixtralVisionImagePreprocessor:
         self.max_image_size = max_image_size
         self.image_token = 10
 
-    def _image_to_num_tokens(self, img: torch.Tensor, max_image_size = None) -> Tuple[int, int]:
-        w: Union[int, float]
-        h: Union[int, float]
-        
+    def _image_to_num_tokens(
+        self, img: torch.Tensor, max_image_size=None
+    ) -> tuple[int, int]:
+        w: int | float
+        h: int | float
+
         if max_image_size is None:
             max_image_size = self.max_image_size
 
@@ -471,7 +484,7 @@ class PixtralVisionImagePreprocessor:
         # originally, pixtral used the largest of the 2 dimensions, but we
         # will use the base size of the image based on number of pixels.
         # ratio = max(h / self.max_image_size, w / self.max_image_size)  # original
-        
+
         base_size = int(math.sqrt(w * h))
         ratio = base_size / max_image_size
         if ratio > 1:
@@ -495,13 +508,13 @@ class PixtralVisionImagePreprocessor:
         """
         # should not have batch
         if len(image.shape) == 4:
-            raise ValueError(
-                f"Expected image with shape (C, H, W), got {image.shape}")
+            raise ValueError(f"Expected image with shape (C, H, W), got {image.shape}")
 
         if image.min() < 0.0 or image.max() > 1.0:
             raise ValueError(
-                f"image tensor values must be between 0 and 1. Got min: {image.min()}, max: {image.max()}")
-        
+                f"image tensor values must be between 0 and 1. Got min: {image.min()}, max: {image.max()}"
+            )
+
         if max_image_size is None:
             max_image_size = self.max_image_size
 
@@ -528,19 +541,15 @@ class PixtralVisionImagePreprocessorCompatibleReturn:
 class PixtralVisionImagePreprocessorCompatible(PixtralVisionImagePreprocessor):
     def __init__(self, image_patch_size=16, max_image_size=1024) -> None:
         super().__init__(
-            image_patch_size=image_patch_size,
-            max_image_size=max_image_size
+            image_patch_size=image_patch_size, max_image_size=max_image_size
         )
-        self.size = {
-            'height': max_image_size,
-            'width': max_image_size
-        }
+        self.size = {"height": max_image_size, "width": max_image_size}
         self.max_image_size = max_image_size
         self.image_mean = DATASET_MEAN
         self.image_std = DATASET_STD
 
     def __call__(
-            self,
+        self,
         images,
         return_tensors="pt",
         do_resize=True,
@@ -575,17 +584,17 @@ class PixtralVisionEncoderCompatibleConfig:
 
 class PixtralVisionEncoderCompatible(PixtralVisionEncoder):
     def __init__(
-            self,
-            hidden_size: int = 1024,
-            num_channels: int = 3,
-            image_size: int = 1024,
-            patch_size: int = 16,
-            intermediate_size: int = 4096,
-            num_hidden_layers: int = 24,
-            num_attention_heads: int = 16,
-            rope_theta: float = 1e4,  # for rope-2D
-            image_token_id: int = 10,
-            **kwargs,
+        self,
+        hidden_size: int = 1024,
+        num_channels: int = 3,
+        image_size: int = 1024,
+        patch_size: int = 16,
+        intermediate_size: int = 4096,
+        num_hidden_layers: int = 24,
+        num_attention_heads: int = 16,
+        rope_theta: float = 1e4,  # for rope-2D
+        image_token_id: int = 10,
+        **kwargs,
     ):
         super().__init__(
             hidden_size=hidden_size,
@@ -601,9 +610,9 @@ class PixtralVisionEncoderCompatible(PixtralVisionEncoder):
         self.config = PixtralVisionEncoderCompatibleConfig()
 
     def forward(
-            self,
-            images,
-            output_hidden_states=True,
+        self,
+        images,
+        output_hidden_states=True,
     ) -> torch.Tensor:
         out_stack = []
         if len(images.shape) == 3:

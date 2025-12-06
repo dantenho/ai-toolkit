@@ -1,33 +1,28 @@
 # DONT USE THIS!. IT DOES NOT WORK YET!
-# Will revisit this when they release more info on how it was trained. 
+# Will revisit this when they release more info on how it was trained.
 
+import os
 import weakref
-from diffusers import CogView4Pipeline
+from typing import TYPE_CHECKING
+
 import torch
 import yaml
-
+from diffusers import AutoencoderKL, CogView4Pipeline, CogView4Transformer2DModel
+from optimum.quanto import freeze
+from toolkit.accelerator import unwrap_model
 from toolkit.basic import flush
 from toolkit.config_modules import GenerateImageConfig, ModelConfig
 from toolkit.dequantize import patch_dequantization_on_save
 from toolkit.models.base_model import BaseModel
 from toolkit.prompt_utils import PromptEmbeds
-
-import os
-import copy
-from toolkit.config_modules import ModelConfig, GenerateImageConfig, ModelArch
-import torch
-import diffusers
-from diffusers import AutoencoderKL, CogView4Transformer2DModel, CogView4Pipeline
-from optimum.quanto import freeze, qfloat8, QTensor, qint4
-from toolkit.util.quantize import quantize, get_qtype
-from transformers import GlmModel, AutoTokenizer
-from diffusers import FlowMatchEulerDiscreteScheduler
-from typing import TYPE_CHECKING
-from toolkit.accelerator import unwrap_model
-from toolkit.samplers.custom_flowmatch_sampler import CustomFlowMatchEulerDiscreteScheduler
+from toolkit.samplers.custom_flowmatch_sampler import (
+    CustomFlowMatchEulerDiscreteScheduler,
+)
+from toolkit.util.quantize import get_qtype, quantize
+from transformers import AutoTokenizer, GlmModel
 
 if TYPE_CHECKING:
-    from toolkit.lora_special import LoRASpecialNetwork
+    pass
 
 # remove this after a bug is fixed in diffusers code. This is a workaround.
 
@@ -55,26 +50,28 @@ scheduler_config = {
     "use_beta_sigmas": False,
     "use_dynamic_shifting": True,
     "use_exponential_sigmas": False,
-    "use_karras_sigmas": False
+    "use_karras_sigmas": False,
 }
 
 
 class CogView4(BaseModel):
-    arch = 'cogview4'
+    arch = "cogview4"
+
     def __init__(
-            self,
-            device,
-            model_config: ModelConfig,
-            dtype='bf16',
-            custom_pipeline=None,
-            noise_scheduler=None,
-            **kwargs
+        self,
+        device,
+        model_config: ModelConfig,
+        dtype="bf16",
+        custom_pipeline=None,
+        noise_scheduler=None,
+        **kwargs,
     ):
-        super().__init__(device, model_config, dtype,
-                         custom_pipeline, noise_scheduler, **kwargs)
+        super().__init__(
+            device, model_config, dtype, custom_pipeline, noise_scheduler, **kwargs
+        )
         self.is_flow_matching = True
         self.is_transformer = True
-        self.target_lora_modules = ['CogView4Transformer2DModel']
+        self.target_lora_modules = ["CogView4Transformer2DModel"]
 
         # cache for holding noise
         self.effective_noise = None
@@ -93,22 +90,24 @@ class CogView4(BaseModel):
         self.print_and_status_update("Loading CogView4 model")
         # base_model_path = "black-forest-labs/FLUX.1-schnell"
         base_model_path = self.model_config.name_or_path_original
-        subfolder = 'transformer'
+        subfolder = "transformer"
         transformer_path = model_path
         if os.path.exists(transformer_path):
             subfolder = None
-            transformer_path = os.path.join(transformer_path, 'transformer')
+            transformer_path = os.path.join(transformer_path, "transformer")
             # check if the path is a full checkpoint.
-            te_folder_path = os.path.join(model_path, 'text_encoder')
+            te_folder_path = os.path.join(model_path, "text_encoder")
             # if we have the te, this folder is a full checkpoint, use it as the base
             if os.path.exists(te_folder_path):
                 base_model_path = model_path
 
         self.print_and_status_update("Loading GlmModel")
         tokenizer = AutoTokenizer.from_pretrained(
-            base_model_path, subfolder="tokenizer", torch_dtype=dtype)
+            base_model_path, subfolder="tokenizer", torch_dtype=dtype
+        )
         text_encoder = GlmModel.from_pretrained(
-            base_model_path, subfolder="text_encoder", torch_dtype=dtype)
+            base_model_path, subfolder="text_encoder", torch_dtype=dtype
+        )
 
         text_encoder.to(self.device_torch, dtype=dtype)
         flush()
@@ -131,38 +130,44 @@ class CogView4(BaseModel):
 
         if self.model_config.split_model_over_gpus:
             raise ValueError(
-                "Splitting model over gpus is not supported for CogViewModels models")
+                "Splitting model over gpus is not supported for CogViewModels models"
+            )
 
         transformer.to(self.quantize_device, dtype=dtype)
         flush()
 
-        if self.model_config.assistant_lora_path is not None or self.model_config.inference_lora_path is not None:
+        if (
+            self.model_config.assistant_lora_path is not None
+            or self.model_config.inference_lora_path is not None
+        ):
             raise ValueError(
-                "Assistant LoRA is not supported for CogViewModels models currently")
+                "Assistant LoRA is not supported for CogViewModels models currently"
+            )
 
         if self.model_config.lora_path is not None:
             raise ValueError(
-                "Loading LoRA is not supported for CogViewModels models currently")
+                "Loading LoRA is not supported for CogViewModels models currently"
+            )
 
         flush()
 
         if self.model_config.quantize:
             quantization_args = self.model_config.quantize_kwargs
-            if 'exclude' not in quantization_args:
-                quantization_args['exclude'] = []
-            if 'include' not in quantization_args:
-                quantization_args['include'] = []
+            if "exclude" not in quantization_args:
+                quantization_args["exclude"] = []
+            if "include" not in quantization_args:
+                quantization_args["include"] = []
 
             # Be more specific with the include pattern to exactly match transformer blocks
-            quantization_args['include'] += ["transformer_blocks.*"]
+            quantization_args["include"] += ["transformer_blocks.*"]
 
             # Exclude all LayerNorm layers within transformer blocks
-            quantization_args['exclude'] += [
+            quantization_args["exclude"] += [
                 "transformer_blocks.*.norm1",
                 "transformer_blocks.*.norm2",
                 "transformer_blocks.*.norm2_context",
                 "transformer_blocks.*.attn1.norm_q",
-                "transformer_blocks.*.attn1.norm_k"
+                "transformer_blocks.*.attn1.norm_k",
             ]
 
             # patch the state dict method
@@ -180,7 +185,8 @@ class CogView4(BaseModel):
         scheduler = CogView4.get_train_scheduler()
         self.print_and_status_update("Loading VAE")
         vae = AutoencoderKL.from_pretrained(
-            base_model_path, subfolder="vae", torch_dtype=dtype)
+            base_model_path, subfolder="vae", torch_dtype=dtype
+        )
         flush()
 
         self.print_and_status_update("Making pipe")
@@ -235,16 +241,18 @@ class CogView4(BaseModel):
     ):
         img = pipeline(
             prompt_embeds=conditional_embeds.text_embeds.to(
-                self.device_torch, dtype=self.torch_dtype),
+                self.device_torch, dtype=self.torch_dtype
+            ),
             negative_prompt_embeds=unconditional_embeds.text_embeds.to(
-                self.device_torch, dtype=self.torch_dtype),
+                self.device_torch, dtype=self.torch_dtype
+            ),
             height=gen_config.height,
             width=gen_config.width,
             num_inference_steps=gen_config.num_inference_steps,
             guidance_scale=gen_config.guidance_scale,
             latents=gen_config.latents,
             generator=generator,
-            **extra
+            **extra,
         ).images[0]
         return img
 
@@ -253,17 +261,19 @@ class CogView4(BaseModel):
         latent_model_input: torch.Tensor,
         timestep: torch.Tensor,  # 0 to 1000 scale
         text_embeddings: PromptEmbeds,
-        **kwargs
+        **kwargs,
     ):
         # target_size = (height, width)
         target_size = latent_model_input.shape[-2:]
         # multiply by 8
         target_size = (target_size[0] * 8, target_size[1] * 8)
         crops_coords_top_left = torch.tensor(
-            [(0, 0)], dtype=self.torch_dtype, device=self.device_torch)
+            [(0, 0)], dtype=self.torch_dtype, device=self.device_torch
+        )
 
         original_size = torch.tensor(
-            [target_size], dtype=self.torch_dtype, device=self.device_torch)
+            [target_size], dtype=self.torch_dtype, device=self.device_torch
+        )
         target_size = original_size.clone()
         noise_pred_cond = self.model(
             hidden_states=latent_model_input,
@@ -295,18 +305,18 @@ class CogView4(BaseModel):
         # only save the unet
         transformer: CogView4Transformer2DModel = unwrap_model(self.model)
         transformer.save_pretrained(
-            save_directory=os.path.join(output_path, 'transformer'),
+            save_directory=os.path.join(output_path, "transformer"),
             safe_serialization=True,
         )
 
-        meta_path = os.path.join(output_path, 'aitk_meta.yaml')
-        with open(meta_path, 'w') as f:
+        meta_path = os.path.join(output_path, "aitk_meta.yaml")
+        with open(meta_path, "w") as f:
             yaml.dump(meta, f)
 
     def get_loss_target(self, *args, **kwargs):
-        noise = kwargs.get('noise')
+        noise = kwargs.get("noise")
         effective_noise = self.effective_noise
-        batch = kwargs.get('batch')
+        batch = kwargs.get("batch")
         if batch is None:
             raise ValueError("Batch is not provided")
         if noise is None:
@@ -322,28 +332,24 @@ class CogView4(BaseModel):
         with torch.no_grad():
             # Decode latents to image space
             images = self.decode_latents(
-                latents, device=latents.device, dtype=latents.dtype)
+                latents, device=latents.device, dtype=latents.dtype
+            )
 
             # Downsample by a factor of 2 using bilinear interpolation
             B, C, H, W = images.shape
             low_res_images = torch.nn.functional.interpolate(
-                images,
-                size=(H // 2, W // 2),
-                mode="bilinear",
-                align_corners=False
+                images, size=(H // 2, W // 2), mode="bilinear", align_corners=False
             )
 
             # Upsample back to original resolution to match expected VAE input dimensions
             upsampled_low_res_images = torch.nn.functional.interpolate(
-                low_res_images,
-                size=(H, W),
-                mode="bilinear",
-                align_corners=False
+                low_res_images, size=(H, W), mode="bilinear", align_corners=False
             )
 
             # Encode the low-resolution images back to latent space
             low_res_latents = self.encode_images(
-                upsampled_low_res_images, device=latents.device, dtype=latents.dtype)
+                upsampled_low_res_images, device=latents.device, dtype=latents.dtype
+            )
             return low_res_latents
 
     # def add_noise(

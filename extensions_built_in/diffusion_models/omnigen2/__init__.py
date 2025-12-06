@@ -2,30 +2,31 @@ import os
 from typing import TYPE_CHECKING, List, Optional
 
 import torch
+import torch.nn.functional as F
 import yaml
+from diffusers import AutoencoderKL
+from optimum.quanto import freeze
+from PIL import Image
+from toolkit.accelerator import unwrap_model
+from toolkit.basic import flush
 from toolkit.config_modules import GenerateImageConfig, ModelConfig
 from toolkit.models.base_model import BaseModel
-from diffusers import AutoencoderKL
-from toolkit.basic import flush
 from toolkit.prompt_utils import PromptEmbeds
 from toolkit.samplers.custom_flowmatch_sampler import (
     CustomFlowMatchEulerDiscreteScheduler,
 )
-from toolkit.accelerator import unwrap_model
-from optimum.quanto import freeze
-from toolkit.util.quantize import quantize, get_qtype
-from .src.pipelines.omnigen2.pipeline_omnigen2 import OmniGen2Pipeline
-from .src.models.transformers import OmniGen2Transformer2DModel
-from .src.models.transformers.repo import OmniGen2RotaryPosEmbed
-from .src.schedulers.scheduling_flow_match_euler_discrete import (
-    FlowMatchEulerDiscreteScheduler as OmniFlowMatchEuler,
-)
-from PIL import Image
+from toolkit.util.quantize import get_qtype, quantize
 from transformers import (
     CLIPProcessor,
     Qwen2_5_VLForConditionalGeneration,
 )
-import torch.nn.functional as F
+
+from .src.models.transformers import OmniGen2Transformer2DModel
+from .src.models.transformers.repo import OmniGen2RotaryPosEmbed
+from .src.pipelines.omnigen2.pipeline_omnigen2 import OmniGen2Pipeline
+from .src.schedulers.scheduling_flow_match_euler_discrete import (
+    FlowMatchEulerDiscreteScheduler as OmniFlowMatchEuler,
+)
 
 if TYPE_CHECKING:
     from toolkit.data_transfer_object.data_loader import DataLoaderBatchDTO
@@ -236,7 +237,7 @@ class OmniGen2Model(BaseModel):
             timestep = timestep.expand(latent_model_input.shape[0]).to(
                 latent_model_input.dtype
             )
-        except Exception as e:
+        except Exception:
             pass
 
         timesteps = timestep / 1000  # convert to 0 to 1 scale
@@ -336,7 +337,7 @@ class OmniGen2Model(BaseModel):
         # return (noise - batch.latents).detach()
         return (batch.latents - noise).detach()
 
-    def get_transformer_block_names(self) -> Optional[List[str]]:
+    def get_transformer_block_names(self) -> list[str] | None:
         # omnigen2 had a few blocks for things like noise_refiner, ref_image_refiner, context_refiner, and layers.
         # lets do all but image refiner until we add it
         if self.model_config.model_kwargs.get("use_image_refiner", False):

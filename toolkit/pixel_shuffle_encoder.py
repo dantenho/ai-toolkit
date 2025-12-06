@@ -1,8 +1,5 @@
-from diffusers import AutoencoderKL
-from typing import Optional, Union
 import torch
 import torch.nn as nn
-import numpy as np
 from diffusers.models.autoencoders.autoencoder_kl import AutoencoderKLOutput
 from diffusers.models.autoencoders.vae import DecoderOutput
 
@@ -29,13 +26,12 @@ class PixelMixer(nn.Module):
 
 # none of this matters with llvae, but we need to match the interface (latent_channels might matter)
 
+
 class Config:
     in_channels = 3
     out_channels = 3
-    down_block_types = ('1', '1',
-                        '1', '1')
-    up_block_types = ('1', '1',
-                      '1', '1')
+    down_block_types = ("1", "1", "1", "1")
+    up_block_types = ("1", "1", "1", "1")
     block_out_channels = (1, 1, 1, 1)
     latent_channels = 192  # usually 4
     norm_num_groups = 32
@@ -56,27 +52,24 @@ class Config:
 
 
 class AutoencoderPixelMixer(nn.Module):
-
     def __init__(self, in_channels=3, downscale_factor=8):
         super().__init__()
         self.mixer = PixelMixer(in_channels, downscale_factor)
         self._dtype = torch.float32
-        self._device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.config = Config()
-        
+
         if downscale_factor == 8:
             # we go by len of block out channels in code, so simulate it
             self.config.block_out_channels = (1, 1, 1, 1)
             self.config.latent_channels = 192
-        
+
         elif downscale_factor == 16:
             # we go by len of block out channels in code, so simulate it
             self.config.block_out_channels = (1, 1, 1, 1, 1)
             self.config.latent_channels = 768
         else:
-            raise ValueError(
-                f"downscale_factor {downscale_factor} not supported")
+            raise ValueError(f"downscale_factor {downscale_factor} not supported")
 
     @property
     def dtype(self):
@@ -97,18 +90,19 @@ class AutoencoderPixelMixer(nn.Module):
     # mimic to from torch
     def to(self, *args, **kwargs):
         # pull out dtype and device if they exist
-        if 'dtype' in kwargs:
-            self._dtype = kwargs['dtype']
-        if 'device' in kwargs:
-            self._device = kwargs['device']
+        if "dtype" in kwargs:
+            self._dtype = kwargs["dtype"]
+        if "device" in kwargs:
+            self._device = kwargs["device"]
         return super().to(*args, **kwargs)
 
     def enable_xformers_memory_efficient_attention(self):
         pass
 
     # @apply_forward_hook
-    def encode(self, x: torch.FloatTensor, return_dict: bool = True) -> AutoencoderKLOutput:
-
+    def encode(
+        self, x: torch.FloatTensor, return_dict: bool = True
+    ) -> AutoencoderKLOutput:
         h = self.mixer.encode(x)
 
         # moments = self.quant_conv(h)
@@ -126,7 +120,9 @@ class AutoencoderPixelMixer(nn.Module):
 
         return AutoencoderKLOutput(latent_dist=FakeDist(h))
 
-    def _decode(self, z: torch.FloatTensor, return_dict: bool = True) -> Union[DecoderOutput, torch.FloatTensor]:
+    def _decode(
+        self, z: torch.FloatTensor, return_dict: bool = True
+    ) -> DecoderOutput | torch.FloatTensor:
         dec = self.mixer.decode(z)
 
         if not return_dict:
@@ -135,7 +131,9 @@ class AutoencoderPixelMixer(nn.Module):
         return DecoderOutput(sample=dec)
 
     # @apply_forward_hook
-    def decode(self, z: torch.FloatTensor, return_dict: bool = True) -> Union[DecoderOutput, torch.FloatTensor]:
+    def decode(
+        self, z: torch.FloatTensor, return_dict: bool = True
+    ) -> DecoderOutput | torch.FloatTensor:
         decoded = self._decode(z).sample
 
         if not return_dict:
@@ -162,13 +160,12 @@ class AutoencoderPixelMixer(nn.Module):
         pass
 
     def forward(
-            self,
-            sample: torch.FloatTensor,
-            sample_posterior: bool = False,
-            return_dict: bool = True,
-            generator: Optional[torch.Generator] = None,
-    ) -> Union[DecoderOutput, torch.FloatTensor]:
-
+        self,
+        sample: torch.FloatTensor,
+        sample_posterior: bool = False,
+        return_dict: bool = True,
+        generator: torch.Generator | None = None,
+    ) -> DecoderOutput | torch.FloatTensor:
         x = sample
         posterior = self.encode(x).latent_dist
         if sample_posterior:
@@ -184,11 +181,13 @@ class AutoencoderPixelMixer(nn.Module):
 
 
 # test it
-if __name__ == '__main__':
+if __name__ == "__main__":
     import os
-    from PIL import Image
+
     import torchvision.transforms as transforms
-    user_path = os.path.expanduser('~')
+    from PIL import Image
+
+    user_path = os.path.expanduser("~")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dtype = torch.float32
 

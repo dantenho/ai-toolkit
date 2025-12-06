@@ -1,40 +1,33 @@
-from typing import List, Optional, Union
+from dataclasses import dataclass
 
 import numpy as np
-import torch
 import PIL.Image
-from dataclasses import dataclass
-from typing import List, Union
-
+import torch
 from diffusers.image_processor import VaeImageProcessor
+from diffusers.pipelines.pipeline_utils import DiffusionPipeline
 from diffusers.schedulers import FlowMatchEulerDiscreteScheduler
 from diffusers.utils import (
+    BaseOutput,
     logging,
 )
 from diffusers.utils.torch_utils import randn_tensor
-from diffusers.pipelines.pipeline_utils import DiffusionPipeline
-
-from diffusers.utils import BaseOutput
+from einops import rearrange
+from transformers import AutoProcessor, Mistral3ForConditionalGeneration
 
 from .autoencoder import AutoEncoder
 from .model import Flux2
-
-from einops import rearrange
-
-from transformers import AutoProcessor, Mistral3ForConditionalGeneration
-
 from .sampling import (
-    get_schedule,
     batched_prc_img,
     batched_prc_txt,
     encode_image_refs,
+    get_schedule,
     scatter_ids,
 )
 
 
 @dataclass
 class Flux2ImagePipelineOutput(BaseOutput):
-    images: Union[List[PIL.Image.Image], np.ndarray]
+    images: list[PIL.Image.Image] | np.ndarray
 
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
@@ -93,9 +86,9 @@ class Flux2Pipeline(DiffusionPipeline):
 
     def _get_mistral_prompt_embeds(
         self,
-        prompt: Union[str, List[str]] = None,
-        device: Optional[torch.device] = None,
-        dtype: Optional[torch.dtype] = None,
+        prompt: str | list[str] = None,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
         max_sequence_length: int = 512,
     ):
         device = device or self._execution_device
@@ -146,11 +139,11 @@ class Flux2Pipeline(DiffusionPipeline):
 
     def encode_prompt(
         self,
-        prompt: Union[str, List[str]],
-        device: Optional[torch.device] = None,
+        prompt: str | list[str],
+        device: torch.device | None = None,
         num_images_per_prompt: int = 1,
-        prompt_embeds: Optional[torch.Tensor] = None,
-        prompt_embeds_mask: Optional[torch.Tensor] = None,
+        prompt_embeds: torch.Tensor | None = None,
+        prompt_embeds_mask: torch.Tensor | None = None,
         max_sequence_length: int = 512,
     ):
         device = device or self._execution_device
@@ -219,20 +212,20 @@ class Flux2Pipeline(DiffusionPipeline):
     @torch.no_grad()
     def __call__(
         self,
-        prompt: Union[str, List[str]] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
+        prompt: str | list[str] = None,
+        height: int | None = None,
+        width: int | None = None,
         num_inference_steps: int = 50,
-        guidance_scale: Optional[float] = None,
+        guidance_scale: float | None = None,
         num_images_per_prompt: int = 1,
-        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
-        latents: Optional[torch.Tensor] = None,
-        prompt_embeds: Optional[torch.Tensor] = None,
-        prompt_embeds_mask: Optional[torch.Tensor] = None,
-        output_type: Optional[str] = "pil",
+        generator: torch.Generator | list[torch.Generator] | None = None,
+        latents: torch.Tensor | None = None,
+        prompt_embeds: torch.Tensor | None = None,
+        prompt_embeds_mask: torch.Tensor | None = None,
+        output_type: str | None = "pil",
         return_dict: bool = True,
         max_sequence_length: int = 512,
-        control_img_list: Optional[List[PIL.Image.Image]] = None,
+        control_img_list: list[PIL.Image.Image] | None = None,
     ):
         height = height or self.default_sample_size * self.vae_scale_factor
         width = width or self.default_sample_size * self.vae_scale_factor

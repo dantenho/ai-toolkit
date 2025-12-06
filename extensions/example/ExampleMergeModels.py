@@ -1,7 +1,8 @@
-import torch
 import gc
 from collections import OrderedDict
 from typing import TYPE_CHECKING
+
+import torch
 from jobs.process import BaseExtensionProcess
 from toolkit.config_modules import ModelConfig
 from toolkit.stable_diffusion_model import StableDiffusion
@@ -17,10 +18,10 @@ if TYPE_CHECKING:
 class ModelInputConfig(ModelConfig):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.weight = kwargs.get('weight', 1.0)
+        self.weight = kwargs.get("weight", 1.0)
         # overwrite default dtype unless user specifies otherwise
         # float 32 will give up better precision on the merging functions
-        self.dtype: str = kwargs.get('dtype', 'float32')
+        self.dtype: str = kwargs.get("dtype", "float32")
 
 
 def flush():
@@ -30,12 +31,7 @@ def flush():
 
 # this is our main class process
 class ExampleMergeModels(BaseExtensionProcess):
-    def __init__(
-            self,
-            process_id: int,
-            job: 'ExtensionJob',
-            config: OrderedDict
-    ):
+    def __init__(self, process_id: int, job: "ExtensionJob", config: OrderedDict):
         super().__init__(process_id, job, config)
         # this is the setup process, do not do process intensive stuff here, just variable setup and
         # checking requirements. This is called before the run() function
@@ -47,12 +43,14 @@ class ExampleMergeModels(BaseExtensionProcess):
         # if required is set to true and the value is not found it will throw an error
         # you can pass a default value to get_conf() as well if it was not in the config file
         # as well as a type to cast the value to
-        self.save_path = self.get_conf('save_path', required=True)
-        self.save_dtype = self.get_conf('save_dtype', default='float16', as_type=get_torch_dtype)
-        self.device = self.get_conf('device', default='cpu', as_type=torch.device)
+        self.save_path = self.get_conf("save_path", required=True)
+        self.save_dtype = self.get_conf(
+            "save_dtype", default="float16", as_type=get_torch_dtype
+        )
+        self.device = self.get_conf("device", default="cpu", as_type=torch.device)
 
         # build models to merge list
-        models_to_merge = self.get_conf('models_to_merge', required=True, as_type=list)
+        models_to_merge = self.get_conf("models_to_merge", required=True, as_type=list)
         # build list of ModelInputConfig objects. I find it is a good idea to make a class for each config
         # this way you can add methods to it and it is easier to read and code. There are a lot of
         # inbuilt config classes located in toolkit.config_modules as well
@@ -76,9 +74,7 @@ class ExampleMergeModels(BaseExtensionProcess):
         for model_config in tqdm(self.models_to_merge, desc="Merging models"):
             # setup model class with our helper class
             sd_model = StableDiffusion(
-                device=self.device,
-                model_config=model_config,
-                dtype="float32"
+                device=self.device, model_config=model_config, dtype="float32"
             )
             # load the model
             sd_model.load_model()

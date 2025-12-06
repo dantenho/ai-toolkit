@@ -1,5 +1,4 @@
 from tqdm import tqdm
-import time
 
 
 class ToolkitProgressBar(tqdm):

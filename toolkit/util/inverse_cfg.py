@@ -2,9 +2,9 @@ import torch
 
 
 def inverse_classifier_guidance(
-        noise_pred_cond: torch.Tensor,
-        noise_pred_uncond: torch.Tensor,
-        guidance_scale: torch.Tensor
+    noise_pred_cond: torch.Tensor,
+    noise_pred_uncond: torch.Tensor,
+    guidance_scale: torch.Tensor,
 ):
     """
     Adjust the noise_pred_cond for the classifier free guidance algorithm

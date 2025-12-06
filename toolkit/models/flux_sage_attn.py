@@ -1,7 +1,6 @@
-from typing import Optional
-from diffusers.models.attention_processor import Attention
 import torch
 import torch.nn.functional as F
+from diffusers.models.attention_processor import Attention
 
 
 class FluxSageAttnProcessor2_0:
@@ -9,19 +8,25 @@ class FluxSageAttnProcessor2_0:
 
     def __init__(self):
         if not hasattr(F, "scaled_dot_product_attention"):
-            raise ImportError("FluxAttnProcessor2_0 requires PyTorch 2.0, to use it, please upgrade PyTorch to 2.0.")
+            raise ImportError(
+                "FluxAttnProcessor2_0 requires PyTorch 2.0, to use it, please upgrade PyTorch to 2.0."
+            )
 
     def __call__(
         self,
         attn: Attention,
         hidden_states: torch.FloatTensor,
         encoder_hidden_states: torch.FloatTensor = None,
-        attention_mask: Optional[torch.FloatTensor] = None,
-        image_rotary_emb: Optional[torch.Tensor] = None,
+        attention_mask: torch.FloatTensor | None = None,
+        image_rotary_emb: torch.Tensor | None = None,
     ) -> torch.FloatTensor:
         from sageattention import sageattn
-        
-        batch_size, _, _ = hidden_states.shape if encoder_hidden_states is None else encoder_hidden_states.shape
+
+        batch_size, _, _ = (
+            hidden_states.shape
+            if encoder_hidden_states is None
+            else encoder_hidden_states.shape
+        )
 
         # `sample` projections.
         query = attn.to_q(hidden_states)
@@ -58,9 +63,13 @@ class FluxSageAttnProcessor2_0:
             ).transpose(1, 2)
 
             if attn.norm_added_q is not None:
-                encoder_hidden_states_query_proj = attn.norm_added_q(encoder_hidden_states_query_proj)
+                encoder_hidden_states_query_proj = attn.norm_added_q(
+                    encoder_hidden_states_query_proj
+                )
             if attn.norm_added_k is not None:
-                encoder_hidden_states_key_proj = attn.norm_added_k(encoder_hidden_states_key_proj)
+                encoder_hidden_states_key_proj = attn.norm_added_k(
+                    encoder_hidden_states_key_proj
+                )
 
             # attention
             query = torch.cat([encoder_hidden_states_query_proj, query], dim=2)
@@ -74,7 +83,9 @@ class FluxSageAttnProcessor2_0:
             key = apply_rotary_emb(key, image_rotary_emb)
 
         hidden_states = sageattn(query, key, value, dropout_p=0.0, is_causal=False)
-        hidden_states = hidden_states.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
+        hidden_states = hidden_states.transpose(1, 2).reshape(
+            batch_size, -1, attn.heads * head_dim
+        )
         hidden_states = hidden_states.to(query.dtype)
 
         if encoder_hidden_states is not None:

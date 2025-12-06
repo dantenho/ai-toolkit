@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 from __future__ import annotations
 
@@ -8,11 +7,10 @@ from collections import OrderedDict
 try:
     from typing import Literal
 except ImportError:
-    from typing_extensions import Literal
+    from typing import Literal
 
 import torch
 import torch.nn as nn
-
 
 ####################
 # Basic blocks
@@ -31,9 +29,7 @@ def act(act_type: str, inplace=True, neg_slope=0.2, n_prelu=1):
     elif act_type == "prelu":
         layer = nn.PReLU(num_parameters=n_prelu, init=neg_slope)
     else:
-        raise NotImplementedError(
-            "activation layer [{:s}] is not found".format(act_type)
-        )
+        raise NotImplementedError(f"activation layer [{act_type:s}] is not found")
     return layer
 
 
@@ -45,9 +41,7 @@ def norm(norm_type: str, nc: int):
     elif norm_type == "instance":
         layer = nn.InstanceNorm2d(nc, affine=False)
     else:
-        raise NotImplementedError(
-            "normalization layer [{:s}] is not found".format(norm_type)
-        )
+        raise NotImplementedError(f"normalization layer [{norm_type:s}] is not found")
     return layer
 
 
@@ -62,9 +56,7 @@ def pad(pad_type: str, padding):
     elif pad_type == "replicate":
         layer = nn.ReplicationPad2d(padding)
     else:
-        raise NotImplementedError(
-            "padding layer [{:s}] is not implemented".format(pad_type)
-        )
+        raise NotImplementedError(f"padding layer [{pad_type:s}] is not implemented")
     return layer
 
 
@@ -145,9 +137,9 @@ ConvMode = Literal["CNA", "NAC", "CNAC"]
 
 # 2x2x2 Conv Block
 def conv_block_2c2(
-        in_nc,
-        out_nc,
-        act_type="relu",
+    in_nc,
+    out_nc,
+    act_type="relu",
 ):
     return sequential(
         nn.Conv2d(in_nc, out_nc, kernel_size=2, padding=1),
@@ -157,18 +149,18 @@ def conv_block_2c2(
 
 
 def conv_block(
-        in_nc: int,
-        out_nc: int,
-        kernel_size,
-        stride=1,
-        dilation=1,
-        groups=1,
-        bias=True,
-        pad_type="zero",
-        norm_type: str | None = None,
-        act_type: str | None = "relu",
-        mode: ConvMode = "CNA",
-        c2x2=False,
+    in_nc: int,
+    out_nc: int,
+    kernel_size,
+    stride=1,
+    dilation=1,
+    groups=1,
+    bias=True,
+    pad_type="zero",
+    norm_type: str | None = None,
+    act_type: str | None = "relu",
+    mode: ConvMode = "CNA",
+    c2x2=False,
 ):
     """
     Conv layer with padding, normalization, activation
@@ -179,7 +171,7 @@ def conv_block(
     if c2x2:
         return conv_block_2c2(in_nc, out_nc, act_type=act_type)
 
-    assert mode in ("CNA", "NAC", "CNAC"), "Wrong conv mode [{:s}]".format(mode)
+    assert mode in ("CNA", "NAC", "CNAC"), f"Wrong conv mode [{mode:s}]"
     padding = get_valid_padding(kernel_size, dilation)
     p = pad(pad_type, padding) if pad_type and pad_type != "zero" else None
     padding = padding if pad_type == "zero" else 0
@@ -224,20 +216,20 @@ class ResNetBlock(nn.Module):
     """
 
     def __init__(
-            self,
-            in_nc,
-            mid_nc,
-            out_nc,
-            kernel_size=3,
-            stride=1,
-            dilation=1,
-            groups=1,
-            bias=True,
-            pad_type="zero",
-            norm_type=None,
-            act_type="relu",
-            mode: ConvMode = "CNA",
-            res_scale=1,
+        self,
+        in_nc,
+        mid_nc,
+        out_nc,
+        kernel_size=3,
+        stride=1,
+        dilation=1,
+        groups=1,
+        bias=True,
+        pad_type="zero",
+        norm_type=None,
+        act_type="relu",
+        mode: ConvMode = "CNA",
+        res_scale=1,
     ):
         super(ResNetBlock, self).__init__()
         conv0 = conv_block(
@@ -292,20 +284,20 @@ class RRDB(nn.Module):
     """
 
     def __init__(
-            self,
-            nf,
-            kernel_size=3,
-            gc=32,
-            stride=1,
-            bias: bool = True,
-            pad_type="zero",
-            norm_type=None,
-            act_type="leakyrelu",
-            mode: ConvMode = "CNA",
-            _convtype="Conv2D",
-            _spectral_norm=False,
-            plus=False,
-            c2x2=False,
+        self,
+        nf,
+        kernel_size=3,
+        gc=32,
+        stride=1,
+        bias: bool = True,
+        pad_type="zero",
+        norm_type=None,
+        act_type="leakyrelu",
+        mode: ConvMode = "CNA",
+        _convtype="Conv2D",
+        _spectral_norm=False,
+        plus=False,
+        c2x2=False,
     ):
         super(RRDB, self).__init__()
         self.RDB1 = ResidualDenseBlock_5C(
@@ -378,18 +370,18 @@ class ResidualDenseBlock_5C(nn.Module):
     """
 
     def __init__(
-            self,
-            nf=64,
-            kernel_size=3,
-            gc=32,
-            stride=1,
-            bias: bool = True,
-            pad_type="zero",
-            norm_type=None,
-            act_type="leakyrelu",
-            mode: ConvMode = "CNA",
-            plus=False,
-            c2x2=False,
+        self,
+        nf=64,
+        kernel_size=3,
+        gc=32,
+        stride=1,
+        bias: bool = True,
+        pad_type="zero",
+        norm_type=None,
+        act_type="leakyrelu",
+        mode: ConvMode = "CNA",
+        plus=False,
+        c2x2=False,
     ):
         super(ResidualDenseBlock_5C, self).__init__()
 
@@ -486,15 +478,15 @@ def conv1x1(in_planes, out_planes, stride=1):
 
 
 def pixelshuffle_block(
-        in_nc: int,
-        out_nc: int,
-        upscale_factor=2,
-        kernel_size=3,
-        stride=1,
-        bias=True,
-        pad_type="zero",
-        norm_type: str | None = None,
-        act_type="relu",
+    in_nc: int,
+    out_nc: int,
+    upscale_factor=2,
+    kernel_size=3,
+    stride=1,
+    bias=True,
+    pad_type="zero",
+    norm_type: str | None = None,
+    act_type="relu",
 ):
     """
     Pixel shuffle layer
@@ -503,7 +495,7 @@ def pixelshuffle_block(
     """
     conv = conv_block(
         in_nc,
-        out_nc * (upscale_factor ** 2),
+        out_nc * (upscale_factor**2),
         kernel_size,
         stride,
         bias=bias,
@@ -519,17 +511,17 @@ def pixelshuffle_block(
 
 
 def upconv_block(
-        in_nc: int,
-        out_nc: int,
-        upscale_factor=2,
-        kernel_size=3,
-        stride=1,
-        bias=True,
-        pad_type="zero",
-        norm_type: str | None = None,
-        act_type="relu",
-        mode="nearest",
-        c2x2=False,
+    in_nc: int,
+    out_nc: int,
+    upscale_factor=2,
+    kernel_size=3,
+    stride=1,
+    bias=True,
+    pad_type="zero",
+    norm_type: str | None = None,
+    act_type="relu",
+    mode="nearest",
+    c2x2=False,
 ):
     # Up conv
     # described in https://distill.pub/2016/deconv-checkerboard/

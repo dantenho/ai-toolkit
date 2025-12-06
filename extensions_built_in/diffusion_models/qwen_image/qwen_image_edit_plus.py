@@ -1,40 +1,26 @@
 import math
+from typing import TYPE_CHECKING
+
 import torch
-from .qwen_image import QwenImageModel
-import os
-from typing import TYPE_CHECKING, List, Optional
-import yaml
-from toolkit import train_tools
-from toolkit.config_modules import GenerateImageConfig, ModelConfig
-from PIL import Image
-from toolkit.models.base_model import BaseModel
-from toolkit.basic import flush
-from toolkit.prompt_utils import PromptEmbeds
-from toolkit.samplers.custom_flowmatch_sampler import (
-    CustomFlowMatchEulerDiscreteScheduler,
-)
-from toolkit.accelerator import get_accelerator, unwrap_model
-from optimum.quanto import freeze, QTensor
-from toolkit.util.quantize import quantize, get_qtype, quantize_model
 import torch.nn.functional as F
+from PIL import Image
+from toolkit.accelerator import unwrap_model
+from toolkit.basic import flush
+from toolkit.config_modules import GenerateImageConfig, ModelConfig
+from toolkit.prompt_utils import PromptEmbeds
 
-from diffusers import (
-    QwenImageTransformer2DModel,
-    AutoencoderKLQwenImage,
-)
-from transformers import Qwen2_5_VLForConditionalGeneration, Qwen2Tokenizer
-from tqdm import tqdm
-
+from .qwen_image import QwenImageModel
 
 if TYPE_CHECKING:
     from toolkit.data_transfer_object.data_loader import DataLoaderBatchDTO
 
 try:
-    from .qwen_image_pipelines import QwenImageEditPlusCustomPipeline
     from diffusers.pipelines.qwenimage.pipeline_qwenimage_edit_plus import (
         CONDITION_IMAGE_SIZE,
         VAE_IMAGE_SIZE,
     )
+
+    from .qwen_image_pipelines import QwenImageEditPlusCustomPipeline
 except ImportError:
     raise ImportError(
         "Diffusers is out of date. Update diffusers to the latest version by doing 'pip uninstall diffusers' and then 'pip install -r requirements.txt'"
@@ -165,11 +151,11 @@ class QwenImageEditPlusModel(QwenImageModel):
         # todo handle not caching text encoder
         if self.pipeline.text_encoder.device != self.device_torch:
             self.pipeline.text_encoder.to(self.device_torch)
-            
+
         if control_images is None:
             raise ValueError("Missing control images for QwenImageEditPlusModel")
-        
-        if not isinstance(control_images, List):
+
+        if not isinstance(control_images, list):
             control_images = [control_images]
 
         if control_images is not None and len(control_images) > 0:
@@ -208,11 +194,16 @@ class QwenImageEditPlusModel(QwenImageModel):
             batch_size, num_channels_latents, height, width = latent_model_input.shape
             if self.vae.device != self.device_torch:
                 self.vae.to(self.device_torch)
-            
+
             control_image_res = VAE_IMAGE_SIZE
             if self.model_config.model_kwargs.get("match_target_res", False):
                 # use the current target size to set the control image res
-                control_image_res = height * self.pipeline.vae_scale_factor * width * self.pipeline.vae_scale_factor
+                control_image_res = (
+                    height
+                    * self.pipeline.vae_scale_factor
+                    * width
+                    * self.pipeline.vae_scale_factor
+                )
 
             # pack image tokens
             latent_model_input = latent_model_input.view(

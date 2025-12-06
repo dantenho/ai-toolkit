@@ -1,20 +1,20 @@
-from typing import Literal, Type, TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Literal, Union
 
 import cv2
 import numpy as np
 from PIL import Image, ImageOps
 
-Step: Type = Literal['caption', 'caption_short', 'create_mask', 'contrast_stretch']
+Step: type = Literal["caption", "caption_short", "create_mask", "contrast_stretch"]
 
-img_manipulation_steps = ['contrast_stretch']
+img_manipulation_steps = ["contrast_stretch"]
 
-img_ext = ['.jpg', '.jpeg', '.png', '.webp']
+img_ext = [".jpg", ".jpeg", ".png", ".webp"]
 
 if TYPE_CHECKING:
-    from .llava_utils import LLaVAImageProcessor
     from .fuyu_utils import FuyuImageProcessor
+    from .llava_utils import LLaVAImageProcessor
 
-ImageProcessor = Union['LLaVAImageProcessor', 'FuyuImageProcessor']
+ImageProcessor = Union["LLaVAImageProcessor", "FuyuImageProcessor"]
 
 
 def pil_to_cv2(image):
@@ -28,11 +28,11 @@ def cv2_to_pil(image):
 
 
 def load_image(img_path: str):
-    image = Image.open(img_path).convert('RGB')
+    image = Image.open(img_path).convert("RGB")
     try:
         # transpose with exif data
         image = ImageOps.exif_transpose(image)
-    except Exception as e:
+    except Exception:
         pass
     return image
 

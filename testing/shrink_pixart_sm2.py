@@ -1,9 +1,10 @@
-import torch
-from safetensors.torch import load_file, save_file
 from collections import OrderedDict
 
+import torch
+from safetensors.torch import load_file, save_file
+
 meta = OrderedDict()
-meta['format'] = "pt"
+meta["format"] = "pt"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -40,7 +41,8 @@ def reduce_bias(bias, target_size):
 
 # Load your original state dict
 state_dict = load_file(
-    "/home/jaret/Dev/models/hf/PixArt-Sigma-XL-2-512_MS_t5large_raw/transformer/diffusion_pytorch_model.orig.safetensors")
+    "/home/jaret/Dev/models/hf/PixArt-Sigma-XL-2-512_MS_t5large_raw/transformer/diffusion_pytorch_model.orig.safetensors"
+)
 
 # Create a new state dict for the reduced model
 new_state_dict = {}
@@ -48,11 +50,16 @@ new_state_dict = {}
 for key, value in state_dict.items():
     value = value.to(device, torch.float32)
 
-    if 'weight' in key or 'scale_shift_table' in key:
+    if "weight" in key or "scale_shift_table" in key:
         if value.shape[0] == 1152:
             if len(value.shape) == 4:
                 orig_shape = value.shape
-                output_shape = (512, orig_shape[1], orig_shape[2], orig_shape[3])  # reshape to (1152, -1)
+                output_shape = (
+                    512,
+                    orig_shape[1],
+                    orig_shape[2],
+                    orig_shape[3],
+                )  # reshape to (1152, -1)
                 # reshape to (1152, -1)
                 value = value.view(value.shape[0], -1)
                 value = reduce_weight(value, 512)
@@ -80,15 +87,23 @@ for key, value in state_dict.items():
             else:
                 value = reduce_weight(value, 3072)
 
-        if len(value.shape) > 1 and value.shape[
-            1] == 1152 and 'attn2.to_k.weight' not in key and 'attn2.to_v.weight' not in key:
-            value = reduce_weight(value.t(), 512).t().contiguous()  # Transpose before and after reduction
+        if (
+            len(value.shape) > 1
+            and value.shape[1] == 1152
+            and "attn2.to_k.weight" not in key
+            and "attn2.to_v.weight" not in key
+        ):
+            value = (
+                reduce_weight(value.t(), 512).t().contiguous()
+            )  # Transpose before and after reduction
             pass
         elif len(value.shape) > 1 and value.shape[1] == 4608:
-            value = reduce_weight(value.t(), 2048).t().contiguous()   # Transpose before and after reduction
+            value = (
+                reduce_weight(value.t(), 2048).t().contiguous()
+            )  # Transpose before and after reduction
             pass
 
-    elif 'bias' in key:
+    elif "bias" in key:
         if value.shape[0] == 1152:
             value = reduce_bias(value, 512)
         elif value.shape[0] == 4608:
@@ -103,8 +118,10 @@ for key, value in new_state_dict.items():
     new_state_dict[key] = value.cpu().to(torch.float16)
 
 # Save the new state dict
-save_file(new_state_dict,
-          "/home/jaret/Dev/models/hf/PixArt-Sigma-XL-2-512_MS_t5large_raw/transformer/diffusion_pytorch_model.safetensors",
-          metadata=meta)
+save_file(
+    new_state_dict,
+    "/home/jaret/Dev/models/hf/PixArt-Sigma-XL-2-512_MS_t5large_raw/transformer/diffusion_pytorch_model.safetensors",
+    metadata=meta,
+)
 
 print("Done!")

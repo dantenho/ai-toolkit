@@ -1,13 +1,13 @@
 import math
 from dataclasses import dataclass
+from functools import lru_cache
 
 import torch
+import torch.nn.functional as F
 from einops import rearrange
 from torch import Tensor, nn
-import torch.nn.functional as F
 
 from .math import attention, rope
-from functools import lru_cache
 
 
 class EmbedND(nn.Module):
@@ -89,7 +89,9 @@ class RMSNorm(torch.nn.Module):
         #     return self._forward(x)
 
 
-def distribute_modulations(tensor: torch.Tensor, depth_single_blocks, depth_double_blocks):
+def distribute_modulations(
+    tensor: torch.Tensor, depth_single_blocks, depth_double_blocks
+):
     """
     Distributes slices of the tensor into the block_dict as ModulationOut objects.
 
@@ -125,7 +127,7 @@ def distribute_modulations(tensor: torch.Tensor, depth_single_blocks, depth_doub
 
     idx = 0  # Index to keep track of the vector slices
 
-    for key in block_dict.keys():
+    for key in block_dict:
         if "single_blocks" in key:
             # Single block: 1 ModulationOut
             block_dict[key] = ModulationOut(
@@ -135,21 +137,7 @@ def distribute_modulations(tensor: torch.Tensor, depth_single_blocks, depth_doub
             )
             idx += 3  # Advance by 3 vectors
 
-        elif "img_mod" in key:
-            # Double block: List of 2 ModulationOut
-            double_block = []
-            for _ in range(2):  # Create 2 ModulationOut objects
-                double_block.append(
-                    ModulationOut(
-                        shift=tensor[:, idx : idx + 1, :],
-                        scale=tensor[:, idx + 1 : idx + 2, :],
-                        gate=tensor[:, idx + 2 : idx + 3, :],
-                    )
-                )
-                idx += 3  # Advance by 3 vectors per ModulationOut
-            block_dict[key] = double_block
-
-        elif "txt_mod" in key:
+        elif "img_mod" in key or "txt_mod" in key:
             # Double block: List of 2 ModulationOut
             double_block = []
             for _ in range(2):  # Create 2 ModulationOut objects
@@ -174,7 +162,6 @@ def distribute_modulations(tensor: torch.Tensor, depth_single_blocks, depth_doub
     return block_dict
 
 
-
 class NerfEmbedder(nn.Module):
     """
     An embedder module that combines input features with a 2D positional
@@ -184,6 +171,7 @@ class NerfEmbedder(nn.Module):
     patch size, and enriches it with positional information before projecting
     it to a new hidden size.
     """
+
     def __init__(self, in_channels, hidden_size_input, max_freqs):
         """
         Initializes the NerfEmbedder.
@@ -198,7 +186,7 @@ class NerfEmbedder(nn.Module):
         super().__init__()
         self.max_freqs = max_freqs
         self.hidden_size_input = hidden_size_input
-        
+
         # A linear layer to project the concatenated input features and
         # positional encodings to the final output dimension.
         self.embedder = nn.Sequential(
@@ -225,39 +213,41 @@ class NerfEmbedder(nn.Module):
         # Create normalized 1D coordinate grids from 0 to 1.
         pos_x = torch.linspace(0, 1, patch_size, device=device, dtype=dtype)
         pos_y = torch.linspace(0, 1, patch_size, device=device, dtype=dtype)
-        
+
         # Create a 2D meshgrid of coordinates.
         pos_y, pos_x = torch.meshgrid(pos_y, pos_x, indexing="ij")
-        
+
         # Reshape positions to be broadcastable with frequencies.
         # Shape becomes (patch_size^2, 1, 1).
         pos_x = pos_x.reshape(-1, 1, 1)
         pos_y = pos_y.reshape(-1, 1, 1)
-        
+
         # Create a 1D tensor of frequency values from 0 to max_freqs-1.
-        freqs = torch.linspace(0, self.max_freqs - 1, self.max_freqs, dtype=dtype, device=device)
-        
+        freqs = torch.linspace(
+            0, self.max_freqs - 1, self.max_freqs, dtype=dtype, device=device
+        )
+
         # Reshape frequencies to be broadcastable for creating 2D basis functions.
         # freqs_x shape: (1, max_freqs, 1)
         # freqs_y shape: (1, 1, max_freqs)
         freqs_x = freqs[None, :, None]
         freqs_y = freqs[None, None, :]
-        
+
         # A custom weighting coefficient, not part of standard DCT.
         # This seems to down-weight the contribution of higher-frequency interactions.
         coeffs = (1 + freqs_x * freqs_y) ** -1
-        
+
         # Calculate the 1D cosine basis functions for x and y coordinates.
         # This is the core of the DCT formulation.
         dct_x = torch.cos(pos_x * freqs_x * torch.pi)
         dct_y = torch.cos(pos_y * freqs_y * torch.pi)
-        
+
         # Combine the 1D basis functions to create 2D basis functions by element-wise
         # multiplication, and apply the custom coefficients. Broadcasting handles the
         # combination of all (pos_x, freqs_x) with all (pos_y, freqs_y).
         # The result is flattened into a feature vector for each position.
-        dct = (dct_x * dct_y * coeffs).view(1, -1, self.max_freqs ** 2)
-        
+        dct = (dct_x * dct_y * coeffs).view(1, -1, self.max_freqs**2)
+
         return dct
 
     def forward(self, inputs):
@@ -277,30 +267,30 @@ class NerfEmbedder(nn.Module):
         # Force all operations within this module to run in fp32.
         with torch.autocast("cuda", enabled=False):
             # Infer the patch side length from the number of pixels (P^2).
-            patch_size = int(P2 ** 0.5)
+            patch_size = int(P2**0.5)
 
             inputs = inputs.float()
             # Fetch the pre-computed or cached positional embeddings.
             dct = self.fetch_pos(patch_size, inputs.device, torch.float32)
-            
+
             # Repeat the positional embeddings for each item in the batch.
             dct = dct.repeat(B, 1, 1)
-            
+
             # Concatenate the original input features with the positional embeddings
             # along the feature dimension.
             inputs = torch.cat([inputs, dct], dim=-1)
-            
+
             # Project the combined tensor to the target hidden size.
             inputs = self.embedder.float()(inputs)
-        
-        return inputs.to(original_dtype)
 
+        return inputs.to(original_dtype)
 
 
 class NerfGLUBlock(nn.Module):
     """
     A NerfBlock using a Gated Linear Unit (GLU) like MLP.
     """
+
     def __init__(self, hidden_size_s, hidden_size_x, mlp_ratio, use_compiled):
         super().__init__()
         # The total number of parameters for the MLP is increased to accommodate
@@ -313,7 +303,6 @@ class NerfGLUBlock(nn.Module):
         # nn.init.zeros_(self.param_generator.weight)
         # nn.init.zeros_(self.param_generator.bias)
 
-
     def forward(self, x, s):
         batch_size, num_x, hidden_size_x = x.shape
         mlp_params = self.param_generator(s)
@@ -322,8 +311,12 @@ class NerfGLUBlock(nn.Module):
         fc1_gate_params, fc1_value_params, fc2_params = mlp_params.chunk(3, dim=-1)
 
         # Reshape the parameters into matrices for batch matrix multiplication.
-        fc1_gate = fc1_gate_params.view(batch_size, hidden_size_x, hidden_size_x * self.mlp_ratio)
-        fc1_value = fc1_value_params.view(batch_size, hidden_size_x, hidden_size_x * self.mlp_ratio)
+        fc1_gate = fc1_gate_params.view(
+            batch_size, hidden_size_x, hidden_size_x * self.mlp_ratio
+        )
+        fc1_value = fc1_value_params.view(
+            batch_size, hidden_size_x, hidden_size_x * self.mlp_ratio
+        )
         fc2 = fc2_params.view(batch_size, hidden_size_x * self.mlp_ratio, hidden_size_x)
 
         # Normalize the generated weight matrices as in the original implementation.
@@ -335,8 +328,11 @@ class NerfGLUBlock(nn.Module):
         x = self.norm(x)
 
         # Apply the final output projection.
-        x = torch.bmm(torch.nn.functional.silu(torch.bmm(x, fc1_gate)) * torch.bmm(x, fc1_value), fc2)
-        
+        x = torch.bmm(
+            torch.nn.functional.silu(torch.bmm(x, fc1_gate)) * torch.bmm(x, fc1_value),
+            fc2,
+        )
+
         x = x + res_x
         return x
 
@@ -362,10 +358,7 @@ class NerfFinalLayerConv(nn.Module):
 
         # replace nn.Linear with nn.Conv2d since linear is just pointwise conv
         self.conv = nn.Conv2d(
-            in_channels=hidden_size,
-            out_channels=out_channels,
-            kernel_size=3,
-            padding=1
+            in_channels=hidden_size, out_channels=out_channels, kernel_size=3, padding=1
         )
         nn.init.zeros_(self.conv.weight)
         nn.init.zeros_(self.conv.bias)
@@ -380,12 +373,12 @@ class NerfFinalLayerConv(nn.Module):
         x_norm = self.norm(x_permuted)
 
         # Permute back to the original dimension order for the convolution
-        x_norm_permuted = x_norm.permute(0, 3, 1, 2) # Shape becomes [N, C, H, W]
+        x_norm_permuted = x_norm.permute(0, 3, 1, 2)  # Shape becomes [N, C, H, W]
 
         # Apply the 3x3 convolution
         x = self.conv(x_norm_permuted)
         return x
-    
+
 
 class Approximator(nn.Module):
     def __init__(self, in_dim: int, out_dim: int, hidden_dim: int, n_layers=4):

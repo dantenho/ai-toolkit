@@ -16,6 +16,7 @@ class ExampleMergeExtension(Extension):
     def get_process(cls):
         # import your process class here so it is only loaded when needed and return it
         from .ExampleMergeModels import ExampleMergeModels
+
         return ExampleMergeModels
 
 

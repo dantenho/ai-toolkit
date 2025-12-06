@@ -16,6 +16,7 @@ class UltimateSliderTrainer(Extension):
     def get_process(cls):
         # import your process class here so it is only loaded when needed and return it
         from .UltimateSliderTrainerProcess import UltimateSliderTrainerProcess
+
         return UltimateSliderTrainerProcess
 
 

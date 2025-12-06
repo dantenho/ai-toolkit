@@ -1,4 +1,5 @@
 import torch
+
 from .llvae import LosslessLatentEncoder
 
 
@@ -11,9 +12,12 @@ def total_variation(image):
     - TV: total variation normalized by the number of elements
     """
     n_elements = image.shape[1] * image.shape[2] * image.shape[3]
-    return ((torch.sum(torch.abs(image[:, :, :, :-1] - image[:, :, :, 1:])) +
-             torch.sum(torch.abs(image[:, :, :-1, :] - image[:, :, 1:, :]))) / n_elements)
-    
+    return (
+        torch.sum(torch.abs(image[:, :, :, :-1] - image[:, :, :, 1:]))
+        + torch.sum(torch.abs(image[:, :, :-1, :] - image[:, :, 1:, :]))
+    ) / n_elements
+
+
 def total_variation_deltas(image):
     """
     Compute per-pixel total variation deltas.
@@ -42,18 +46,18 @@ class ComparativeTotalVariation(torch.nn.Module):
 
 # Gradient penalty
 def get_gradient_penalty(critic, real, fake, device):
-    with torch.autocast(device_type='cuda'):
+    with torch.autocast(device_type="cuda"):
         real = real.float()
         fake = fake.float()
         alpha = torch.rand(real.size(0), 1, 1, 1).to(device).float()
         interpolates = (alpha * real + ((1 - alpha) * fake)).requires_grad_(True)
         if torch.isnan(interpolates).any():
-            print('d_interpolates is nan')
+            print("d_interpolates is nan")
         d_interpolates = critic(interpolates)
         fake = torch.ones(real.size(0), 1, device=device)
-            
+
         if torch.isnan(d_interpolates).any():
-            print('fake is nan')
+            print("fake is nan")
         gradients = torch.autograd.grad(
             outputs=d_interpolates,
             inputs=interpolates,
@@ -65,7 +69,7 @@ def get_gradient_penalty(critic, real, fake, device):
 
         # see if any are nan
         if torch.isnan(gradients).any():
-            print('gradients is nan')
+            print("gradients is nan")
 
         gradients = gradients.view(gradients.size(0), -1)
         gradient_norm = gradients.norm(2, dim=1)
@@ -87,8 +91,12 @@ class PatternLoss(torch.nn.Module):
 
         color_chans = pred_latents.shape[1] // 3
         # pytorch
-        r_chans, g_chans, b_chans = torch.split(pred_latents, [color_chans, color_chans, color_chans], 1)
-        r_chans_target, g_chans_target, b_chans_target = torch.split(target_latents, [color_chans, color_chans, color_chans], 1)
+        r_chans, g_chans, b_chans = torch.split(
+            pred_latents, [color_chans, color_chans, color_chans], 1
+        )
+        r_chans_target, g_chans_target, b_chans_target = torch.split(
+            target_latents, [color_chans, color_chans, color_chans], 1
+        )
 
         def separated_chan_loss(latent_chan):
             nonlocal matrix_pixels
@@ -105,9 +113,13 @@ class PatternLoss(torch.nn.Module):
             chan_loss = chan_loss * (1 / matrix_pixels)
             return chan_loss
 
-        r_chan_loss = torch.abs(separated_chan_loss(r_chans) - separated_chan_loss(r_chans_target))
-        g_chan_loss = torch.abs(separated_chan_loss(g_chans) - separated_chan_loss(g_chans_target))
-        b_chan_loss = torch.abs(separated_chan_loss(b_chans) - separated_chan_loss(b_chans_target))
+        r_chan_loss = torch.abs(
+            separated_chan_loss(r_chans) - separated_chan_loss(r_chans_target)
+        )
+        g_chan_loss = torch.abs(
+            separated_chan_loss(g_chans) - separated_chan_loss(g_chans_target)
+        )
+        b_chan_loss = torch.abs(
+            separated_chan_loss(b_chans) - separated_chan_loss(b_chans_target)
+        )
         return (r_chan_loss + g_chan_loss + b_chan_loss) * 0.3333
-
-

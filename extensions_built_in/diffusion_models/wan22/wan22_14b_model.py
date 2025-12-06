@@ -1,35 +1,29 @@
-from functools import partial
 import os
-from typing import Any, Dict, Optional, Union, List
-from typing_extensions import Self
+from functools import partial
+from typing import Any
+
 import torch
 import yaml
+from diffusers import UniPCMultistepScheduler, WanTransformer3DModel
+from safetensors.torch import load_file, save_file
 from toolkit.accelerator import unwrap_model
 from toolkit.basic import flush
-from toolkit.models.wan21.wan_utils import add_first_frame_conditioning
-from toolkit.prompt_utils import PromptEmbeds
-from PIL import Image
-from diffusers import UniPCMultistepScheduler
-import torch
 from toolkit.config_modules import GenerateImageConfig, ModelConfig
+from toolkit.data_transfer_object.data_loader import DataLoaderBatchDTO
+from toolkit.memory_management import MemoryManager
+from toolkit.models.wan21.wan21 import Wan21
+from toolkit.prompt_utils import PromptEmbeds
 from toolkit.samplers.custom_flowmatch_sampler import (
     CustomFlowMatchEulerDiscreteScheduler,
 )
 from toolkit.util.quantize import quantize_model
-from .wan22_pipeline import Wan22Pipeline
-from diffusers import WanTransformer3DModel
+from typing_extensions import Self
 
-from toolkit.data_transfer_object.data_loader import DataLoaderBatchDTO
-from torchvision.transforms import functional as TF
-
-from toolkit.models.wan21.wan21 import Wan21
 from .wan22_5b_model import (
     scheduler_config,
     time_text_monkeypatch,
 )
-from toolkit.memory_management import MemoryManager
-from safetensors.torch import load_file, save_file
-
+from .wan22_pipeline import Wan22Pipeline
 
 boundary_ratio_t2v = 0.875
 boundary_ratio_i2v = 0.9
@@ -71,8 +65,8 @@ class DualWanTransformer3DModel(torch.nn.Module):
         self,
         transformer_1: WanTransformer3DModel,
         transformer_2: WanTransformer3DModel,
-        torch_dtype: Optional[Union[str, torch.dtype]] = None,
-        device: Optional[Union[str, torch.device]] = None,
+        torch_dtype: str | torch.dtype | None = None,
+        device: str | torch.device | None = None,
         boundary_ratio: float = boundary_ratio_t2v,
         low_vram: bool = False,
     ) -> None:
@@ -114,11 +108,11 @@ class DualWanTransformer3DModel(torch.nn.Module):
         hidden_states: torch.Tensor,
         timestep: torch.LongTensor,
         encoder_hidden_states: torch.Tensor,
-        encoder_hidden_states_image: Optional[torch.Tensor] = None,
+        encoder_hidden_states_image: torch.Tensor | None = None,
         return_dict: bool = True,
-        attention_kwargs: Optional[Dict[str, Any]] = None,
-        **kwargs
-    ) -> Union[torch.Tensor, Dict[str, torch.Tensor]]:
+        attention_kwargs: dict[str, Any] | None = None,
+        **kwargs,
+    ) -> torch.Tensor | dict[str, torch.Tensor]:
         # determine if doing high noise or low noise by meaning the timestep.
         # timesteps are in the range of 0 to 1000, so we can use a threshold
         with torch.no_grad():
@@ -191,12 +185,12 @@ class Wan2214bModel(Wan21):
         self.is_multistage = True
         # multistage boundaries split the models up when sampling timesteps
         # for wan 2.2 14b. the timesteps are 1000-875 for transformer 1 and 875-0 for transformer 2
-        self.multistage_boundaries: List[float] = [0.875, 0.0]
+        self.multistage_boundaries: list[float] = [0.875, 0.0]
 
         self.train_high_noise = model_config.model_kwargs.get("train_high_noise", True)
         self.train_low_noise = model_config.model_kwargs.get("train_low_noise", True)
 
-        self.trainable_multistage_boundaries: List[int] = []
+        self.trainable_multistage_boundaries: list[int] = []
         if self.train_high_noise:
             self.trainable_multistage_boundaries.append(0)
         if self.train_low_noise:
@@ -206,7 +200,7 @@ class Wan2214bModel(Wan21):
             raise ValueError(
                 "At least one of train_high_noise or train_low_noise must be True in model.model_kwargs"
             )
-        
+
         # if we are only training one or the other, the target LoRA modules will be the wan transformer class
         if not self.train_high_noise or not self.train_low_noise:
             self.target_lora_modules = ["WanTransformer3DModel"]
@@ -291,13 +285,16 @@ class Wan2214bModel(Wan21):
 
         if self.model_config.low_vram:
             # quantize on the device
-            transformer_1.to('cpu', dtype=dtype)
+            transformer_1.to("cpu", dtype=dtype)
             flush()
         else:
             transformer_1.to(self.device_torch, dtype=dtype)
             flush()
 
-        if self.model_config.quantize and self.model_config.accuracy_recovery_adapter is None:
+        if (
+            self.model_config.quantize
+            and self.model_config.accuracy_recovery_adapter is None
+        ):
             # todo handle two ARAs
             self.print_and_status_update("Quantizing Transformer 1")
             quantize_model(self, transformer_1)
@@ -321,13 +318,16 @@ class Wan2214bModel(Wan21):
 
         if self.model_config.low_vram:
             # quantize on the device
-            transformer_2.to('cpu', dtype=dtype)
+            transformer_2.to("cpu", dtype=dtype)
             flush()
         else:
             transformer_2.to(self.device_torch, dtype=dtype)
             flush()
 
-        if self.model_config.quantize and self.model_config.accuracy_recovery_adapter is None:
+        if (
+            self.model_config.quantize
+            and self.model_config.accuracy_recovery_adapter is None
+        ):
             # todo handle two ARAs
             self.print_and_status_update("Quantizing Transformer 2")
             quantize_model(self, transformer_2)
@@ -338,8 +338,11 @@ class Wan2214bModel(Wan21):
             transformer_2.to("cpu")
         else:
             transformer_2.to(self.device_torch)
-    
-        layer_offloading_transformer = self.model_config.layer_offloading and self.model_config.layer_offloading_transformer_percent > 0
+
+        layer_offloading_transformer = (
+            self.model_config.layer_offloading
+            and self.model_config.layer_offloading_transformer_percent > 0
+        )
         # make the combined model
         self.print_and_status_update("Creating DualWanTransformer3DModel")
         transformer = DualWanTransformer3DModel(
@@ -350,26 +353,32 @@ class Wan2214bModel(Wan21):
             boundary_ratio=boundary_ratio_t2v,
             low_vram=self.model_config.low_vram,
         )
-        
-        if self.model_config.quantize and self.model_config.accuracy_recovery_adapter is not None:
+
+        if (
+            self.model_config.quantize
+            and self.model_config.accuracy_recovery_adapter is not None
+        ):
             # apply the accuracy recovery adapter to both transformers
-            self.print_and_status_update("Applying Accuracy Recovery Adapter to Transformers")
+            self.print_and_status_update(
+                "Applying Accuracy Recovery Adapter to Transformers"
+            )
             quantize_model(self, transformer)
             flush()
-            
-        
+
         if layer_offloading_transformer:
             MemoryManager.attach(
                 transformer_1,
                 self.device_torch,
                 offload_percent=self.model_config.layer_offloading_transformer_percent,
-                ignore_modules=[transformer_1.scale_shift_table] + [block.scale_shift_table for block in transformer_1.blocks]
+                ignore_modules=[transformer_1.scale_shift_table]
+                + [block.scale_shift_table for block in transformer_1.blocks],
             )
             MemoryManager.attach(
                 transformer_2,
                 self.device_torch,
                 offload_percent=self.model_config.layer_offloading_transformer_percent,
-                ignore_modules=[transformer_2.scale_shift_table] + [block.scale_shift_table for block in transformer_2.blocks]
+                ignore_modules=[transformer_2.scale_shift_table]
+                + [block.scale_shift_table for block in transformer_2.blocks],
             )
 
         return transformer
@@ -443,9 +452,9 @@ class Wan2214bModel(Wan21):
 
     def save_lora(
         self,
-        state_dict: Dict[str, torch.Tensor],
+        state_dict: dict[str, torch.Tensor],
         output_path: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ):
         if not self.network.network_config.split_multistage_loras:
             # just save as a combo lora
@@ -455,7 +464,7 @@ class Wan2214bModel(Wan21):
         # we need to build out both dictionaries for high and low noise LoRAs
         high_noise_lora = {}
         low_noise_lora = {}
-        
+
         only_train_high_noise = self.train_high_noise and not self.train_low_noise
         only_train_low_noise = self.train_low_noise and not self.train_high_noise
 
@@ -520,7 +529,7 @@ class Wan2214bModel(Wan21):
                     "diffusion_model.", "diffusion_model.transformer_2."
                 )
                 combined_dict[new_key] = low_noise_lora[key]
-        
+
         # if we are not training both stages, we wont have transformer designations in the keys
         if not self.train_high_noise or not self.train_low_noise:
             new_dict = {}
@@ -535,7 +544,7 @@ class Wan2214bModel(Wan21):
             combined_dict = new_dict
 
         return combined_dict
-    
+
     def generate_single_image(
         self,
         pipeline,
@@ -550,9 +559,11 @@ class Wan2214bModel(Wan21):
         # todo, figure out how to do video
         output = pipeline(
             prompt_embeds=conditional_embeds.text_embeds.to(
-                self.device_torch, dtype=self.torch_dtype),
+                self.device_torch, dtype=self.torch_dtype
+            ),
             negative_prompt_embeds=unconditional_embeds.text_embeds.to(
-                self.device_torch, dtype=self.torch_dtype),
+                self.device_torch, dtype=self.torch_dtype
+            ),
             height=gen_config.height,
             width=gen_config.width,
             num_inference_steps=gen_config.num_inference_steps,
@@ -562,7 +573,7 @@ class Wan2214bModel(Wan21):
             generator=generator,
             return_dict=False,
             output_type="pil",
-            **extra
+            **extra,
         )[0]
 
         # shape = [1, frames, channels, height, width]

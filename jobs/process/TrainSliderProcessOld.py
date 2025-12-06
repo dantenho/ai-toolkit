@@ -1,21 +1,15 @@
 # ref:
 # - https://github.com/p1atdev/LECO/blob/main/train_lora.py
-import time
-from collections import OrderedDict
-import os
-from typing import Optional
-
-from toolkit.config_modules import SliderConfig
-import sys
-
-from toolkit.stable_diffusion_model import PromptEmbeds
-
-from toolkit.train_tools import get_torch_dtype, apply_noise_offset
 import gc
-from toolkit import train_tools
+from collections import OrderedDict
 
 import torch
-from .BaseSDTrainProcess import BaseSDTrainProcess, StableDiffusion
+from toolkit import train_tools
+from toolkit.config_modules import SliderConfig
+from toolkit.stable_diffusion_model import PromptEmbeds
+from toolkit.train_tools import get_torch_dtype
+
+from .BaseSDTrainProcess import BaseSDTrainProcess
 
 
 class ACTION_TYPES_SLIDER:
@@ -30,16 +24,16 @@ def flush():
 
 class EncodedPromptPair:
     def __init__(
-            self,
-            target_class,
-            positive,
-            negative,
-            neutral,
-            width=512,
-            height=512,
-            action=ACTION_TYPES_SLIDER.ERASE_NEGATIVE,
-            multiplier=1.0,
-            weight=1.0
+        self,
+        target_class,
+        positive,
+        negative,
+        neutral,
+        width=512,
+        height=512,
+        action=ACTION_TYPES_SLIDER.ERASE_NEGATIVE,
+        multiplier=1.0,
+        weight=1.0,
     ):
         self.target_class = target_class
         self.positive = positive
@@ -58,7 +52,7 @@ class PromptEmbedsCache:  # 使いまわしたいので
     def __setitem__(self, __name: str, __value: PromptEmbeds) -> None:
         self.prompts[__name] = __value
 
-    def __getitem__(self, __name: str) -> Optional[PromptEmbeds]:
+    def __getitem__(self, __name: str) -> PromptEmbeds | None:
         if __name in self.prompts:
             return self.prompts[__name]
         else:
@@ -66,12 +60,7 @@ class PromptEmbedsCache:  # 使いまわしたいので
 
 
 class EncodedAnchor:
-    def __init__(
-            self,
-            prompt,
-            neg_prompt,
-            multiplier=1.0
-    ):
+    def __init__(self, prompt, neg_prompt, multiplier=1.0):
         self.prompt = prompt
         self.neg_prompt = neg_prompt
         self.multiplier = multiplier
@@ -82,9 +71,9 @@ class TrainSliderProcessOld(BaseSDTrainProcess):
         super().__init__(process_id, job, config)
         self.step_num = 0
         self.start_step = 0
-        self.device = self.get_conf('device', self.job.device)
+        self.device = self.get_conf("device", self.job.device)
         self.device_torch = torch.device(self.device)
-        self.slider_config = SliderConfig(**self.get_conf('slider', {}))
+        self.slider_config = SliderConfig(**self.get_conf("slider", {}))
         self.prompt_cache = PromptEmbedsCache()
         self.prompt_pairs: list[EncodedPromptPair] = []
         self.anchor_pairs: list[EncodedAnchor] = []
@@ -105,7 +94,7 @@ class TrainSliderProcessOld(BaseSDTrainProcess):
                     target.target_class,
                     target.positive,
                     target.negative,
-                    neutral  # empty neutral
+                    neutral,  # empty neutral
                 ]:
                     if cache[prompt] is None:
                         cache[prompt] = self.sd.encode_prompt(prompt)
@@ -117,7 +106,9 @@ class TrainSliderProcessOld(BaseSDTrainProcess):
                     both = not only_erase and not only_enhance
 
                     if only_erase and only_enhance:
-                        raise ValueError("target must have at least one of positive or negative or both")
+                        raise ValueError(
+                            "target must have at least one of positive or negative or both"
+                        )
                     # for slider we need to have an enhancer, an eraser, and then
                     # an inverse with negative weights to balance the network
                     # if we don't do this, we will get different contrast and focus.
@@ -136,7 +127,7 @@ class TrainSliderProcessOld(BaseSDTrainProcess):
                                 height=height,
                                 action=ACTION_TYPES_SLIDER.ERASE_NEGATIVE,
                                 multiplier=target.multiplier,
-                                weight=target.weight
+                                weight=target.weight,
                             ),
                         ]
                     if both or only_enhance:
@@ -151,7 +142,7 @@ class TrainSliderProcessOld(BaseSDTrainProcess):
                                 height=height,
                                 action=ACTION_TYPES_SLIDER.ENHANCE_NEGATIVE,
                                 multiplier=target.multiplier,
-                                weight=target.weight
+                                weight=target.weight,
                             ),
                         ]
                     if both:
@@ -166,7 +157,7 @@ class TrainSliderProcessOld(BaseSDTrainProcess):
                                 height=height,
                                 action=ACTION_TYPES_SLIDER.ERASE_NEGATIVE,
                                 multiplier=target.multiplier * -1.0,
-                                weight=target.weight
+                                weight=target.weight,
                             ),
                         ]
                         prompt_pairs += [
@@ -180,7 +171,7 @@ class TrainSliderProcessOld(BaseSDTrainProcess):
                                 height=height,
                                 action=ACTION_TYPES_SLIDER.ENHANCE_NEGATIVE,
                                 multiplier=target.multiplier * -1.0,
-                                weight=target.weight
+                                weight=target.weight,
                             ),
                         ]
 
@@ -190,7 +181,7 @@ class TrainSliderProcessOld(BaseSDTrainProcess):
                 # build the cache
                 for prompt in [
                     anchor.prompt,
-                    anchor.neg_prompt  # empty neutral
+                    anchor.neg_prompt,  # empty neutral
                 ]:
                     if cache[prompt] == None:
                         cache[prompt] = self.sd.encode_prompt(prompt)
@@ -199,7 +190,7 @@ class TrainSliderProcessOld(BaseSDTrainProcess):
                     EncodedAnchor(
                         prompt=cache[anchor.prompt],
                         neg_prompt=cache[anchor.neg_prompt],
-                        multiplier=anchor.multiplier
+                        multiplier=anchor.multiplier,
                     )
                 ]
 
@@ -320,7 +311,11 @@ class TrainSliderProcessOld(BaseSDTrainProcess):
             ]
             with torch.no_grad():
                 anchor_target_noise = get_noise_pred(
-                    anchor.prompt, anchor.neg_prompt, 1, current_timestep, denoised_latents
+                    anchor.prompt,
+                    anchor.neg_prompt,
+                    1,
+                    current_timestep,
+                    denoised_latents,
                 ).to("cpu", dtype=torch.float32)
             with self.network:
                 # anchor whatever weight  prompt pair is using
@@ -328,7 +323,11 @@ class TrainSliderProcessOld(BaseSDTrainProcess):
                 self.network.multiplier = anchor.multiplier * pos_nem_mult
 
                 anchor_pred_noise = get_noise_pred(
-                    anchor.prompt, anchor.neg_prompt, 1, current_timestep, denoised_latents
+                    anchor.prompt,
+                    anchor.neg_prompt,
+                    1,
+                    current_timestep,
+                    denoised_latents,
                 ).to("cpu", dtype=torch.float32)
 
                 self.network.multiplier = prompt_pair.multiplier
@@ -363,10 +362,13 @@ class TrainSliderProcessOld(BaseSDTrainProcess):
             # enhance
             offset_neutral += offset
 
-        loss = loss_function(
-            target_latents,
-            offset_neutral,
-        ) * weight
+        loss = (
+            loss_function(
+                target_latents,
+                offset_neutral,
+            )
+            * weight
+        )
 
         loss_slide = loss.item()
 
@@ -394,11 +396,11 @@ class TrainSliderProcessOld(BaseSDTrainProcess):
         self.network.multiplier = 1.0
 
         loss_dict = OrderedDict(
-            {'loss': loss_float},
+            {"loss": loss_float},
         )
         if anchor_loss is not None:
-            loss_dict['sl_l'] = loss_slide
-            loss_dict['an_l'] = anchor_loss.item()
+            loss_dict["sl_l"] = loss_slide
+            loss_dict["an_l"] = anchor_loss.item()
 
         return loss_dict
         # end hook_train_loop

@@ -1,4 +1,5 @@
 from collections import OrderedDict
+
 from version import VERSION
 
 v = OrderedDict()

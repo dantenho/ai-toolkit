@@ -5,9 +5,9 @@ config:
   process:
     - type: rescale_lora
       # path to your current lora model
-      input_path: "/path/to/lora/lora.safetensors"
+      input_path: '/path/to/lora/lora.safetensors'
       # output path for your new lora model, can be the same as input_path to replace
-      output_path: "/path/to/lora/output_lora_v1.safetensors"
+      output_path: '/path/to/lora/output_lora_v1.safetensors'
       # replaces meta with the meta below (plus minimum meta fields)
       # if false, we will leave the meta alone except for updating hashes (sd-script hashes)
       replace_meta: true
@@ -33,13 +33,13 @@ config:
       is_v2: false
 meta:
   # this is only used if you set replace_meta to true above
-  name: "[name]"  # [name] gets replaced with the name above
+  name: '[name]' # [name] gets replaced with the name above
   description: A short description of your lora
   trigger_words:
-  - put
-  - trigger
-  - words
-  - here
+    - put
+    - trigger
+    - words
+    - here
   version: '0.1'
   creator:
     name: Your Name

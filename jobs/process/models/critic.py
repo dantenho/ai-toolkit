@@ -6,7 +6,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 from safetensors.torch import load_file, save_file
-
 from toolkit.losses import get_gradient_penalty
 from toolkit.metadata import get_meta_for_safetensors
 from toolkit.optimizer import get_optimizer
@@ -28,24 +27,25 @@ class SelfAttention2d(nn.Module):
     resolution unchanged. Adds minimal params / compute but improves
     long-range modelling – helpful for variable-sized inputs.
     """
+
     def __init__(self, in_channels: int):
         super().__init__()
         self.query = nn.Conv1d(in_channels, in_channels // 8, 1)
-        self.key   = nn.Conv1d(in_channels, in_channels // 8, 1)
-        self.value = nn.Conv1d(in_channels, in_channels,      1)
+        self.key = nn.Conv1d(in_channels, in_channels // 8, 1)
+        self.value = nn.Conv1d(in_channels, in_channels, 1)
         self.gamma = nn.Parameter(torch.zeros(1))
 
     def forward(self, x):
         B, C, H, W = x.shape
-        flat = x.view(B, C, H * W)                    # (B,C,N)
-        q = self.query(flat).permute(0, 2, 1)         # (B,N,C//8)
-        k = self.key(flat)                            # (B,C//8,N)
-        attn = torch.bmm(q, k)                        # (B,N,N)
-        attn = attn.softmax(dim=-1)                   # softmax along last dim
-        v = self.value(flat)                          # (B,C,N)
-        out = torch.bmm(v, attn.permute(0, 2, 1))     # (B,C,N)
-        out = out.view(B, C, H, W)                    # restore spatial dims
-        return self.gamma * out + x                   # residual
+        flat = x.view(B, C, H * W)  # (B,C,N)
+        q = self.query(flat).permute(0, 2, 1)  # (B,N,C//8)
+        k = self.key(flat)  # (B,C//8,N)
+        attn = torch.bmm(q, k)  # (B,N,N)
+        attn = attn.softmax(dim=-1)  # softmax along last dim
+        v = self.value(flat)  # (B,C,N)
+        out = torch.bmm(v, attn.permute(0, 2, 1))  # (B,C,N)
+        out = out.view(B, C, H, W)  # restore spatial dims
+        return self.gamma * out + x  # residual
 
 
 class CriticModel(nn.Module):
@@ -80,11 +80,10 @@ class CriticModel(nn.Module):
         layers += [
             sn_conv(in_c, 1024, 3, 1, 1),
             nn.LeakyReLU(0.2, inplace=True),
-
             # final 1-channel prediction map
             sn_conv(1024, 1, 3, 1, 1),
-            MeanReduce(),        # → (B,1,1,1)
-            nn.Flatten(),        # → (B,1)
+            MeanReduce(),  # → (B,1,1,1)
+            nn.Flatten(),  # → (B,1)
         ]
 
         self.main = nn.Sequential(*layers)
@@ -96,20 +95,20 @@ class CriticModel(nn.Module):
 
 
 if TYPE_CHECKING:
-    from jobs.process.TrainVAEProcess import TrainVAEProcess
     from jobs.process.TrainESRGANProcess import TrainESRGANProcess
+    from jobs.process.TrainVAEProcess import TrainVAEProcess
 
 
 class Critic:
-    process: Union['TrainVAEProcess', 'TrainESRGANProcess']
+    process: Union["TrainVAEProcess", "TrainESRGANProcess"]
 
     def __init__(
         self,
         learning_rate=1e-5,
-        device='cpu',
-        optimizer='adam',
+        device="cpu",
+        optimizer="adam",
         num_critic_per_gen=1,
-        dtype='float32',
+        dtype="float32",
         lambda_gp=10,
         start_step=0,
         warmup_steps=1000,
@@ -158,7 +157,11 @@ class Critic:
     def load_weights(self):
         path_to_load = None
         self.print(f"Critic: Looking for latest checkpoint in {self.process.save_root}")
-        files = glob.glob(os.path.join(self.process.save_root, f"CRITIC_{self.process.job.name}*.safetensors"))
+        files = glob.glob(
+            os.path.join(
+                self.process.save_root, f"CRITIC_{self.process.job.name}*.safetensors"
+            )
+        )
         if files:
             latest_file = max(files, key=os.path.getmtime)
             print(f" - Latest checkpoint is: {latest_file}")
@@ -171,9 +174,10 @@ class Critic:
     def save(self, step=None):
         self.process.update_training_metadata()
         save_meta = get_meta_for_safetensors(self.process.meta, self.process.job.name)
-        step_num = f"_{str(step).zfill(9)}" if step is not None else ''
+        step_num = f"_{str(step).zfill(9)}" if step is not None else ""
         save_path = os.path.join(
-            self.process.save_root, f"CRITIC_{self.process.job.name}{step_num}.safetensors"
+            self.process.save_root,
+            f"CRITIC_{self.process.job.name}{step_num}.safetensors",
         )
         save_file(self.model.state_dict(), save_path, save_meta)
         self.print(f"Saved critic to {save_path}")
@@ -185,7 +189,9 @@ class Critic:
 
         warmup_scaler = 1.0
         if self.process.step_num < self.start_step + self.warmup_steps:
-            warmup_scaler = (self.process.step_num - self.start_step) / self.warmup_steps
+            warmup_scaler = (
+                self.process.step_num - self.start_step
+            ) / self.warmup_steps
 
         self.model.eval()
         self.model.requires_grad_(False)
@@ -209,7 +215,9 @@ class Critic:
         # hinge loss + gradient penalty
         loss_real = torch.relu(1.0 - out_target).mean()
         loss_fake = torch.relu(1.0 + out_pred).mean()
-        gradient_penalty = get_gradient_penalty(self.model, vgg_target, vgg_pred, self.device)
+        gradient_penalty = get_gradient_penalty(
+            self.model, vgg_target, vgg_pred, self.device
+        )
         critic_loss = loss_real + loss_fake + self.lambda_gp * gradient_penalty
 
         critic_loss.backward()
@@ -220,15 +228,16 @@ class Critic:
 
         return float(np.mean(critic_losses))
 
-    def get_lr(self):    
-        if hasattr(self.optimizer, 'get_avg_learning_rate'):
+    def get_lr(self):
+        if hasattr(self.optimizer, "get_avg_learning_rate"):
             learning_rate = self.optimizer.get_avg_learning_rate()
-        elif self.optimizer_type.startswith('dadaptation') or \
-                self.optimizer_type.lower().startswith('prodigy'):
+        elif self.optimizer_type.startswith(
+            "dadaptation"
+        ) or self.optimizer_type.lower().startswith("prodigy"):
             learning_rate = (
-                self.optimizer.param_groups[0]["d"] *
-                self.optimizer.param_groups[0]["lr"]
+                self.optimizer.param_groups[0]["d"]
+                * self.optimizer.param_groups[0]["lr"]
             )
         else:
-            learning_rate = self.optimizer.param_groups[0]['lr']
+            learning_rate = self.optimizer.param_groups[0]["lr"]
         return learning_rate

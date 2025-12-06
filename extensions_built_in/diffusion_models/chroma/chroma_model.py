@@ -1,31 +1,32 @@
 import os
 from typing import TYPE_CHECKING
 
+import huggingface_hub
 import torch
-from toolkit.config_modules import GenerateImageConfig, ModelConfig
-from PIL import Image
-from toolkit.models.base_model import BaseModel
-from toolkit.basic import flush
 from diffusers import AutoencoderKL
+from einops import rearrange
+from optimum.quanto import QTensor, freeze
+from safetensors.torch import load_file, save_file
+from toolkit.accelerator import unwrap_model
+from toolkit.basic import flush
+from toolkit.config_modules import GenerateImageConfig, ModelConfig
+from toolkit.dequantize import patch_dequantization_on_save
+from toolkit.metadata import get_meta_for_safetensors
+from toolkit.models.base_model import BaseModel
+
 # from toolkit.pixel_shuffle_encoder import AutoencoderPixelMixer
 from toolkit.prompt_utils import PromptEmbeds
-from toolkit.samplers.custom_flowmatch_sampler import CustomFlowMatchEulerDiscreteScheduler
-from toolkit.dequantize import patch_dequantization_on_save
-from toolkit.accelerator import unwrap_model
-from optimum.quanto import freeze, QTensor
-from toolkit.util.quantize import quantize, get_qtype
-from transformers import T5TokenizerFast, T5EncoderModel, CLIPTextModel, CLIPTokenizer
+from toolkit.samplers.custom_flowmatch_sampler import (
+    CustomFlowMatchEulerDiscreteScheduler,
+)
+from toolkit.util.quantize import get_qtype, quantize
+from transformers import T5EncoderModel, T5TokenizerFast
+
 from .pipeline import ChromaPipeline, prepare_latent_image_ids
-from einops import rearrange, repeat
-import random
-import torch.nn.functional as F
 from .src.model import Chroma, chroma_params
-from safetensors.torch import load_file, save_file
-from toolkit.metadata import get_meta_for_safetensors
-import huggingface_hub
 
 if TYPE_CHECKING:
-    from toolkit.data_transfer_object.data_loader import DataLoaderBatchDTO
+    pass
 
 scheduler_config = {
     "base_image_seq_len": 256,
@@ -34,8 +35,9 @@ scheduler_config = {
     "max_shift": 1.15,
     "num_train_timesteps": 1000,
     "shift": 3.0,
-    "use_dynamic_shifting": True
+    "use_dynamic_shifting": True,
 }
+
 
 class FakeConfig:
     # for diffusers compatability
@@ -48,12 +50,13 @@ class FakeConfig:
         self.num_layers = 19
         self.num_single_layers = 38
         self.patch_size = 1
-        
+
+
 class FakeCLIP(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.dtype = torch.bfloat16
-        self.device = 'cuda'
+        self.device = "cuda"
         self.text_model = None
         self.tokenizer = None
         self.model_max_length = 77
@@ -66,47 +69,42 @@ class ChromaModel(BaseModel):
     arch = "chroma"
 
     def __init__(
-            self,
-            device,
-            model_config: ModelConfig,
-            dtype='bf16',
-            custom_pipeline=None,
-            noise_scheduler=None,
-            **kwargs
+        self,
+        device,
+        model_config: ModelConfig,
+        dtype="bf16",
+        custom_pipeline=None,
+        noise_scheduler=None,
+        **kwargs,
     ):
         super().__init__(
-            device,
-            model_config,
-            dtype,
-            custom_pipeline,
-            noise_scheduler,
-            **kwargs
+            device, model_config, dtype, custom_pipeline, noise_scheduler, **kwargs
         )
         self.is_flow_matching = True
         self.is_transformer = True
-        self.target_lora_modules = ['Chroma']
+        self.target_lora_modules = ["Chroma"]
 
     # static method to get the noise scheduler
     @staticmethod
     def get_train_scheduler():
         return CustomFlowMatchEulerDiscreteScheduler(**scheduler_config)
-    
+
     def get_bucket_divisibility(self):
         # return the bucket divisibility for the model
         return 32
 
     def load_model(self):
         dtype = self.torch_dtype
-        
+
         # will be updated if we detect a existing checkpoint in training folder
         model_path = self.model_config.name_or_path
-        
+
         if model_path == "lodestones/Chroma":
             print("Looking for latest Chroma checkpoint")
             # get the latest checkpoint
             files_list = huggingface_hub.list_repo_files(model_path)
             print(files_list)
-            latest_version = 28 # current latest version at time of writing
+            latest_version = 28  # current latest version at time of writing
             while True:
                 if f"chroma-unlocked-v{latest_version}.safetensors" not in files_list:
                     latest_version -= 1
@@ -114,7 +112,7 @@ class ChromaModel(BaseModel):
                 else:
                     latest_version += 1
             print(f"Using latest Chroma version: v{latest_version}")
-            
+
             # make sure we have it
             model_path = huggingface_hub.hf_hub_download(
                 repo_id=model_path,
@@ -126,7 +124,7 @@ class ChromaModel(BaseModel):
             print(f"Using Chroma version: v{version}")
             # make sure we have it
             model_path = huggingface_hub.hf_hub_download(
-                repo_id='lodestones/Chroma',
+                repo_id="lodestones/Chroma",
                 filename=f"chroma-unlocked-v{version}.safetensors",
             )
         elif model_path.startswith("lodestones/Chroma1-"):
@@ -141,15 +139,15 @@ class ChromaModel(BaseModel):
                 print(f"Using local model: {model_path}")
             else:
                 raise ValueError(f"Model path {model_path} does not exist")
-        
+
         # extras_path = 'black-forest-labs/FLUX.1-schnell'
         # schnell model is gated now, use flex instead
-        extras_path = 'ostris/Flex.1-alpha'
+        extras_path = "ostris/Flex.1-alpha"
 
         self.print_and_status_update("Loading transformer")
-        
-        chroma_state_dict = load_file(model_path, 'cpu')
-        
+
+        chroma_state_dict = load_file(model_path, "cpu")
+
         # determine number of double and single blocks
         double_blocks = 0
         single_blocks = 0
@@ -168,14 +166,14 @@ class ChromaModel(BaseModel):
         chroma_params.depth = double_blocks
         chroma_params.depth_single_blocks = single_blocks
         transformer = Chroma(chroma_params)
-        
+
         # add dtype, not sure why it doesnt have it
         transformer.dtype = dtype
         # load the state dict into the model
         transformer.load_state_dict(chroma_state_dict)
-        
+
         transformer.to(self.quantize_device, dtype=dtype)
-        
+
         transformer.config = FakeConfig()
         transformer.config.num_layers = double_blocks
         transformer.config.num_single_layers = single_blocks
@@ -185,8 +183,11 @@ class ChromaModel(BaseModel):
             patch_dequantization_on_save(transformer)
             quantization_type = get_qtype(self.model_config.qtype)
             self.print_and_status_update("Quantizing transformer")
-            quantize(transformer, weights=quantization_type,
-                     **self.model_config.quantize_kwargs)
+            quantize(
+                transformer,
+                weights=quantization_type,
+                **self.model_config.quantize_kwargs,
+            )
             freeze(transformer)
             transformer.to(self.device_torch)
         else:
@@ -206,8 +207,7 @@ class ChromaModel(BaseModel):
 
         if self.model_config.quantize_te:
             self.print_and_status_update("Quantizing T5")
-            quantize(text_encoder_2, weights=get_qtype(
-                self.model_config.qtype))
+            quantize(text_encoder_2, weights=get_qtype(self.model_config.qtype))
             freeze(text_encoder_2)
             flush()
 
@@ -217,12 +217,10 @@ class ChromaModel(BaseModel):
         text_encoder.to(self.device_torch, dtype=dtype)
 
         self.noise_scheduler = ChromaModel.get_train_scheduler()
-        
+
         self.print_and_status_update("Loading VAE")
         vae = AutoencoderKL.from_pretrained(
-            extras_path,
-            subfolder="vae",
-            torch_dtype=dtype
+            extras_path, subfolder="vae", torch_dtype=dtype
         )
         vae = vae.to(self.device_torch, dtype=dtype)
 
@@ -276,7 +274,7 @@ class ChromaModel(BaseModel):
             text_encoder_2=unwrap_model(self.text_encoder[1]),
             tokenizer_2=self.tokenizer[1],
             vae=unwrap_model(self.vae),
-            transformer=unwrap_model(self.transformer)
+            transformer=unwrap_model(self.transformer),
         )
 
         # pipeline = pipeline.to(self.device_torch)
@@ -292,10 +290,9 @@ class ChromaModel(BaseModel):
         generator: torch.Generator,
         extra: dict,
     ):
+        extra["negative_prompt_embeds"] = unconditional_embeds.text_embeds
+        extra["negative_prompt_attn_mask"] = unconditional_embeds.attention_mask
 
-        extra['negative_prompt_embeds'] = unconditional_embeds.text_embeds
-        extra['negative_prompt_attn_mask'] = unconditional_embeds.attention_mask
-        
         img = pipeline(
             prompt_embeds=conditional_embeds.text_embeds,
             prompt_attn_mask=conditional_embeds.attention_mask,
@@ -305,7 +302,7 @@ class ChromaModel(BaseModel):
             guidance_scale=gen_config.guidance_scale,
             latents=gen_config.latents,
             generator=generator,
-            **extra
+            **extra,
         ).images[0]
         return img
 
@@ -314,23 +311,17 @@ class ChromaModel(BaseModel):
         latent_model_input: torch.Tensor,
         timestep: torch.Tensor,  # 0 to 1000 scale
         text_embeddings: PromptEmbeds,
-        **kwargs
+        **kwargs,
     ):
         with torch.no_grad():
             bs, c, h, w = latent_model_input.shape
             latent_model_input_packed = rearrange(
-                latent_model_input,
-                "b c (h ph) (w pw) -> b (h w) (c ph pw)",
-                ph=2,
-                pw=2
+                latent_model_input, "b c (h ph) (w pw) -> b (h w) (c ph pw)", ph=2, pw=2
             )
-            
-            img_ids = prepare_latent_image_ids(
-                bs, 
-                h, 
-                w,
-                patch_size=2
-            ).to(device=self.device_torch)
+
+            img_ids = prepare_latent_image_ids(bs, h, w, patch_size=2).to(
+                device=self.device_torch
+            )
 
             # img_ids = torch.zeros(h // 2, w // 2, 3)
             # img_ids[..., 1] = img_ids[..., 1] + torch.arange(h // 2)[:, None]
@@ -338,8 +329,9 @@ class ChromaModel(BaseModel):
             # img_ids = repeat(img_ids, "h w c -> b (h w) c",
             #                  b=bs).to(self.device_torch)
 
-            txt_ids = torch.zeros(
-                bs, text_embeddings.text_embeds.shape[1], 3).to(self.device_torch)
+            txt_ids = torch.zeros(bs, text_embeddings.text_embeds.shape[1], 3).to(
+                self.device_torch
+            )
 
         guidance = torch.full([1], 0, device=self.device_torch, dtype=torch.float32)
         guidance = guidance.expand(latent_model_input_packed.shape[0])
@@ -347,19 +339,13 @@ class ChromaModel(BaseModel):
         cast_dtype = self.unet.dtype
 
         noise_pred = self.unet(
-            img=latent_model_input_packed.to(
-                self.device_torch, cast_dtype
-            ),
+            img=latent_model_input_packed.to(self.device_torch, cast_dtype),
             img_ids=img_ids,
-            txt=text_embeddings.text_embeds.to(
-                self.device_torch, cast_dtype
-            ),
+            txt=text_embeddings.text_embeds.to(self.device_torch, cast_dtype),
             txt_ids=txt_ids,
-            txt_mask=text_embeddings.attention_mask.to(
-                self.device_torch, cast_dtype
-            ),
+            txt_mask=text_embeddings.attention_mask.to(self.device_torch, cast_dtype),
             timesteps=timestep / 1000,
-            guidance=guidance
+            guidance=guidance,
         )
 
         if isinstance(noise_pred, QTensor):
@@ -372,11 +358,11 @@ class ChromaModel(BaseModel):
             w=latent_model_input.shape[3] // 2,
             ph=2,
             pw=2,
-            c=self.vae.config.latent_channels
+            c=self.vae.config.latent_channels,
         )
-        
+
         return noise_pred
-    
+
     def get_prompt_embeds(self, prompt: str) -> PromptEmbeds:
         if isinstance(prompt, str):
             prompts = [prompt]
@@ -402,30 +388,35 @@ class ChromaModel(BaseModel):
         )
         text_input_ids = text_inputs.input_ids
 
-        prompt_embeds = self.text_encoder[1](text_input_ids.to(device), output_hidden_states=False)[0]
+        prompt_embeds = self.text_encoder[1](
+            text_input_ids.to(device), output_hidden_states=False
+        )[0]
 
         dtype = self.text_encoder[1].dtype
         prompt_embeds = prompt_embeds.to(dtype=dtype, device=device)
 
         prompt_attention_mask = text_inputs["attention_mask"]
-        
-        pe = PromptEmbeds(
-            prompt_embeds
-        )
+
+        pe = PromptEmbeds(prompt_embeds)
         pe.attention_mask = prompt_attention_mask
         return pe
-    
+
     def get_model_has_grad(self):
         # return from a weight if it has grad
         return self.model.final_layer.linear.weight.requires_grad
 
     def get_te_has_grad(self):
         # return from a weight if it has grad
-        return self.text_encoder[1].encoder.block[0].layer[0].SelfAttention.q.weight.requires_grad
-    
+        return (
+            self.text_encoder[1]
+            .encoder.block[0]
+            .layer[0]
+            .SelfAttention.q.weight.requires_grad
+        )
+
     def save_model(self, output_path, meta, save_dtype):
         if not output_path.endswith(".safetensors"):
-            output_path =  output_path + ".safetensors"
+            output_path = output_path + ".safetensors"
         # only save the unet
         transformer: Chroma = unwrap_model(self.model)
         state_dict = transformer.state_dict()
@@ -433,16 +424,16 @@ class ChromaModel(BaseModel):
         for k, v in state_dict.items():
             if isinstance(v, QTensor):
                 v = v.dequantize()
-            save_dict[k] = v.clone().to('cpu', dtype=save_dtype)
-        
-        meta = get_meta_for_safetensors(meta, name='chroma')
+            save_dict[k] = v.clone().to("cpu", dtype=save_dtype)
+
+        meta = get_meta_for_safetensors(meta, name="chroma")
         save_file(save_dict, output_path, metadata=meta)
 
     def get_loss_target(self, *args, **kwargs):
-        noise = kwargs.get('noise')
-        batch = kwargs.get('batch')
+        noise = kwargs.get("noise")
+        batch = kwargs.get("batch")
         return (noise - batch.latents).detach()
-    
+
     def convert_lora_weights_before_save(self, state_dict):
         # currently starte with transformer. but needs to start with diffusion_model. for comfyui
         new_sd = {}
@@ -458,6 +449,6 @@ class ChromaModel(BaseModel):
             new_key = key.replace("diffusion_model.", "transformer.")
             new_sd[new_key] = value
         return new_sd
-    
+
     def get_base_model_version(self):
         return "chroma"

@@ -10,11 +10,12 @@ def get_accelerator() -> Accelerator:
         global_accelerator = Accelerator()
     return global_accelerator
 
+
 def unwrap_model(model):
     try:
         accelerator = get_accelerator()
         model = accelerator.unwrap_model(model)
         model = model._orig_mod if is_compiled_module(model) else model
-    except Exception as e:
+    except Exception:
         pass
     return model

@@ -1,6 +1,8 @@
-import torch
-from .manager_modules import LinearLayerMemoryManager, ConvLayerMemoryManager
 import random
+
+import torch
+
+from .manager_modules import ConvLayerMemoryManager, LinearLayerMemoryManager
 
 LINEAR_MODULES = [
     "Linear",
@@ -28,7 +30,7 @@ UNMANAGED_MODULES = [
     "LSTM",
     "GRU",
     "RNN",
-    "Conv3d"
+    "Conv3d",
 ]
 
 UNMANAGED_MODULES_INCLUDES = ["RotaryEmbedding", "Norm", "RotaryPosEmbed"]
@@ -67,11 +69,11 @@ class MemoryManager:
 
     @classmethod
     def attach(
-        cls, 
-        module: torch.nn.Module, 
-        device: torch.device, 
+        cls,
+        module: torch.nn.Module,
+        device: torch.device,
         offload_percent: float = 1.0,
-        ignore_modules: list[torch.nn.Module] = []
+        ignore_modules: list[torch.nn.Module] = [],
     ):
         if hasattr(module, "_memory_manager"):
             # already attached
@@ -86,7 +88,7 @@ class MemoryManager:
         # add ignore modules to unmanaged list
         for im in ignore_modules:
             module._memory_manager.unmanaged_modules.append(im)
-            
+
         # count ignore modules as processed
         modules_processed = [x for x in ignore_modules]
         # attach to all modules
@@ -113,7 +115,7 @@ class MemoryManager:
                             ara = child_module.ara_lora_ref()
                             if ara not in modules_processed:
                                 MemoryManager.attach(
-                                    ara, 
+                                    ara,
                                     device,
                                 )
                     modules_processed.append(child_module)
@@ -138,7 +140,7 @@ class MemoryManager:
                             ara = child_module.ara_lora_ref()
                             if ara not in modules_processed:
                                 MemoryManager.attach(
-                                    ara, 
+                                    ara,
                                     device,
                                 )
                             modules_processed.append(ara)

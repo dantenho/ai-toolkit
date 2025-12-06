@@ -1,8 +1,8 @@
 import torch
-from torch import nn
-from typing import Optional
 from diffusers.models.attention_processor import Attention
 from diffusers.utils.torch_utils import maybe_allow_in_graph
+from torch import nn
+
 
 @maybe_allow_in_graph
 class HiDreamAttention(Attention):
@@ -15,9 +15,9 @@ class HiDreamAttention(Attention):
         upcast_softmax: bool = False,
         scale_qk: bool = True,
         eps: float = 1e-5,
-        processor = None,
+        processor=None,
         out_dim: int = None,
-        single: bool = False
+        single: bool = False,
     ):
         super(Attention, self).__init__()
         self.inner_dim = out_dim if out_dim is not None else dim_head * heads
@@ -68,11 +68,12 @@ class HiDreamAttention(Attention):
     ) -> torch.Tensor:
         return self.processor(
             self,
-            image_tokens = norm_image_tokens,
-            image_tokens_masks = image_tokens_masks,
-            text_tokens = norm_text_tokens,
-            rope = rope,
+            image_tokens=norm_image_tokens,
+            image_tokens_masks=image_tokens_masks,
+            text_tokens=norm_text_tokens,
+            rope=rope,
         )
+
 
 class FeedForwardSwiGLU(nn.Module):
     def __init__(
@@ -80,22 +81,20 @@ class FeedForwardSwiGLU(nn.Module):
         dim: int,
         hidden_dim: int,
         multiple_of: int = 256,
-        ffn_dim_multiplier: Optional[float] = None,
+        ffn_dim_multiplier: float | None = None,
     ):
         super().__init__()
         hidden_dim = int(2 * hidden_dim / 3)
         # custom dim factor multiplier
         if ffn_dim_multiplier is not None:
             hidden_dim = int(ffn_dim_multiplier * hidden_dim)
-        hidden_dim = multiple_of * (
-            (hidden_dim + multiple_of - 1) // multiple_of
-        )
+        hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
 
         self.w1 = nn.Linear(dim, hidden_dim, bias=False)
         self.w2 = nn.Linear(hidden_dim, dim, bias=False)
         self.w3 = nn.Linear(dim, hidden_dim, bias=False)
         self.apply(self._init_weights)
-    
+
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
             nn.init.xavier_uniform_(m.weight)

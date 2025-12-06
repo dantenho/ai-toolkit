@@ -1,14 +1,19 @@
-from diffusers import FluxControlPipeline, FluxTransformer2DModel
-from typing import Any, Callable, Dict, List, Optional, Union
-import torch
+from collections.abc import Callable
+from typing import Any
 
-from diffusers.image_processor import PipelineImageInput
 import numpy as np
-from PIL import Image
+import torch
 import torch.nn.functional as F
-from torchvision import transforms
+from diffusers import FluxControlPipeline
+from diffusers.image_processor import PipelineImageInput
+from diffusers.pipelines.flux.pipeline_flux import (
+    XLA_AVAILABLE,
+    calculate_shift,
+    retrieve_timesteps,
+)
 from diffusers.pipelines.flux.pipeline_output import FluxPipelineOutput
-from diffusers.pipelines.flux.pipeline_flux import calculate_shift, retrieve_timesteps, XLA_AVAILABLE
+from PIL import Image
+from torchvision import transforms
 
 
 class Flex2Pipeline(FluxControlPipeline):
@@ -22,29 +27,37 @@ class Flex2Pipeline(FluxControlPipeline):
         tokenizer_2,
         transformer,
     ):
-        super().__init__(scheduler, vae, text_encoder, tokenizer, text_encoder_2, tokenizer_2, transformer)
-    
+        super().__init__(
+            scheduler,
+            vae,
+            text_encoder,
+            tokenizer,
+            text_encoder_2,
+            tokenizer_2,
+            transformer,
+        )
+
     @torch.no_grad()
     def __call__(
         self,
-        prompt: Union[str, List[str]] = None,
-        prompt_2: Optional[Union[str, List[str]]] = None,
-        control_image: Optional[PipelineImageInput] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
+        prompt: str | list[str] = None,
+        prompt_2: str | list[str] | None = None,
+        control_image: PipelineImageInput | None = None,
+        height: int | None = None,
+        width: int | None = None,
         num_inference_steps: int = 28,
-        sigmas: Optional[List[float]] = None,
+        sigmas: list[float] | None = None,
         guidance_scale: float = 3.5,
-        num_images_per_prompt: Optional[int] = 1,
-        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
-        latents: Optional[torch.FloatTensor] = None,
-        prompt_embeds: Optional[torch.FloatTensor] = None,
-        pooled_prompt_embeds: Optional[torch.FloatTensor] = None,
-        output_type: Optional[str] = "pil",
+        num_images_per_prompt: int | None = 1,
+        generator: torch.Generator | list[torch.Generator] | None = None,
+        latents: torch.FloatTensor | None = None,
+        prompt_embeds: torch.FloatTensor | None = None,
+        pooled_prompt_embeds: torch.FloatTensor | None = None,
+        output_type: str | None = "pil",
         return_dict: bool = True,
-        joint_attention_kwargs: Optional[Dict[str, Any]] = None,
-        callback_on_step_end: Optional[Callable[[int, int, Dict], None]] = None,
-        callback_on_step_end_tensor_inputs: List[str] = ["latents"],
+        joint_attention_kwargs: dict[str, Any] | None = None,
+        callback_on_step_end: Callable[[int, int, dict], None] | None = None,
+        callback_on_step_end_tensor_inputs: list[str] = ["latents"],
         max_sequence_length: int = 512,
         control_image_idx: int = 0,
         **kwargs,
@@ -158,7 +171,9 @@ class Flex2Pipeline(FluxControlPipeline):
 
         # 3. Prepare text embeddings
         lora_scale = (
-            self.joint_attention_kwargs.get("scale", None) if self.joint_attention_kwargs is not None else None
+            self.joint_attention_kwargs.get("scale", None)
+            if self.joint_attention_kwargs is not None
+            else None
         )
         (
             prompt_embeds,
@@ -178,7 +193,7 @@ class Flex2Pipeline(FluxControlPipeline):
         # 4. Prepare latent variables
         # num_channels_latents = self.transformer.config.in_channels // 8
         num_channels_latents = 128 // 8
-        
+
         # pull mask off control image if there is one it is a pil image
         mask = None
         if control_image is not None and control_image.mode == "RGBA":
@@ -189,9 +204,8 @@ class Flex2Pipeline(FluxControlPipeline):
             # control image ideally would be a full image here
             control_img_array = control_img_array[:, :, :3]
             control_image = Image.fromarray(control_img_array.astype(np.uint8))
-        
-        if control_image is not None:
 
+        if control_image is not None:
             control_image = self.prepare_image(
                 image=control_image,
                 width=width,
@@ -204,16 +218,31 @@ class Flex2Pipeline(FluxControlPipeline):
 
             if control_image.ndim == 4:
                 num_control_channels = num_channels_latents
-                control_image = self.vae.encode(control_image).latent_dist.sample(generator=generator)
-                control_image = (control_image - self.vae.config.shift_factor) * self.vae.config.scaling_factor
-                
+                control_image = self.vae.encode(control_image).latent_dist.sample(
+                    generator=generator
+                )
+                control_image = (
+                    control_image - self.vae.config.shift_factor
+                ) * self.vae.config.scaling_factor
+
                 if mask is not None:
-                    transform = transforms.Compose([
-                        transforms.ToTensor(),
-                    ])
-                    mask = transform(mask).to(device, dtype=control_image.dtype).unsqueeze(0)
+                    transform = transforms.Compose(
+                        [
+                            transforms.ToTensor(),
+                        ]
+                    )
+                    mask = (
+                        transform(mask)
+                        .to(device, dtype=control_image.dtype)
+                        .unsqueeze(0)
+                    )
                     # resize mask to match control image
-                    mask = F.interpolate(mask, size=(control_image.shape[2], control_image.shape[3]), mode="bilinear", align_corners=False)
+                    mask = F.interpolate(
+                        mask,
+                        size=(control_image.shape[2], control_image.shape[3]),
+                        mode="bilinear",
+                        align_corners=False,
+                    )
                     mask = mask.to(device)
                     # apply the mask to the control image so the inpaint latent area is 0
                     # mask is currently 0 for inpaint area and 1 for image area
@@ -244,7 +273,11 @@ class Flex2Pipeline(FluxControlPipeline):
         )
 
         # 5. Prepare timesteps
-        sigmas = np.linspace(1.0, 1 / num_inference_steps, num_inference_steps) if sigmas is None else sigmas
+        sigmas = (
+            np.linspace(1.0, 1 / num_inference_steps, num_inference_steps)
+            if sigmas is None
+            else sigmas
+        )
         image_seq_len = latents.shape[1]
         mu = calculate_shift(
             image_seq_len,
@@ -260,12 +293,16 @@ class Flex2Pipeline(FluxControlPipeline):
             sigmas=sigmas,
             mu=mu,
         )
-        num_warmup_steps = max(len(timesteps) - num_inference_steps * self.scheduler.order, 0)
+        num_warmup_steps = max(
+            len(timesteps) - num_inference_steps * self.scheduler.order, 0
+        )
         self._num_timesteps = len(timesteps)
 
         # handle guidance
         if self.transformer.config.guidance_embeds:
-            guidance = torch.full([1], guidance_scale, device=device, dtype=torch.float32)
+            guidance = torch.full(
+                [1], guidance_scale, device=device, dtype=torch.float32
+            )
             guidance = guidance.expand(latents.shape[0])
         else:
             guidance = None
@@ -275,16 +312,18 @@ class Flex2Pipeline(FluxControlPipeline):
             for i, t in enumerate(timesteps):
                 if self.interrupt:
                     continue
-                
+
                 # make a blank control latent
                 control_image_list = [
                     # impainting
-                    torch.cat([torch.zeros_like(latents), torch.ones_like(latents[:, :, :4])], dim=2),
+                    torch.cat(
+                        [torch.zeros_like(latents), torch.ones_like(latents[:, :, :4])],
+                        dim=2,
+                    ),
                     # control
                     torch.zeros_like(latents),
                 ]
                 if control_image is not None:
-                
                     control_image_list[control_image_idx] = control_image
 
                 latent_model_input = torch.cat([latents] + control_image_list, dim=2)
@@ -306,7 +345,9 @@ class Flex2Pipeline(FluxControlPipeline):
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents_dtype = latents.dtype
-                latents = self.scheduler.step(noise_pred, t, latents, return_dict=False)[0]
+                latents = self.scheduler.step(
+                    noise_pred, t, latents, return_dict=False
+                )[0]
 
                 if latents.dtype != latents_dtype:
                     if torch.backends.mps.is_available():
@@ -323,7 +364,9 @@ class Flex2Pipeline(FluxControlPipeline):
                     prompt_embeds = callback_outputs.pop("prompt_embeds", prompt_embeds)
 
                 # call the callback, if provided
-                if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
+                if i == len(timesteps) - 1 or (
+                    (i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0
+                ):
                     progress_bar.update()
 
                 if XLA_AVAILABLE:
@@ -332,8 +375,12 @@ class Flex2Pipeline(FluxControlPipeline):
         if output_type == "latent":
             image = latents
         else:
-            latents = self._unpack_latents(latents, height, width, self.vae_scale_factor)
-            latents = (latents / self.vae.config.scaling_factor) + self.vae.config.shift_factor
+            latents = self._unpack_latents(
+                latents, height, width, self.vae_scale_factor
+            )
+            latents = (
+                latents / self.vae.config.scaling_factor
+            ) + self.vae.config.shift_factor
             image = self.vae.decode(latents, return_dict=False)[0]
             image = self.image_processor.postprocess(image, output_type=output_type)
 
@@ -344,5 +391,3 @@ class Flex2Pipeline(FluxControlPipeline):
             return (image,)
 
         return FluxPipelineOutput(images=image)
-
-    
