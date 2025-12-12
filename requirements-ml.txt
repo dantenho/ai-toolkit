@@ -1,0 +1,163 @@
+# ============================================================================
+# Machine Learning and Deep Learning Requirements
+# ============================================================================
+# This file contains ML/DL dependencies for local VM setup with GPU support.
+# Includes PyTorch, Transformers, ONNX, TensorRT, and related libraries.
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Core Numerical Computing
+# ----------------------------------------------------------------------------
+# NumPy - Fundamental package for numerical computing
+numpy>=1.26.2
+# Pandas - Data manipulation and analysis library
+pandas>=2.1.3
+# Matplotlib - Comprehensive plotting library
+matplotlib>=3.8.2
+# Scikit-learn - Machine learning library
+scikit-learn>=1.3.2
+# Pillow - Python Imaging Library for image processing
+Pillow>=10.1.0
+
+# ----------------------------------------------------------------------------
+# PyTorch Ecosystem (with CUDA Support)
+# ----------------------------------------------------------------------------
+# PyTorch - Deep learning framework with CUDA 11.8 support
+# Install from PyTorch index for CUDA support:
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+torch>=2.1.0
+torchvision>=0.16.0
+torchaudio>=2.1.0
+
+# ----------------------------------------------------------------------------
+# Transformers and NLP Libraries
+# ----------------------------------------------------------------------------
+# Transformers - State-of-the-art NLP models (BERT, GPT, etc.)
+transformers>=4.35.0
+# XFormers - Efficient Transformer implementations
+xformers>=0.0.22
+# Tokenizers - Fast tokenizers for Transformers
+tokenizers>=0.15.0
+# Accelerate - Easy mixed precision and distributed training
+accelerate>=0.25.0
+# Datasets - Hugging Face datasets library
+datasets>=2.14.0
+
+# ----------------------------------------------------------------------------
+# ONNX and Model Optimization
+# ----------------------------------------------------------------------------
+# ONNX - Open Neural Network Exchange format
+onnx>=1.15.0
+# ONNX Runtime - High-performance inference engine
+onnxruntime>=1.16.0
+# ONNX Runtime GPU - GPU-accelerated ONNX Runtime
+onnxruntime-gpu>=1.16.0
+# ONNX Optimizer - Optimize ONNX models
+onnxoptimizer>=0.3.13
+
+# ----------------------------------------------------------------------------
+# TensorRT (NVIDIA GPU Acceleration)
+# ----------------------------------------------------------------------------
+# Note: TensorRT Python package is typically installed via:
+# 1. Download TensorRT from NVIDIA Developer site
+# 2. Install: pip install <tensorrt_wheel_file>
+# 3. Or use: pip install nvidia-tensorrt (if available)
+# TensorRT version depends on CUDA and cuDNN versions
+# For CUDA 11.8: tensorrt>=8.6.0
+# Uncomment and adjust version based on your CUDA setup:
+# tensorrt>=8.6.0
+
+# ----------------------------------------------------------------------------
+# CUDA and cuDNN Support Libraries
+# ----------------------------------------------------------------------------
+# Note: CUDA and cuDNN are system-level libraries installed separately
+# These Python packages provide bindings and utilities:
+# nvidia-ml-py - NVIDIA Management Library Python bindings
+nvidia-ml-py>=12.535.0
+# pynvml - Python bindings for NVIDIA Management Library
+pynvml>=11.5.0
+
+# ----------------------------------------------------------------------------
+# Additional ML/DL Utilities
+# ----------------------------------------------------------------------------
+# TorchVision - Image and video datasets and models
+# (Included with PyTorch above)
+# TorchAudio - Audio processing library
+# (Included with PyTorch above)
+# TorchText - Text processing utilities
+torchtext>=0.16.0
+# TorchServe - Model serving framework
+torchserve>=0.8.0
+# TorchX - Job launcher for PyTorch
+torchx>=0.5.0
+
+# ----------------------------------------------------------------------------
+# Model Optimization and Quantization
+# ----------------------------------------------------------------------------
+# Optimum - Optimization toolkit for Transformers
+optimum>=1.14.0
+# ONNX Model Zoo - Pre-trained ONNX models
+onnx-model-zoo>=1.0.0
+
+# ----------------------------------------------------------------------------
+# Monitoring and Observability (ML-specific)
+# ----------------------------------------------------------------------------
+# OpenTelemetry API - Observability framework API
+opentelemetry-api>=1.21.0
+# OpenTelemetry SDK - Observability framework SDK
+opentelemetry-sdk>=1.21.0
+# OpenTelemetry Instrumentation - Auto-instrumentation
+opentelemetry-instrumentation>=0.42b0
+# OpenTelemetry Prometheus Exporter - Prometheus metrics exporter
+opentelemetry-exporter-prometheus>=1.12.0
+# Prometheus Client - Prometheus client library for metrics
+prometheus-client>=0.19.0
+# Grafana API Client - Grafana API client for dashboard management
+grafana-api>=1.0.3
+
+# ----------------------------------------------------------------------------
+# Data Processing and Visualization
+# ----------------------------------------------------------------------------
+# Seaborn - Statistical data visualization
+seaborn>=0.13.0
+# Plotly - Interactive plotting library
+plotly>=5.18.0
+# Jupyter - Jupyter notebook support (optional, for experimentation)
+jupyter>=1.0.0
+ipykernel>=6.27.0
+
+# ============================================================================
+# Installation Instructions
+# ============================================================================
+# 
+# 1. Install CUDA Toolkit (if using GPU):
+#    Download from: https://developer.nvidia.com/cuda-downloads
+#    Recommended: CUDA 11.8 or 12.1
+#
+# 2. Install cuDNN (if using GPU):
+#    Download from: https://developer.nvidia.com/cudnn
+#    Extract and copy to CUDA installation directory
+#
+# 3. Install PyTorch with CUDA support:
+#    For CUDA 11.8:
+#    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+#
+#    For CUDA 12.1:
+#    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+#
+# 4. Install TensorRT (optional, for GPU acceleration):
+#    Download TensorRT from: https://developer.nvidia.com/tensorrt
+#    Follow installation instructions for your platform
+#
+# 5. Install all ML requirements:
+#    pip install -r requirements-ml.txt
+#
+#    Or using uv (recommended):
+#    uv pip install -r requirements-ml.txt
+#
+# 6. Verify GPU support:
+#    python -c "import torch; print('CUDA available:', torch.cuda.is_available())"
+#    python -c "import torch; print('CUDA version:', torch.version.cuda)"
+#    nvidia-smi  # Check GPU status
+#
+# ============================================================================

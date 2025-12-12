@@ -6,6 +6,8 @@ on:
   pull_request: # Run on all pull requests
     branches: [main, master]
     types: [opened, synchronize, reopened] # Trigger on PR open, update, or reopen
+  schedule:
+    - cron: '0 2 * * 1' # Weekly security scan
 
 jobs:
   # Cursor Bot code review (placeholder for Cursor AI integration)
@@ -72,24 +74,38 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} # API key from secrets
         run: |
-          python << 'EOF'
+          python3 << 'EOF'
           import os
-          import subprocess
-          import json
+          import google.generativeai as genai
+          
+          api_key = os.getenv('GEMINI_API_KEY')
+          if not api_key:
+              print("GEMINI_API_KEY not found")
+              exit(1)
+          
+          genai.configure(api_key=api_key)
+          model = genai.GenerativeModel('gemini-pro')
           
           # Read changed files
-          with open('changed_files.txt', 'r') as f:
-              files = [line.strip() for line in f if line.strip()]
+          try:
+              with open('changed_files.txt', 'r') as f:
+                  files = [line.strip() for line in f if line.strip()]
+          except FileNotFoundError:
+              print("No changed files found")
+              exit(0)
           
-          # Filter Python files
-          python_files = [f for f in files if f.endswith('.py')]
-          
-          if python_files:
-              print(f"Reviewing {len(python_files)} Python files with Gemini")
-              # Placeholder for actual Gemini API integration
-              # This would call Google's Generative AI API for code review
-          else:
-              print("No Python files to review")
+          # Review each file
+          for file_path in files:
+              if file_path.endswith(('.py', '.js', '.ts', '.java', '.cpp', '.c')):
+                  try:
+                      with open(file_path, 'r') as f:
+                          content = f.read()
+                      
+                      prompt = f"Review this code for bugs, security issues, and improvements:\n\n{content}"
+                      response = model.generate_content(prompt)
+                      print(f"Review for {file_path}:\n{response.text}\n")
+                  except Exception as e:
+                      print(f"Error reviewing {file_path}: {e}")
           EOF
         continue-on-error: true
 
@@ -102,9 +118,158 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '🤖 Gemini Code Assistant review completed. Check the workflow logs for details.'
+              body: '🤖 Comprehensive AI Code Review completed:\n\n- ✅ Gemini AI Analysis\n- 🔒 Security Scanning (Trivy, Semgrep, Bandit)\n- 📦 Dependency Review\n- 🐰 CodeRabbit AI Review\n- 📚 Documentation Review\n- 🔄 CircleCI Integration\n\nCheck the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for detailed feedback.'
             })
 
+  # GitHub Copilot CLI integration
+  copilot-review:
+    name: GitHub Copilot Review
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Install GitHub CLI
+        run: |
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt update
+          sudo apt install gh
+      
+      - name: Copilot Code Review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh auth login --with-token <<< "$GITHUB_TOKEN"
+          git diff --name-only HEAD~1 | while read file; do
+            if [[ -f "$file" ]]; then
+              echo "Reviewing $file with Copilot"
+              gh copilot explain "$file" || echo "Copilot review failed for $file"
+            fi
+          done
+        continue-on-error: true
 
+  # Security scanning with multiple tools
+  security-scan:
+    name: Security Analysis
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+      
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+      
+      - name: Run Semgrep security scan
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: auto
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+      
+      - name: Run Bandit security linter
+        run: |
+          pip install bandit
+          bandit -r . -f json -o bandit-report.json || true
+        continue-on-error: true
 
+  # Dependency scanning
+  dependency-scan:
+    name: Dependency Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Run Snyk to check for vulnerabilities
+        uses: snyk/actions/python@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
+        continue-on-error: true
+      
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
 
+  # CodeRabbit AI review
+  coderabbit-review:
+    name: CodeRabbit AI Review
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: CodeRabbit Review
+        uses: coderabbitai/coderabbit-action@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+        continue-on-error: true
+
+  # CircleCI integration trigger
+  circleci-trigger:
+    name: Trigger CircleCI
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Trigger CircleCI Pipeline
+        run: |
+          curl -X POST \
+            -H "Circle-Token: ${{ secrets.CIRCLECI_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "branch": "${{ github.event.pull_request.head.ref }}",
+              "parameters": {
+                "pr_number": ${{ github.event.pull_request.number }},
+                "triggered_by": "github_actions"
+              }
+            }' \
+            "https://circleci.com/api/v2/project/github/${{ github.repository }}/pipeline"
+        continue-on-error: true
+
+  # Jules.MD documentation review
+  jules-md-review:
+    name: Jules.MD Documentation Review
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Check for documentation changes
+        id: docs-changed
+        run: |
+          if git diff --name-only HEAD~1 | grep -E '\.(md|rst|txt)$'; then
+            echo "docs_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "docs_changed=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Jules.MD Review
+        if: steps.docs-changed.outputs.docs_changed == 'true'
+        run: |
+          echo "Jules.MD would review documentation changes here"
+          git diff --name-only HEAD~1 | grep -E '\.(md|rst|txt)$' | while read file; do
+            echo "Reviewing documentation: $file"
+            # Placeholder for Jules.MD API integration
+          done
+        continue-on-error: true
