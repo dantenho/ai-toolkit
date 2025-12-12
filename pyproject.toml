@@ -109,34 +109,34 @@ dependencies = [
     # ------------------------------------------------------------------------
     # Web Scraping and Browser Automation
     # ------------------------------------------------------------------------
-    "playwright>=1.40.0",     # Playwright for browser automation, testing, and web scraping : playwright --> https://playwright.dev/python/docs/intro
-    "firecrawl-py>=0.0.16",   # FireCrawl Python SDK for web crawling and content extraction : firecrawl-py --> https://firecrawl.com/docs/python/
-    "beautifulsoup4>=4.12.2", # BeautifulSoup4 - HTML/XML parser : beautifulsoup4 --> https://www.crummy.com/software/BeautifulSoup/bs4/doc/
-    "lxml>=4.9.3",            # LXML - XML and HTML parser : lxml --> https://lxml.de/
+    "playwright>=1.40.0",     # Playwright for browser automation, testing, and web scraping
+    "firecrawl-py>=0.0.16",   # FireCrawl Python SDK for web crawling and content extraction
+    "beautifulsoup4>=4.12.2", # BeautifulSoup4 - HTML/XML parser
+    "lxml>=4.9.3",            # LXML - XML and HTML parser
     # ------------------------------------------------------------------------
     # AI and Machine Learning (Core)
     # ------------------------------------------------------------------------
-    "google-generativeai>=0.3.0", # Google Generative AI SDK for Gemini API integration : google-generativeai --> https://github.com/google/generative-ai-python
-    "openai>=1.3.0",              # OpenAI - OpenAI API client : openai --> https://github.com/openai/openai-python
-    "langchain>=0.1.0",           # LangChain - Framework for developing LLM applications : langchain --> https://github.com/langchain-ai/langchain
+    "google-generativeai>=0.3.0", # Google Generative AI SDK for Gemini API integration
+    "openai>=1.3.0",              # OpenAI - OpenAI API client
+    "langchain>=0.1.0",           # LangChain - Framework for developing LLM applications
     # ------------------------------------------------------------------------
     # Task Queue and Background Jobs
     # ------------------------------------------------------------------------
-    "celery>=5.3.4", # Celery - Distributed task queue : celery --> https://github.com/celery/celery
-    "redis>=5.0.1",  # Redis - Redis client for Celery broker : redis --> https://github.com/redis/redis-py
+    "celery>=5.3.4", # Celery - Distributed task queue
+    "redis>=5.0.1",  # Redis - Redis client for Celery broker
     # ------------------------------------------------------------------------
     # Data Processing and Utilities
     # ------------------------------------------------------------------------
-    "pandas>=2.1.3",        # Pandas - Data manipulation and analysis : pandas --> https://github.com/pandas-dev/pandas
-    "numpy>=1.26.2",        # NumPy - Numerical computing library : numpy --> https://github.com/numpy/numpy
-    "pyyaml>=6.0.1",        # PyYAML - YAML parser and emitter : pyyaml --> https://github.com/yaml/pyyaml
-    "python-dotenv>=1.0.0", # Python-Dotenv - Load environment variables from .env files : python-dotenv --> https://github.com/theskumar/python-dotenv         
-    "toml>=0.10.2",         # TOML - TOML parser : toml --> https://github.com/uiri/toml
+    "pandas>=2.1.3",        # Pandas - Data manipulation and analysis
+    "numpy>=1.26.2",        # NumPy - Numerical computing library
+    "pyyaml>=6.0.1",        # PyYAML - YAML parser and emitter
+    "python-dotenv>=1.0.0", # Python-Dotenv - Load environment variables from .env files
+    "toml>=0.10.2",         # TOML - TOML parser
     # ------------------------------------------------------------------------
     # Logging and Utilities
     # ------------------------------------------------------------------------
-    "python-json-logger>=2.0.7", # Python-JSON-Logger - JSON formatter for Python logging : python-json-logger --> https://github.com/madzak/python-json-logger
-    "colorlog>=6.8.0",           # Colorlog - Colored logging output : colorlog --> https://github.com/borntyping/colorlog
+    "python-json-logger>=2.0.7", # Python-JSON-Logger - JSON formatter for Python logging
+    "colorlog>=6.8.0",           # Colorlog - Colored logging output
 ]
 
 # ----------------------------------------------------------------------------
@@ -149,20 +149,20 @@ dependencies = [
 # Install with: pip install -e ".[dev]" or uv sync --extra dev
 dev = [
     # Testing framework and utilities
-    "pytest>=7.4.0",          # Modern Python testing framework with fixtures and plugins : pytest --> https://docs.pytest.org/en/latest/
+    "pytest>=7.4.0",          # Modern Python testing framework with fixtures and plugins
     "pytest-asyncio>=0.21.0", # Async test support for testing async/await code
-    "pytest-cov>=4.1.0",      # Coverage reporting plugin for pytest : pytest-cov --> https://github.com/pytest-dev/pytest-cov
-    "pytest-httpx>=0.27.0",   # HTTPX test client for async HTTP request testing : pytest-httpx --> https://github.com/pytest-dev/pytest-httpx
+    "pytest-cov>=4.1.0",      # Coverage reporting plugin for pytest
+    "pytest-httpx>=0.27.0",   # HTTPX test client for async HTTP request testing
     # Code formatting and style enforcement
-    "black>=23.11.0", # Opinionated code formatter (backup to Ruff formatter) : black --> https://github.com/psf/black
-    "ruff>=0.1.6",    # Fast Python linter and formatter (Rust-based, replaces multiple tools) : ruff --> https://github.com/astral-sh/ruff
+    "black>=23.11.0", # Opinionated code formatter (backup to Ruff formatter)
+    "ruff>=0.1.6",    # Fast Python linter and formatter (Rust-based, replaces multiple tools)
     # Type checking and static analysis
-    "mypy>=1.7.0", # Static type checker for Python (PEP 484/526 type annotations) : mypy --> https://github.com/python/mypy
+    "mypy>=1.7.0", # Static type checker for Python (PEP 484/526 type annotations)
     # Git hooks and pre-commit checks
-    "pre-commit>=3.5.0", # Framework for managing git hooks and pre-commit checks : pre-commit --> https://github.com/pre-commit/pre-commit
+    "pre-commit>=3.5.0", # Framework for managing git hooks and pre-commit checks
     # Security scanning tools
-    "bandit>=1.7.5", # Security linter for Python code : bandit --> https://github.com/PyCQA/bandit
-    "safety>=2.3.5", # Dependency vulnerability scanner : safety --> https://github.com/pyupio/safety
+    "bandit>=1.7.5", # Security linter for Python code
+    "safety>=2.3.5", # Dependency vulnerability scanner
 ]
 
 # Machine Learning and Deep Learning dependencies
@@ -170,37 +170,38 @@ dev = [
 # Note: For GPU support, install PyTorch separately with CUDA support
 ml = [
     # Core ML/DL libraries
-    "torch>=2.1.0",         # PyTorch - Deep learning framework (CPU version) : torch --> https://github.com/pytorch/pytorch        
-    "torchvision>=0.16.0",  # TorchVision - Image and video datasets and models : torchvision --> https://github.com/pytorch/vision
-    "torchaudio>=2.1.0",    # TorchAudio - Audio processing library : torchaudio --> https://github.com/pytorch/audio
-    "torchtext>=0.16.0",    # TorchText - Text processing utilities : torchtext --> https://github.com/pytorch/text
-    "transformers>=4.35.0", # Transformers - State-of-the-art NLP models (BERT, GPT, etc.) : transformers --> https://github.com/huggingface/transformers
-    "xformers>=0.0.22",     # XFormers - Efficient Transformer implementations : xformers --> https://github.com/facebookresearch/xformers
+    "torch>=2.1.0",         # PyTorch - Deep learning framework (CPU version)
+    "torchvision>=0.16.0",  # TorchVision - Image and video datasets and models
+    "torchaudio>=2.1.0",    # TorchAudio - Audio processing library
+    "torchtext>=0.16.0",    # TorchText - Text processing utilities
+    "transformers>=4.35.0", # Transformers - State-of-the-art NLP models (BERT, GPT, etc.)
+    "xformers>=0.0.22",     # XFormers - Efficient Transformer implementations
     "tokenizers>=0.15.0",   # Tokenizers - Fast tokenizers for Transformers
-    "accelerate>=0.25.0",   # Accelerate - Easy mixed precision and distributed training : accelerate --> https://github.com/huggingface/accelerate
-    "datasets>=2.14.0",     # Datasets - Hugging Face datasets library : datasets --> https://github.com/huggingface/datasets   
+    "accelerate>=0.25.0",   # Accelerate - Easy mixed precision and distributed training
+    "datasets>=2.14.0",     # Datasets - Hugging Face datasets library
     # ONNX and Model Optimization
-    "onnx>=1.15.0",          # ONNX - Open Neural Network Exchange format : onnx --> https://github.com/onnx/onnx
-    "onnxruntime>=1.16.0",   # ONNX Runtime - High-performance inference engine : onnxruntime --> https://github.com/microsoft/onnxruntime
-    "onnxoptimizer>=0.3.13", # ONNX Optimizer - Optimize ONNX models : onnxoptimizer --> https://github.com/microsoft/onnxoptimizer
-    "optimum>=1.14.0",       # Optimum - Optimization toolkit for Transformers : optimum --> https://github.com/huggingface/optimum
+    "onnx>=1.15.0",          # ONNX - Open Neural Network Exchange format
+    "onnxruntime>=1.16.0",   # ONNX Runtime - High-performance inference engine
+    "onnxoptimizer>=0.3.13", # ONNX Optimizer - Optimize ONNX models
+    "optimum>=1.14.0",       # Optimum - Optimization toolkit for Transformers
     # Data Processing and Visualization
-    "matplotlib>=3.8.2",   # Matplotlib - Comprehensive plotting library : matplotlib --> https://github.com/matplotlib/matplotlib ;
+    "matplotlib>=3.8.2",   # Matplotlib - Comprehensive plotting library
     "seaborn>=0.13.0",     # Seaborn - Statistical data visualization
-    "plotly>=5.18.0",      # Plotly - Interactive plotting library : plotly --> https://github.com/plotly/plotly.py
-    "scikit-learn>=1.3.2", # Scikit-learn - Machine learning library : scikit-learn --> https://github.com/scikit-learn/scikit-learn
-    "Pillow>=10.1.0",      # Pillow - Python Imaging Library for image processing : Pillow --> https://github.com/python-pillow/Pillow   
-    "jupyter>=1.0.0",    # Jupyter - Jupyter notebook support : jupyter --> https://github.com/jupyter/jupyter
-    "ipykernel>=6.27.0", # IPython kernel for Jupyter : ipykernel --> https://github.com/ipython/ipykernel
+    "plotly>=5.18.0",      # Plotly - Interactive plotting library
+    "scikit-learn>=1.3.2", # Scikit-learn - Machine learning library
+    "Pillow>=10.1.0",      # Pillow - Python Imaging Library for image processing
+    "jupyter>=1.0.0",      # Jupyter - Jupyter notebook support
+    "ipykernel>=6.27.0",   # IPython kernel for Jupyter
     # NVIDIA GPU Support Libraries
-    "nvidia-ml-py>=12.535.0", # NVIDIA Management Library Python bindings : nvidia-ml-py --> https://github.com/NVIDIA/nvidia-ml-py
-    "pynvml>=11.5.0",         # Python bindings for NVIDIA Management Library : pynvml --> https://github.com/NVIDIA/pynvml
+    "nvidia-ml-py>=12.535.0", # NVIDIA Management Library Python bindings
+    "pynvml>=11.5.0",         # Python bindings for NVIDIA Management Library
 ]
 
 # All dependencies (dev + ml)
 # Install with: pip install -e ".[all]" or uv sync --extra all
+# Note: This is a convenience group that includes all optional dependencies
 all = [
-    "notebook[dev,ml]", # Include all dev and ml dependencies : notebook[dev,ml] --> https://github.com/notebook-dev/notebook
+    "notebook[dev,ml]", # Include all dev and ml dependencies
 ]
 
 # ----------------------------------------------------------------------------
@@ -208,14 +209,33 @@ all = [
 # ----------------------------------------------------------------------------
 # Defines how the package should be built and which build backend to use.
 # Modern Python packaging uses setuptools as the build backend with wheel support.
+# Compatible with uv, pip, and other PEP 517-compliant build tools.
 [build-system]
 # Build dependencies required to build the package (installed in isolated build environment)
 requires = [
-    "setuptools>=68.0.0", # Setuptools for packaging, wheel for binary distributions : setuptools --> https://github.com/pypa/setuptools    #
-    "wheel>=0.41.0",
-] # Setuptools for packaging, wheel for binary distributions
+    "setuptools>=68.0.0", # Setuptools for packaging (PEP 517 build backend)
+    "wheel>=0.41.0",      # Wheel for binary distributions (modern Python packaging standard)
+]
 # Build backend that handles package building (setuptools PEP 517 implementation)
-build-backend = "setuptools.build_meta" # Standard setuptools build backend
+build-backend = "setuptools.build_meta" # Standard setuptools build backend (PEP 517 compliant)
+
+# ----------------------------------------------------------------------------
+# Package Structure Configuration
+# ----------------------------------------------------------------------------
+# Package discovery configuration for setuptools.
+# Supports both src-layout (src/notebook/) and flat-layout (notebook/) structures.
+# Update this section when the actual package structure is created.
+[tool.setuptools]
+# Package discovery - automatically find packages in the project
+# For flat-layout (notebook/ directory at root):
+packages = ["notebook"] # Package name
+# Alternative: Use find directive for automatic package discovery
+# packages = { find = {} } # Automatically discover all packages
+
+# Package directory configuration (uncomment if using src-layout)
+# [tool.setuptools.packages.find]
+# where = ["src"] # Look for packages in src/ directory
+# include = ["notebook*"] # Include packages starting with "notebook"
 
 # ============================================================================
 # Tool Configurations
@@ -250,74 +270,75 @@ exclude = [
 ]
 
 # Ruff linting rules configuration
-# Note: CI workflow checks for ruff.toml, but configuration is in pyproject.toml : ruff.toml --> https://docs.astral.sh/ruff/configuration/
-# This is the recommended approach per Ruff documentation (PEP 621 compliance) : PEP 621 --> https://peps.python.org/pep-0621/
+# Note: CI workflow checks for ruff.toml, but configuration is in pyproject.toml
+# This is the recommended approach per Ruff documentation (PEP 621 compliance)
 [tool.ruff.lint]
 # Enable specific rule sets - comprehensive coverage of Python best practices
 # These rules enforce code quality, security, and maintainability standards
 select = [
-    "E",   # pycodestyle errors (PEP 8 style guide violations) : pycodestyle --> https://pycodestyle.pycqa.org/en/latest/   
-    "W",   # pycodestyle warnings (style suggestions) : pycodestyle --> https://pycodestyle.pycqa.org/en/latest/   
-    "F",   # Pyflakes (logical errors and unused imports) : Pyflakes --> https://github.com/PyCQA/pyflakes
-    "I",   # isort (import sorting and organization) : isort --> https://github.com/PyCQA/isort
-    "N",   # pep8-naming (naming convention checks) : pep8-naming --> https://github.com/PyCQA/pep8-naming
-    "UP",  # pyupgrade (modernize code to newer Python syntax) : pyupgrade --> https://github.com/astral-sh/pyupgrade
+    "E",   # pycodestyle errors (PEP 8 style guide violations)
+    "W",   # pycodestyle warnings (style suggestions)
+    "F",   # Pyflakes (logical errors and unused imports)
+    "I",   # isort (import sorting and organization)
+    "N",   # pep8-naming (naming convention checks)
+    "UP",  # pyupgrade (modernize code to newer Python syntax)
     "B",   # flake8-bugbear (common bugs and design problems)
-    "C4",  # flake8-comprehensions (comprehension optimization) : flake8-comprehensions --> https://github.com/asottile/flake8-comprehensions       
-    "DTZ", # flake8-datetimez (timezone-aware datetime usage) : flake8-datetimez --> https://github.com/sobolevn/flake8-datetimez
-    "T10", # flake8-debugger (detect debugger statements) : flake8-debugger --> https://github.com/sobolevn/flake8-debugger
-    "EM",  # flake8-errmsg (error message best practices) : flake8-errmsg --> https://github.com/sobolevn/flake8-errmsg
-    "ISC", # flake8-implicit-str-concat (string concatenation issues) : flake8-implicit-str-concat --> https://github.com/sobolevn/flake8-implicit-str-concat
-    "ICN", # flake8-import-conventions (import style conventions) : flake8-import-conventions --> https://github.com/PyCQA/flake8-import-conventions
-    "PIE", # flake8-pie (miscellaneous checks) : flake8-pie --> https://github.com/sobolevn/flake8-pie
-    "PT",  # flake8-pytest-style (pytest best practices) : flake8-pytest-style --> https://github.com/sobolevn/flake8-pytest-style
+    "C4",  # flake8-comprehensions (comprehension optimization)
+    "DTZ", # flake8-datetimez (timezone-aware datetime usage)
+    "T10", # flake8-debugger (detect debugger statements)
+    "EM",  # flake8-errmsg (error message best practices)
+    "ISC", # flake8-implicit-str-concat (string concatenation issues)
+    "ICN", # flake8-import-conventions (import style conventions)
+    "PIE", # flake8-pie (miscellaneous checks)
+    "PT",  # flake8-pytest-style (pytest best practices)
     "Q",   # flake8-quotes (quote style consistency)
-    "RSE", # flake8-raise (exception raising best practices) : flake8-raise --> https://github.com/sobolevn/flake8-raise
-    "RET", # flake8-return (return statement best practices) : flake8-return --> https://github.com/sobolevn/flake8-return
-    "SIM", # flake8-simplify (code simplification opportunities) : flake8-simplify --> https://github.com/sobolevn/flake8-simplify
-    "TID", # flake8-tidy-imports (import organization) : flake8-tidy-imports --> https://github.com/PyCQA/flake8-tidy-imports
-    "TCH", # flake8-type-checking (type checking imports) : flake8-type-checking --> https://github.com/PyCQA/flake8-type-checking
-    "ARG", # flake8-unused-arguments (unused function arguments) : flake8-unused-arguments --> https://github.com/PyCQA/flake8-unused-arguments
-    "PTH", # flake8-use-pathlib (use pathlib instead of os.path) : flake8-use-pathlib --> https://github.com/PyCQA/flake8-use-pathlib
-    "ERA", # eradicate (detect commented-out code) : eradicate --> https://github.com/facebook/eradicate
-    "PD",  # pandas-vet (pandas-specific best practices) : pandas-vet --> https://github.com/pandas-dev/pandas-vet  
-    "PGH", # pygrep-hooks (pattern-based checks) : pygrep-hooks --> https://github.com/PyCQA/pygrep-hooks       
-    "PL",  # Pylint rules (comprehensive code quality) : pylint --> https://github.com/PyCQA/pylint
-    "TRY", # tryceratops (exception handling best practices) : tryceratops --> https://github.com/tryceratops/tryceratops
-    "NPY", # NumPy-specific rules (NumPy best practices) : numpy --> https://github.com/numpy/numpy
-    "RUF", # Ruff-specific rules (Ruff's own rule set) : ruff --> https://github.com/astral-sh/ruff
+    "RSE", # flake8-raise (exception raising best practices)
+    "RET", # flake8-return (return statement best practices)
+    "SIM", # flake8-simplify (code simplification opportunities)
+    "TID", # flake8-tidy-imports (import organization)
+    "TCH", # flake8-type-checking (type checking imports)
+    "ARG", # flake8-unused-arguments (unused function arguments)
+    "PTH", # flake8-use-pathlib (use pathlib instead of os.path)
+    "ERA", # eradicate (detect commented-out code)
+    "PD",  # pandas-vet (pandas-specific best practices)
+    "PGH", # pygrep-hooks (pattern-based checks)
+    "PL",  # Pylint rules (comprehensive code quality)
+    "TRY", # tryceratops (exception handling best practices)
+    "NPY", # NumPy-specific rules (NumPy best practices)
+    "RUF", # Ruff-specific rules (Ruff's own rule set)
 ]
 # Rules to ignore - sometimes necessary for pragmatic code decisions
 ignore = [
-    "E501",    # Line too long (handled by formatter, not linting) : E501 --> https://pycodestyle.pycqa.org/en/latest/intro.html#error-codes
-    "PLR0913", # Too many arguments (sometimes necessary for API design) : PLR0913 --> https://github.com/PyCQA/pylint/blob/main/pylint/extensions/checkers.py#L1161
-    "PLR2004", # Magic value used in comparison (pragmatic exceptions allowed) : PLR2004 --> https://github.com/PyCQA/pylint/blob/main/pylint/extensions/checkers.py#L1161
+    "E501",    # Line too long (handled by formatter, not linting)
+    "PLR0913", # Too many arguments (sometimes necessary for API design)
+    "PLR2004", # Magic value used in comparison (pragmatic exceptions allowed)
 ]
 
 # Ruff import sorting configuration (replaces isort)
+# Documentation: https://docs.astral.sh/ruff/settings/#isort
 [tool.ruff.lint.isort]
 # Known first-party modules - imports from these packages are sorted first
 # Update this when the actual package structure is determined
-known-first-party = ["notebook"] # Project package name for import organization : notebook --> https://github.com/notebook-dev/notebook --> https://isort.readthedocs.io/en/stable/userguide/configuration.html#known-first-party
+known-first-party = ["notebook"] # Project package name for import organization
 # Force sorting within import sections (stdlib, third-party, first-party)
-force-sort-within-sections = true : force-sort-within-sections --> https://isort.readthedocs.io/en/stable/userguide/configuration.html#force-sort-within-sections
+force-sort-within-sections = true
 # Split imports into multiple lines on trailing comma
-split-on-trailing-comma = true : split-on-trailing-comma --> https://isort.readthedocs.io/en/stable/userguide/configuration.html#split-on-trailing-comma
+split-on-trailing-comma = true
 # Combine imports from the same module on a single line
-combine-as-imports = true : combine-as-imports --> https://isort.readthedocs.io/en/stable/userguide/configuration.html#combine-as-imports
+combine-as-imports = true
 # Sort imports alphabetically within each section
-order-by-type = true : order-by-type --> https://isort.readthedocs.io/en/stable/userguide/configuration.html#order-by-type
+order-by-type = true
 
 # Ruff code formatting configuration (replaces black)
 [tool.ruff.format]
 # Quote style preference - double quotes are standard in Python
-quote-style = "double" # Use double quotes for strings ("example" not 'example') : quote-style --> https://isort.readthedocs.io/en/stable/userguide/configuration.html#quote-style
+quote-style = "double" # Use double quotes for strings ("example" not 'example')
 # Indentation style - spaces are standard in Python (PEP 8)
-indent-style = "space" # Use spaces for indentation (4 spaces per level) : indent-style --> https://isort.readthedocs.io/en/stable/userguide/configuration.html#indent-style
+indent-style = "space" # Use spaces for indentation (4 spaces per level)
 # Include magic trailing comma in function calls and definitions
-skip-magic-trailing-comma = false # Preserve trailing commas for better diffs : skip-magic-trailing-comma --> https://isort.readthedocs.io/en/stable/userguide/configuration.html#skip-magic-trailing-comma
+skip-magic-trailing-comma = false # Preserve trailing commas for better diffs
 # Line ending style - auto-detect based on platform (CRLF for Windows, LF for Unix)
-line-ending = "auto" # Platform-appropriate line endings : line-ending --> https://isort.readthedocs.io/en/stable/userguide/configuration.html#line-ending
+line-ending = "auto" # Platform-appropriate line endings
 
 # ----------------------------------------------------------------------------
 # Pytest Configuration - Testing Framework
@@ -326,7 +347,7 @@ line-ending = "auto" # Platform-appropriate line endings : line-ending --> https
 # This configuration defines test discovery, execution options, and markers.
 [tool.pytest.ini_options]
 # Test discovery - directory containing test files
-testpaths = ["tests"] # Look for tests in the 'tests' directory : testpaths --> https://docs.pytest.org/en/latest/reference/reference.html#confval-testpaths
+testpaths = ["tests"] # Look for tests in the 'tests' directory
 # Test file naming patterns - pytest discovers files matching these patterns
 python_files = ["test_*.py", "*_test.py"] # Files starting with 'test_' or ending with '_test.py'
 # Test class naming patterns - pytest discovers classes matching this pattern
@@ -428,6 +449,6 @@ exclude_lines = [
     "class .*\\bProtocol\\):",    # Exclude Protocol classes (structural subtyping)
     "@(abc\\.)?abstractmethod",   # Exclude abstract method decorators
 ]
-# Minimum coverage percentage to enforce (fail if below threshold) #
+# Minimum coverage percentage to enforce (fail if below threshold)
 # Note: This is informational - actual enforcement should be in CI/CD
 fail_under = 80 # Require at least 80% code coverage
