@@ -221,31 +221,134 @@
       "**/.ruff_cache": true, // Exclude Ruff cache from search
       "**/dist": true, // Exclude distribution files from search
       "**/build": true // Exclude build files from search
-    }
+    },
+
+    // --------------------------------------------------------------------------
+    // Workbench UI Configuration
+    // --------------------------------------------------------------------------
+    // State of the Art: Modern VS Code/Cursor workbench configuration
+    // These settings configure the editor window layout and appearance
+    // to match the Source Control-focused view model shown in the reference image
+    
+    // Theme Configuration
+    // State of the Art: Dark theme provides better eye strain reduction and modern aesthetics
+    "workbench.colorTheme": "Default Dark+", // Use default dark theme (matches reference image)
+    "workbench.iconTheme": "vs-seti", // Modern icon theme for better visual distinction
+    
+    // Activity Bar Configuration
+    // State of the Art: Activity bar visibility and positioning for optimal workflow
+    "workbench.activityBar.visible": true, // Show activity bar on the left (matches reference)
+    "workbench.sideBar.location": "left", // Position sidebar on the left side
+    
+    // Source Control Panel Configuration
+    // State of the Art: Git integration and Source Control panel settings
+    // Configure Source Control to be the active view with proper panel behavior
+    "scm.diffDecorations": "all", // Show all diff decorations in Source Control
+    "scm.diffDecorationsGutterVisibility": "always", // Always show diff decorations in gutter
+    "scm.alwaysShowActions": false, // Show actions only when needed (cleaner UI)
+    "scm.alwaysShowRepositories": true, // Always show repository list in Source Control
+    "scm.defaultViewMode": "tree", // Use tree view mode for file changes
+    "scm.inputFontSize": 13, // Font size for commit message input
+    "scm.inputFontFamily": "Consolas, 'Courier New', monospace", // Monospace font for commit messages
+    
+    // Git Configuration
+    // State of the Art: Git integration settings for optimal version control workflow
+    "git.enableSmartCommit": true, // Enable smart commit (stage all changes when committing)
+    "git.confirmSync": false, // Don't confirm before sync operations
+    "git.autofetch": true, // Automatically fetch from remote repositories
+    "git.autofetchPeriod": 180, // Fetch every 3 minutes (180 seconds)
+    "git.decorations.enabled": true, // Enable Git decorations in file explorer
+    "git.enabled": true, // Enable Git integration
+    "git.path": "git", // Use system Git executable
+    "git.scanRepositories": [
+      "." // Scan current workspace for Git repositories
+    ],
+    
+    // Source Control View Configuration
+    // State of the Art: Source Control panel layout and behavior settings
+    "scm.repositories.visible": 10, // Show up to 10 repositories in the list
+    "scm.countBadge": "all", // Show count badge for all changes (staged and unstaged)
+    "scm.inputFontWeight": "normal", // Normal font weight for commit message input
+    
+    // Editor Layout Configuration
+    // State of the Art: Panel and view configuration for optimal development workflow
+    "workbench.panel.defaultLocation": "bottom", // Default panel location (bottom)
+    "workbench.view.alwaysShowHeaderActions": false, // Show header actions when needed
+    "workbench.editor.enablePreview": true, // Enable file preview in editor tabs
+    "workbench.editor.showTabs": "multiple", // Show multiple editor tabs
+    "workbench.editor.tabSizing": "fit", // Fit tabs to available space
+    
+    // Terminal Configuration
+    // State of the Art: Integrated terminal settings for seamless development
+    "terminal.integrated.defaultProfile.windows": "PowerShell", // Use PowerShell on Windows
+    "terminal.integrated.fontSize": 13, // Terminal font size
+    "terminal.integrated.cursorBlinking": true, // Enable cursor blinking in terminal
+    "terminal.integrated.cursorStyle": "line" // Line cursor style in terminal
   },
 
   // ----------------------------------------------------------------------------
   // Extensions Recommendations
   // ----------------------------------------------------------------------------
+  // State of the Art: Comprehensive extension recommendations matching the reference model
+  // These extensions provide the functionality visible in the activity bar and panels
   // Recommended extensions for this workspace
   "extensions": {
     "recommendations": [
       // Python Development
-      "ms-python.python",
-      "ms-python.vscode-pylance",
-      "charliermarsh.ruff",
-      "ms-python.mypy-type-checker",
-      // Formatting
-      "esbenp.prettier-vscode",
-      "EditorConfig.EditorConfig",
+      // State of the Art: Python development ecosystem with modern tooling
+      "ms-python.python", // Official Python extension with IntelliSense and debugging
+      "ms-python.vscode-pylance", // Fast, feature-rich language server for Python
+      "charliermarsh.ruff", // Ruff linter and formatter (replaces multiple Python tools)
+      "ms-python.mypy-type-checker", // Static type checking with mypy
+      
+      // Formatting and Code Quality
+      // State of the Art: Automated code formatting and style enforcement
+      "esbenp.prettier-vscode", // Prettier code formatter for multiple languages
+      "EditorConfig.EditorConfig", // EditorConfig support for consistent coding styles
+      
       // YAML Support
-      "redhat.vscode-yaml",
-      "PascalReitermann93.vscode-yaml-sort",
+      // State of the Art: YAML language support with schema validation
+      "redhat.vscode-yaml", // YAML language support with validation and formatting
+      "PascalReitermann93.vscode-yaml-sort", // YAML file sorting and organization
+      
       // TOML Support
-      "tamasfe.even-better-toml",
-      // Other essential tools
-      "eamodio.gitlens",
-      "GitHub.vscode-pull-request-github"
+      // State of the Art: TOML configuration file support
+      "tamasfe.even-better-toml", // Enhanced TOML language support with formatting
+      
+      // Git and Version Control
+      // State of the Art: Advanced Git integration and GitHub workflow support
+      "eamodio.gitlens", // GitLens - Supercharge Git capabilities (visible in activity bar)
+      "GitHub.vscode-pull-request-github", // GitHub Pull Requests and Issues (visible in activity bar)
+      
+      // Security and Code Analysis
+      // State of the Art: Security vulnerability scanning and code quality analysis
+      "snyk-security.snyk-vulnerability-scanner", // Snyk security scanner (visible in activity bar)
+      
+      // Container and DevOps
+      // State of the Art: Container development and orchestration support
+      "ms-azuretools.vscode-docker", // Docker extension for container management (visible in activity bar)
+      
+      // Remote Development
+      // State of the Art: Remote development and SSH integration
+      "ms-vscode.remote-explorer", // Remote Explorer for SSH, Containers, and WSL (visible in activity bar)
+      
+      // Database Support
+      // State of the Art: Database management and query tools
+      "ms-ossdata.vscode-postgresql", // PostgreSQL database support (visible in activity bar)
+      "cweijan.vscode-database-client2", // Universal database client (alternative)
+      
+      // Collaboration
+      // State of the Art: Real-time collaborative development
+      "ms-vsliveshare.vsliveshare", // Live Share for real-time collaboration (visible in activity bar)
+      
+      // Testing
+      // State of the Art: Integrated testing framework support
+      "ms-python.pytest", // Pytest testing framework integration
+      
+      // Additional Development Tools
+      // State of the Art: Enhanced development experience
+      "ms-vscode.vscode-json", // JSON language support with validation
+      "streetsidesoftware.code-spell-checker" // Code spell checker for documentation
     ]
   }
 }
