@@ -1,6 +1,27 @@
+# ============================================================================
+# GitHub Issue Template Configuration
+# ============================================================================
+# This file configures GitHub issue templates and contact links for the
+# repository. It controls which issue templates are available and provides
+# links for security reporting and other contact methods.
+#
+# Configuration:
+# - blank_issues_enabled: Set to false to require users to use issue templates
+# - contact_links: Provides quick links for common issue types (security, etc.)
+# ============================================================================
+
+# Disable blank issues - users must use issue templates for better organization
+# This ensures all issues have proper structure and required information
 blank_issues_enabled: false
+
+# Contact links for specialized issue reporting
+# These appear as quick links when creating new issues
 contact_links:
+  # Security vulnerability reporting link
+  # IMPORTANT: Replace OWNER/REPO with your actual GitHub username/repository
+  # Example: https://github.com/yourusername/notebook/security/policy
+  # GitHub will automatically replace OWNER/REPO with actual values if left as-is
   - name: Security reports
     url: https://github.com/OWNER/REPO/security/policy
-    about: Please report security issues through the security policy channel.
+    about: Please report security vulnerabilities through our security policy channel. Do not create public issues for security concerns.
 
