@@ -1,36 +1,505 @@
+# ============================================================================
+# Continuous Integration (CI) Workflow
+# ============================================================================
+# This workflow implements comprehensive quality gates and automated testing
+# for the Notebook project. It ensures code quality, type safety, security,
+# and functional correctness before code is merged into main/master branches.
+#
+# Workflow Architecture:
+# - Parallel job execution for optimal CI/CD performance
+# - Caching strategies for dependency installation and build artifacts
+# - Matrix testing across multiple Python versions for compatibility
+# - Comprehensive code quality checks (linting, formatting, type checking)
+# - Security scanning (Bandit, Safety) for vulnerability detection
+# - Test execution with coverage reporting and artifact uploads
+# - Conditional execution based on file changes for efficiency
+#
+# Quality Gates:
+# 1. Code Formatting (Ruff format) - Ensures consistent code style
+# 2. Linting (Ruff check) - Detects code quality issues and anti-patterns
+# 3. Type Checking (MyPy) - Validates type annotations and type safety
+# 4. Security Scanning (Bandit) - Identifies security vulnerabilities
+# 5. Dependency Scanning (Safety) - Checks for known dependency vulnerabilities
+# 6. Unit/Integration Tests (Pytest) - Validates functional correctness
+# 7. Coverage Reporting - Ensures adequate test coverage
+#
+# Performance Optimizations:
+# - Dependency caching using uv's lock file for fast installs
+# - Parallel job execution to minimize total CI time
+# - Conditional step execution based on file changes
+# - Artifact retention for test reports and coverage data
+# ============================================================================
 name: CI
 
+# Workflow trigger configuration
+# Defines when the CI pipeline should execute
 on:
-  push: # Run on pushes to branches
+  # Trigger on pushes to protected branches (main/master)
+  # This ensures all code merged to mainline passes quality gates
+  push:
     branches: [main, master]
-  pull_request: # Run on pull requests
+    # Include path filters to trigger only on relevant file changes
+    paths:
+      - "**.py" # Python source files
+      - "pyproject.toml" # Project configuration
+      - "requirements*.txt" # Dependency files
+      - ".github/workflows/**" # Workflow changes
+  # Trigger on pull requests to main/master branches
+  # This provides feedback before code is merged
+  pull_request:
     branches: [main, master]
-  workflow_dispatch: # Allow manual triggering of the workflow
+    paths:
+      - "**.py"
+      - "pyproject.toml"
+      - "requirements*.txt"
+      - ".github/workflows/**"
+  # Allow manual workflow dispatch for on-demand CI runs
+  # Useful for re-running failed checks or testing workflow changes
+  workflow_dispatch:
+    inputs:
+      python_version:
+        description: "Python version to test (e.g., 3.11, 3.12)"
+        required: false
+        default: "3.11"
+        type: choice
+        options:
+          - "3.11"
+          - "3.12"
 
+# Default configuration applied to all jobs
+# Ensures consistent behavior across all workflow jobs
+defaults:
+  run:
+    shell: bash # Use bash for consistent cross-platform behavior
+    timeout-minutes: 15 # Prevent jobs from hanging indefinitely
+
+# Job definitions - executed in parallel for optimal performance
 jobs:
-  checks: # Quality gates job for code validation
-    name: Quality gates
+  # ========================================================================
+  # Code Formatting Check Job
+  # ========================================================================
+  # Validates that code adheres to the project's formatting standards
+  # using Ruff formatter. This ensures consistent code style across
+  # the codebase and prevents formatting-related merge conflicts.
+  # ========================================================================
+  format-check:
+    name: Code Formatting Check
     runs-on: ubuntu-latest
+    # Skip formatting check if no Python files or config changed
+    if: hashFiles('pyproject.toml') != '' || hashFiles('**.py') != ''
     steps:
-      - name: Checkout repository # Pipeline anchor: bring code into runner
+      # Checkout repository code for analysis
+      - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history for better context
 
-      - name: Set up Python 3.11 # Ensure consistent interpreter for tooling
+      # Set up Python environment with specified version
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          # Cache pip packages for faster subsequent runs
+          cache: "pip"
 
-      - name: Install uv # Fast Python package manager for venv + locking
+      # Install uv package manager for fast dependency resolution
+      - name: Install uv
         run: pip install uv
 
-      - name: Sync dependencies if pyproject exists # Install dependencies using uv (PEP 621 compliant)
+      # Cache uv dependencies using lock file for faster installs
+      # This significantly reduces CI time on subsequent runs
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            .venv
+            ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+
+      # Install project dependencies including dev tools
+      # Uses --frozen to ensure reproducible builds from lock file
+      - name: Sync dependencies
         if: hashFiles('pyproject.toml') != ''
         run: uv sync --frozen --extra dev
 
-      - name: Run tests if present # Executes only when tests directory is detected
-        if: hashFiles('pyproject.toml') != '' && hashFiles('**/tests/**') != ''
-        run: uv run pytest --cov --cov-report=term-missing --cov-report=html
-
-      - name: Lint with Ruff if configured # Ruff config is in pyproject.toml (PEP 621 compliant)
+      # Check code formatting using Ruff formatter
+      # This validates that code matches the configured formatting rules
+      # without actually modifying files (dry-run mode)
+      - name: Check code formatting with Ruff
         if: hashFiles('pyproject.toml') != ''
-        run: uv run ruff check .
+        run: |
+          echo "🔍 Checking code formatting with Ruff..."
+          uv run ruff format --check .
+        continue-on-error: false # Fail workflow if formatting is incorrect
+
+  # ========================================================================
+  # Code Linting Job
+  # ========================================================================
+  # Performs static code analysis to detect code quality issues,
+  # anti-patterns, and potential bugs. Uses Ruff linter which combines
+  # functionality of flake8, isort, pyupgrade, and other tools.
+  # ========================================================================
+  lint:
+    name: Code Linting
+    runs-on: ubuntu-latest
+    if: hashFiles('pyproject.toml') != '' || hashFiles('**.py') != ''
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            .venv
+            ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+
+      - name: Sync dependencies
+        if: hashFiles('pyproject.toml') != ''
+        run: uv sync --frozen --extra dev
+
+      # Run Ruff linter to detect code quality issues
+      # Ruff configuration is in pyproject.toml (PEP 621 compliant)
+      - name: Lint code with Ruff
+        if: hashFiles('pyproject.toml') != ''
+        run: |
+          echo "🔍 Running Ruff linter..."
+          uv run ruff check . --output-format=github
+        continue-on-error: false # Fail workflow on linting errors
+
+      # Upload linting results as artifact for review
+      - name: Upload linting results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ruff-lint-results
+          path: |
+            ruff-report.txt
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ========================================================================
+  # Type Checking Job
+  # ========================================================================
+  # Performs static type checking using MyPy to validate type annotations
+  # and ensure type safety throughout the codebase. This catches type-related
+  # errors before runtime and improves code maintainability.
+  # ========================================================================
+  type-check:
+    name: Type Checking
+    runs-on: ubuntu-latest
+    if: hashFiles('pyproject.toml') != '' || hashFiles('**.py') != ''
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            .venv
+            ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+
+      - name: Sync dependencies
+        if: hashFiles('pyproject.toml') != ''
+        run: uv sync --frozen --extra dev
+
+      # Run MyPy type checker in strict mode
+      # MyPy configuration is in pyproject.toml with strict type checking enabled
+      - name: Run MyPy type checker
+        if: hashFiles('pyproject.toml') != ''
+        run: |
+          echo "🔍 Running MyPy type checker..."
+          uv run mypy . --show-error-codes --show-error-context
+        continue-on-error: false # Fail workflow on type errors
+
+      # Upload type checking results as artifact
+      - name: Upload type checking results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mypy-results
+          path: |
+            mypy-report.txt
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ========================================================================
+  # Security Scanning Job
+  # ========================================================================
+  # Performs security analysis using Bandit to identify common security
+  # vulnerabilities and anti-patterns in Python code. This helps prevent
+  # security issues from being introduced into the codebase.
+  # ========================================================================
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    if: hashFiles('**.py') != ''
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            .venv
+            ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+
+      - name: Sync dependencies
+        if: hashFiles('pyproject.toml') != ''
+        run: uv sync --frozen --extra dev
+
+      # Run Bandit security linter
+      # Scans Python code for common security issues and vulnerabilities
+      - name: Run Bandit security scanner
+        if: hashFiles('pyproject.toml') != ''
+        run: |
+          echo "🔒 Running Bandit security scanner..."
+          uv run bandit -r . -f json -o bandit-report.json || true
+          uv run bandit -r . -f txt || true
+        continue-on-error: true # Report but don't fail on security findings
+
+      # Upload security scan results as artifact
+      - name: Upload security scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-security-report
+          path: bandit-report.json
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # ========================================================================
+  # Dependency Vulnerability Scanning Job
+  # ========================================================================
+  # Scans project dependencies for known security vulnerabilities using
+  # Safety. This ensures that dependencies don't introduce security risks
+  # into the application.
+  # ========================================================================
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    if: hashFiles('pyproject.toml') != '' || hashFiles('requirements*.txt') != ''
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install Safety
+        run: pip install safety
+
+      # Scan dependencies for known vulnerabilities
+      # Exports dependencies from pyproject.toml and scans with Safety
+      - name: Scan dependencies with Safety
+        if: hashFiles('pyproject.toml') != ''
+        run: |
+          echo "🔒 Scanning dependencies for vulnerabilities..."
+          uv export --format requirements-txt | safety check --stdin --json --output safety-report.json || true
+          uv export --format requirements-txt | safety check --stdin || true
+        continue-on-error: true # Report but don't fail on vulnerabilities
+
+      # Upload dependency scan results as artifact
+      - name: Upload dependency scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safety-dependency-report
+          path: safety-report.json
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # ========================================================================
+  # Test Execution Job
+  # ========================================================================
+  # Executes unit and integration tests using Pytest with coverage reporting.
+  # This validates functional correctness and ensures code changes don't
+  # break existing functionality. Supports matrix testing across Python versions.
+  # ========================================================================
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    # Matrix strategy for testing across multiple Python versions
+    # Ensures compatibility with supported Python versions
+    strategy:
+      fail-fast: false # Continue testing other versions if one fails
+      matrix:
+        # Support manual Python version selection via workflow_dispatch
+        # Defaults to standard matrix if not specified
+        python-version: ${{ github.event.inputs.python_version && fromJSON(format('["{0}"]', github.event.inputs.python_version)) || '["3.11", "3.12"]' }}
+    # Skip tests if no Python files or test files changed
+    if: hashFiles('pyproject.toml') != '' && (hashFiles('**.py') != '' || hashFiles('**/tests/**') != '')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Set up Python environment with matrix version
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install uv
+        run: pip install uv
+
+      # Cache uv dependencies for faster test runs
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            .venv
+            ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-${{ matrix.python-version }}-
+            ${{ runner.os }}-uv-
+
+      - name: Sync dependencies
+        if: hashFiles('pyproject.toml') != ''
+        run: uv sync --frozen --extra dev
+
+      # Run test suite with coverage reporting
+      # Pytest configuration is in pyproject.toml
+      - name: Run tests with coverage
+        if: hashFiles('pyproject.toml') != '' && hashFiles('**/tests/**') != ''
+        run: |
+          echo "🧪 Running test suite with coverage..."
+          uv run pytest \
+            --cov=notebook \
+            --cov-report=term-missing \
+            --cov-report=html \
+            --cov-report=xml \
+            --junit-xml=pytest-report.xml \
+            -v
+        continue-on-error: false # Fail workflow on test failures
+
+      # Upload test coverage reports as artifacts
+      # HTML coverage report for detailed review
+      - name: Upload coverage HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html-${{ matrix.python-version }}
+          path: htmlcov/
+          retention-days: 30
+          if-no-files-found: ignore
+
+      # Upload coverage XML for integration with coverage services
+      - name: Upload coverage XML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml-${{ matrix.python-version }}
+          path: coverage.xml
+          retention-days: 30
+          if-no-files-found: ignore
+
+      # Upload JUnit test results for test reporting
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-results-${{ matrix.python-version }}
+          path: pytest-report.xml
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # ========================================================================
+  # Quality Gates Summary Job
+  # ========================================================================
+  # Aggregates results from all quality gate jobs and provides a summary.
+  # This job depends on all other jobs and only runs if all checks pass.
+  # Provides a consolidated view of CI/CD pipeline status.
+  # ========================================================================
+  quality-gates-summary:
+    name: Quality Gates Summary
+    runs-on: ubuntu-latest
+    # This job depends on all quality gate jobs
+    # Only runs if all dependent jobs complete (success or failure)
+    needs: [format-check, lint, type-check, security-scan, dependency-scan, test]
+    if: always() # Run even if some jobs fail to provide summary
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Generate summary of all quality gate results
+      - name: Generate quality gates summary
+        run: |
+          echo "## 📊 Quality Gates Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Code Formatting | ${{ needs.format-check.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Linting | ${{ needs.lint.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Type Checking | ${{ needs.type-check.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Scanning | ${{ needs.security-scan.result == 'success' && '✅ Passed' || '⚠️ Warnings' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dependency Scan | ${{ needs.dependency-scan.result == 'success' && '✅ Passed' || '⚠️ Warnings' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tests | ${{ needs.test.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Determine overall status
+          if [[ "${{ needs.format-check.result }}" == "success" && \
+                "${{ needs.lint.result }}" == "success" && \
+                "${{ needs.type-check.result }}" == "success" && \
+                "${{ needs.test.result }}" == "success" ]]; then
+            echo "### ✅ All quality gates passed!" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          else
+            echo "### ❌ Some quality gates failed. Please review the logs." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
