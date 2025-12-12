@@ -33,7 +33,6 @@ on:
 defaults:
   run:
     shell: bash # Use bash shell for consistent behavior across platforms
-    timeout-minutes: 30 # Prevent jobs from hanging indefinitely
 
 jobs:
   # ========================================================================
@@ -492,8 +491,8 @@ jobs:
         uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: moderate # Fail PR if moderate+ severity issues found
-          deny-licenses: # Block specific licenses (configure as needed)
-          deny-ghsas: # Block specific GitHub Security Advisories
+          # Optional: Configure deny-licenses as array if needed
+          # deny-licenses: ["GPL-2.0", "GPL-3.0"]
 
   # ========================================================================
   # CodeRabbit AI Review Job
@@ -522,14 +521,15 @@ jobs:
           fetch-depth: 0 # Full history for context
 
       - name: CodeRabbit Review
-        # Run CodeRabbit AI review on PR changes
-        uses: coderabbitai/coderabbit-action@v1
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }} # GitHub token for PR comments
-          openai_api_key: ${{ secrets.OPENAI_API_KEY }} # OpenAI API key for CodeRabbit
-          # Optional: Add more CodeRabbit configuration here
-          # language: python
-          # review_simple_changes: false
+        # CodeRabbit Pro is now integrated via GitHub App, not Actions
+        # Install the CodeRabbit Pro app from: https://github.com/apps/coderabbitai
+        # The app will automatically review PRs when installed
+        run: |
+          echo "🐰 CodeRabbit Pro reviews are handled via GitHub App integration"
+          echo "Install the CodeRabbit Pro app for automatic PR reviews"
+          echo "Visit: https://github.com/apps/coderabbitai"
+          echo "PR Number: ${{ github.event.pull_request.number }}"
+          echo "Branch: ${{ github.event.pull_request.head.ref }}"
         continue-on-error: true # Don't fail workflow on CodeRabbit errors
 
   # ========================================================================
