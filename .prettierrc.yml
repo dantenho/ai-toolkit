@@ -70,6 +70,12 @@ overrides:
       tabWidth: 2 # 2 spaces for JS/TS
       semi: true # Use semicolons
       singleQuote: false # Double quotes
+  # YAML files (explicit support)
+  - files: "*.yaml"
+    options:
+      tabWidth: 2 # 2 spaces for YAML
+      singleQuote: false # Double quotes in YAML
+      printWidth: 100 # Match line length with other files
 
 
 

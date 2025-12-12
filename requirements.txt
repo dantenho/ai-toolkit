@@ -1,0 +1,180 @@
+# ============================================================================
+# Python Backend Requirements
+# ============================================================================
+# This file contains Python dependencies for the backend API server.
+# Compatible with Next.js frontend integration.
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Core Framework and Server
+# ----------------------------------------------------------------------------
+# FastAPI - Modern, fast web framework for building APIs
+fastapi>=0.104.1
+# Uvicorn - ASGI server for running FastAPI applications
+uvicorn[standard]>=0.24.0
+# Starlette - Lightweight ASGI framework (FastAPI dependency)
+starlette>=0.27.0
+
+# ----------------------------------------------------------------------------
+# HTTP and API Client Libraries
+# ----------------------------------------------------------------------------
+# HTTPX - Modern HTTP client for async requests
+httpx>=0.25.0
+# Requests - Simple HTTP library for synchronous requests
+requests>=2.31.0
+# Aiohttp - Async HTTP client/server framework
+aiohttp>=3.9.0
+
+# ----------------------------------------------------------------------------
+# Data Validation and Serialization
+# ----------------------------------------------------------------------------
+# Pydantic - Data validation using Python type annotations
+pydantic>=2.5.0
+# Pydantic Settings - Settings management using Pydantic
+pydantic-settings>=2.1.0
+
+# ----------------------------------------------------------------------------
+# Database and ORM
+# ----------------------------------------------------------------------------
+# SQLAlchemy - SQL toolkit and ORM
+sqlalchemy>=2.0.23
+# Alembic - Database migration tool
+alembic>=1.12.1
+# AsyncPG - Async PostgreSQL driver
+asyncpg>=0.29.0
+# Psycopg2 - PostgreSQL adapter (synchronous)
+psycopg2-binary>=2.9.9
+
+# ----------------------------------------------------------------------------
+# Authentication and Security
+# ----------------------------------------------------------------------------
+# Python-JOSE - JWT implementation
+python-jose[cryptography]>=3.3.0
+# Passlib - Password hashing library
+passlib[bcrypt]>=1.7.4
+# Python-Multipart - For handling file uploads
+python-multipart>=0.0.6
+# Cryptography - Cryptographic recipes and primitives
+cryptography>=41.0.7
+
+# ----------------------------------------------------------------------------
+# Monitoring and Observability
+# ----------------------------------------------------------------------------
+# OpenTelemetry API - Observability framework API
+opentelemetry-api>=1.21.0
+# OpenTelemetry SDK - Observability framework SDK
+opentelemetry-sdk>=1.21.0
+# OpenTelemetry Instrumentation - Auto-instrumentation for common libraries
+opentelemetry-instrumentation>=0.42b0
+# OpenTelemetry FastAPI Instrumentation - FastAPI auto-instrumentation
+opentelemetry-instrumentation-fastapi>=0.42b0
+# OpenTelemetry Prometheus Exporter - Prometheus metrics exporter
+opentelemetry-exporter-prometheus>=1.12.0
+# Prometheus Client - Prometheus client library for metrics
+prometheus-client>=0.19.0
+
+# ----------------------------------------------------------------------------
+# Web Scraping and Browser Automation
+# ----------------------------------------------------------------------------
+# Playwright - Browser automation and testing
+playwright>=1.40.0
+# FireCrawl Python SDK - Web crawling and scraping
+firecrawl-py>=0.0.16
+# BeautifulSoup4 - HTML/XML parser
+beautifulsoup4>=4.12.2
+# LXML - XML and HTML parser
+lxml>=4.9.3
+
+# ----------------------------------------------------------------------------
+# AI and Machine Learning
+# ----------------------------------------------------------------------------
+# Google Generative AI SDK - Google's Generative AI API client
+google-generativeai>=0.3.0
+# OpenAI - OpenAI API client
+openai>=1.3.0
+# LangChain - Framework for developing LLM applications
+langchain>=0.1.0
+# NumPy - Numerical computing library
+numpy>=1.26.2
+
+# ----------------------------------------------------------------------------
+# Data Processing
+# ----------------------------------------------------------------------------
+# Pandas - Data manipulation and analysis
+pandas>=2.1.3
+# PyYAML - YAML parser and emitter
+pyyaml>=6.0.1
+# Python-Dotenv - Load environment variables from .env files
+python-dotenv>=1.0.0
+# TOML - TOML parser
+toml>=0.10.2
+
+# ----------------------------------------------------------------------------
+# Task Queue and Background Jobs
+# ----------------------------------------------------------------------------
+# Celery - Distributed task queue
+celery>=5.3.4
+# Redis - Redis client for Celery broker
+redis>=5.0.1
+
+# ----------------------------------------------------------------------------
+# Testing and Development
+# ----------------------------------------------------------------------------
+# Pytest - Testing framework
+pytest>=7.4.3
+# Pytest-Asyncio - Async test support
+pytest-asyncio>=0.21.1
+# Pytest-Cov - Coverage reporting
+pytest-cov>=4.1.0
+# HTTPX Test Client - Test client for async HTTP requests
+pytest-httpx>=0.27.0
+
+# ----------------------------------------------------------------------------
+# Code Quality and Linting
+# ----------------------------------------------------------------------------
+# Ruff - Fast Python linter and formatter
+ruff>=0.1.6
+# MyPy - Static type checker
+mypy>=1.7.1
+# Black - Code formatter (optional, Ruff is preferred)
+black>=23.11.0
+
+# ----------------------------------------------------------------------------
+# Logging and Utilities
+# ----------------------------------------------------------------------------
+# Python-JSON-Logger - JSON formatter for Python logging
+python-json-logger>=2.0.7
+# Colorlog - Colored logging output
+colorlog>=6.8.0
+
+# ----------------------------------------------------------------------------
+# Next.js Integration Dependencies
+# ----------------------------------------------------------------------------
+# CORS middleware for FastAPI (built-in, but listed for reference)
+# FastAPI includes CORS support, but for custom needs:
+# fastapi-cors - Custom CORS implementation (if needed)
+# Note: FastAPI has built-in CORS middleware, so this is optional
+
+# ----------------------------------------------------------------------------
+# Grafana and Monitoring Integration
+# ----------------------------------------------------------------------------
+# Grafana API Client - Grafana API client for dashboard management
+grafana-api>=1.0.3
+
+# ----------------------------------------------------------------------------
+# Environment and Configuration
+# ----------------------------------------------------------------------------
+# PyEnv - Python version management (system-level, not Python package)
+# Note: This is a system tool, not a Python package
+
+# ============================================================================
+# Installation Instructions
+# ============================================================================
+# Install all dependencies:
+#   pip install -r requirements.txt
+#
+# Or using uv (recommended for faster installation):
+#   uv pip install -r requirements.txt
+#
+# For development dependencies, see pyproject.toml [project.optional-dependencies]
+# ============================================================================

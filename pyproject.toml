@@ -1,4 +1,4 @@
-# Python project configuration file (PEP 518/621 compliant)
+# Python project configuration file (PEP 518/621 compliant) 
 # This file centralizes project metadata, dependencies, and tool configurations
 [project]
 name = "notebook" # Project name

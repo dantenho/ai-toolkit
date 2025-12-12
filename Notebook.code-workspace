@@ -1,0 +1,215 @@
+{
+  // ============================================================================
+  // VS Code / Cursor Workspace Configuration
+  // ============================================================================
+  // This workspace file configures the Notebook project with proper settings
+  // for YAML, TOML files, Prettier, and Ruff integration.
+  // ============================================================================
+
+  // ----------------------------------------------------------------------------
+  // Workspace Folders
+  // ----------------------------------------------------------------------------
+  // Define the root folder for this workspace
+  "folders": [
+    {
+      "path": "." // Current directory as workspace root
+    }
+  ],
+
+  // ----------------------------------------------------------------------------
+  // Workspace Settings
+  // ----------------------------------------------------------------------------
+  // These settings apply to the entire workspace and override user settings
+  "settings": {
+    // --------------------------------------------------------------------------
+    // File Associations
+    // --------------------------------------------------------------------------
+    // Associate file types with appropriate language modes
+    "files.associations": {
+      "*.yml": "yaml", // YAML files should use YAML language mode
+      "*.yaml": "yaml", // YAML files with .yaml extension
+      "*.toml": "toml", // TOML files should use TOML language mode
+      "pyproject.toml": "toml", // Python project configuration file
+      "requirements.txt": "pip-requirements" // Python requirements file
+    },
+
+    // --------------------------------------------------------------------------
+    // Default Formatter Configuration
+    // --------------------------------------------------------------------------
+    // Set Prettier as default formatter for supported file types
+    "[yaml]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode", // Prettier for YAML files
+      "editor.formatOnSave": true, // Auto-format YAML files on save
+      "editor.tabSize": 2, // 2 spaces for YAML indentation
+      "editor.insertSpaces": true // Use spaces instead of tabs
+    },
+    "[yml]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode", // Prettier for YML files
+      "editor.formatOnSave": true, // Auto-format YML files on save
+      "editor.tabSize": 2, // 2 spaces for YML indentation
+      "editor.insertSpaces": true // Use spaces instead of tabs
+    },
+    "[toml]": {
+      "editor.defaultFormatter": "tamasfe.even-better-toml", // TOML formatter
+      "editor.formatOnSave": true, // Auto-format TOML files on save
+      "editor.tabSize": 2, // 2 spaces for TOML indentation
+      "editor.insertSpaces": true // Use spaces instead of tabs
+    },
+    "[python]": {
+      "editor.defaultFormatter": "charliermarsh.ruff", // Ruff for Python formatting
+      "editor.formatOnSave": true, // Auto-format Python files on save
+      "editor.codeActionsOnSave": {
+        "source.fixAll": "explicit", // Run Ruff fix on save
+        "source.organizeImports": "explicit" // Organize imports with Ruff
+      },
+      "editor.tabSize": 4, // 4 spaces for Python (PEP 8 standard)
+      "editor.insertSpaces": true // Use spaces instead of tabs
+    },
+    "[json]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode", // Prettier for JSON files
+      "editor.formatOnSave": true, // Auto-format JSON files on save
+      "editor.tabSize": 2, // 2 spaces for JSON indentation
+      "editor.insertSpaces": true // Use spaces instead of tabs
+    },
+    "[markdown]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode", // Prettier for Markdown files
+      "editor.formatOnSave": true, // Auto-format Markdown files on save
+      "editor.tabSize": 2, // 2 spaces for Markdown indentation
+      "editor.insertSpaces": true // Use spaces instead of tabs
+    },
+
+    // --------------------------------------------------------------------------
+    // Ruff Configuration
+    // --------------------------------------------------------------------------
+    // Ruff settings for Python linting and formatting
+    "ruff.enable": true, // Enable Ruff extension
+    "ruff.lint.enable": true, // Enable Ruff linting
+    "ruff.format.args": [
+      "--line-length=100" // Match pyproject.toml line-length setting
+    ],
+    "ruff.lint.args": [
+      "--select=E,W,F,I,N,UP,B,C4,DTZ,T10,EM,ISC,ICN,PIE,PT,Q,RSE,RET,SIM,TID,TCH,ARG,PTH,ERA,PD,PGH,PL,TRY,NPY,RUF" // Match pyproject.toml select rules
+    ],
+
+    // --------------------------------------------------------------------------
+    // Prettier Configuration
+    // --------------------------------------------------------------------------
+    // Prettier settings for YAML, JSON, Markdown formatting
+    "prettier.enable": true, // Enable Prettier extension
+    "prettier.configPath": ".prettierrc.yml", // Use project Prettier config
+    "prettier.ignorePath": ".prettierignore", // Use project Prettier ignore file
+    "prettier.requireConfig": false, // Don't require config file (use defaults if missing)
+    "prettier.useEditorConfig": true, // Respect EditorConfig settings
+
+    // --------------------------------------------------------------------------
+    // YAML Language Server Configuration
+    // --------------------------------------------------------------------------
+    // YAML language server settings for validation and schema support
+    "yaml.schemas": {
+      // GitHub Actions workflow schema
+      "https://json.schemastore.org/github-workflow.json": [
+        ".github/workflows/*.yml",
+        ".github/workflows/*.yaml"
+      ],
+      // Dependabot configuration schema
+      "https://json.schemastore.org/dependabot-2.0.json": [
+        ".github/dependabot.yml",
+        ".github/dependabot.yaml"
+      ]
+    },
+    "yaml.customTags": [
+      "!And",
+      "!If",
+      "!Not",
+      "!Equals",
+      "!Or",
+      "!FindInMap sequence",
+      "!Base64",
+      "!Cidr",
+      "!Ref",
+      "!Sub",
+      "!GetAtt",
+      "!GetAZs",
+      "!ImportValue",
+      "!Select",
+      "!Split",
+      "!Join sequence"
+    ],
+    "yaml.format.enable": true, // Enable YAML formatting
+    "yaml.format.singleQuote": false, // Use double quotes (match Prettier config)
+    "yaml.format.bracketSpacing": true, // Add spaces inside brackets
+    "yaml.format.proseWrap": "preserve", // Preserve prose wrapping
+    "yaml.format.printWidth": 100, // Match Prettier printWidth
+
+    // --------------------------------------------------------------------------
+    // TOML Language Support
+    // --------------------------------------------------------------------------
+    // TOML language server settings
+    "evenBetterToml.schema.enabled": true, // Enable TOML schema validation
+    "evenBetterToml.formatter.enabled": true, // Enable TOML formatting
+    "evenBetterToml.formatter.columnWidth": 100, // Match line length settings
+
+    // --------------------------------------------------------------------------
+    // Editor Settings
+    // --------------------------------------------------------------------------
+    // General editor configuration
+    "editor.formatOnSave": true, // Format files automatically on save
+    "editor.formatOnPaste": false, // Don't format on paste (can be disruptive)
+    "editor.codeActionsOnSave": {
+      "source.fixAll": "explicit", // Run all auto-fixable actions on save
+      "source.organizeImports": "explicit" // Organize imports on save
+    },
+    "editor.rulers": [100], // Show ruler at 100 characters (matches Ruff/Prettier)
+    "editor.trimAutoWhitespace": true, // Remove trailing whitespace
+    "files.trimTrailingWhitespace": true, // Trim trailing whitespace on save
+    "files.insertFinalNewline": true, // Insert final newline on save
+    "files.encoding": "utf8", // Use UTF-8 encoding (matches agent rules)
+
+    // --------------------------------------------------------------------------
+    // File Exclusions
+    // --------------------------------------------------------------------------
+    // Exclude certain files from file explorer and search
+    "files.exclude": {
+      "**/__pycache__": true, // Hide Python cache directories
+      "**/*.pyc": true, // Hide compiled Python files
+      "**/.pytest_cache": true, // Hide pytest cache
+      "**/.mypy_cache": true, // Hide mypy cache
+      "**/.ruff_cache": true // Hide Ruff cache
+    },
+    "search.exclude": {
+      "**/node_modules": true, // Exclude node_modules from search
+      "**/__pycache__": true, // Exclude Python cache from search
+      "**/*.pyc": true, // Exclude compiled Python files from search
+      "**/.pytest_cache": true, // Exclude pytest cache from search
+      "**/.mypy_cache": true, // Exclude mypy cache from search
+      "**/.ruff_cache": true, // Exclude Ruff cache from search
+      "**/dist": true, // Exclude distribution files from search
+      "**/build": true // Exclude build files from search
+    }
+  },
+
+  // ----------------------------------------------------------------------------
+  // Extensions Recommendations
+  // ----------------------------------------------------------------------------
+  // Recommended extensions for this workspace
+  "extensions": {
+    "recommendations": [
+      // Python Development
+      "ms-python.python",
+      "ms-python.vscode-pylance",
+      "charliermarsh.ruff",
+      "ms-python.mypy-type-checker",
+      // Formatting
+      "esbenp.prettier-vscode",
+      "EditorConfig.EditorConfig",
+      // YAML Support
+      "redhat.vscode-yaml",
+      "PascalReitermann93.vscode-yaml-sort",
+      // TOML Support
+      "tamasfe.even-better-toml",
+      // Other essential tools
+      "eamodio.gitlens",
+      "GitHub.vscode-pull-request-github"
+    ]
+  }
+}

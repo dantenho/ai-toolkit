@@ -45,6 +45,6 @@
    - Run lint checks to ensure code quality
    - Verify that no new linting issues are introduced
 
-
-
+## Markdown File Restriction
+#10 - **Avoid creating additional .MD files** - Do not create any new Markdown (.md or .MD) files beyond the existing documentation files (Agens.MD, ComfyUI_Remote_Access_Tutorial.md, and GitHub templates). All documentation should be consolidated within existing files or added to appropriate sections of the current documentation structure. This prevents documentation fragmentation and maintains a clean project structure.
 
