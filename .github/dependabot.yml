@@ -7,8 +7,8 @@
 # Dependabot helps maintain security and keep dependencies up-to-date by:
 # - Monitoring dependency versions for security vulnerabilities
 # - Creating PRs for dependency updates
-# - Grouping related updates together
 # - Following configured versioning strategies
+# - Organizing updates with labels and commit messages
 #
 # Documentation: https://docs.github.com/en/code-security/dependabot
 # ============================================================================
@@ -27,23 +27,9 @@ updates:
       interval: "weekly" # Check for updates weekly (options: daily, weekly, monthly)
       day: "monday" # Day of week for weekly checks (monday-sunday)
       time: "09:00" # Time in UTC (HH:MM format)
-      timezone: "UTC" # Timezone for scheduling
+      timezone: "Etc/UTC" # Timezone for scheduling (must be a valid IANA timezone)
     # Limit number of open PRs to prevent overwhelming the team
     open-pull-requests-limit: 5
-    # Group updates to reduce PR volume
-    groups:
-      production-dependencies: # Group name for production dependencies
-        dependency-type: "production" # Only production dependencies
-        update-types: # Types of updates to include in group
-          - "minor" # Minor version updates
-          - "patch" # Patch version updates
-      development-dependencies: # Group name for development dependencies
-        dependency-type: "development" # Only development dependencies
-        update-types:
-          - "minor"
-          - "patch"
-    # Versioning strategy for dependency updates
-    versioning-strategy: increase # Always increase version requirements
     # Labels to add to PRs for filtering and automation
     labels:
       - "dependencies"
@@ -64,15 +50,9 @@ updates:
       interval: "weekly" # Check for updates weekly
       day: "monday" # Day of week for weekly checks
       time: "09:00" # Time in UTC
-      timezone: "UTC" # Timezone for scheduling
+      timezone: "Etc/UTC" # Timezone for scheduling (must be a valid IANA timezone)
     # Limit number of open PRs for Actions updates
     open-pull-requests-limit: 3
-    # Group all GitHub Actions updates together
-    groups:
-      github-actions-updates:
-        update-types:
-          - "minor"
-          - "patch"
     # Labels for GitHub Actions PRs
     labels:
       - "dependencies"
@@ -92,15 +72,9 @@ updates:
       interval: "weekly" # Check for updates weekly
       day: "monday" # Day of week for weekly checks
       time: "09:00" # Time in UTC
-      timezone: "UTC" # Timezone for scheduling
+      timezone: "Etc/UTC" # Timezone for scheduling (must be a valid IANA timezone)
     # Limit number of open PRs for Docker updates
     open-pull-requests-limit: 3
-    # Group Docker updates together
-    groups:
-      docker-updates:
-        update-types:
-          - "minor"
-          - "patch"
     # Labels for Docker PRs
     labels:
       - "dependencies"
@@ -121,19 +95,8 @@ updates:
   #     interval: "weekly"
   #     day: "monday"
   #     time: "09:00"
-  #     timezone: "UTC"
+  #     timezone: "Etc/UTC"
   #   open-pull-requests-limit: 5
-  #   groups:
-  #     npm-production-dependencies:
-  #       dependency-type: "production"
-  #       update-types:
-  #         - "minor"
-  #         - "patch"
-  #     npm-development-dependencies:
-  #       dependency-type: "development"
-  #       update-types:
-  #         - "minor"
-  #         - "patch"
   #   labels:
   #     - "dependencies"
   #     - "npm"
@@ -148,7 +111,9 @@ updates:
 # ============================================================================
 # - Dependabot requires write access to create pull requests
 # - Security updates are checked separately and always create PRs immediately
-# - Major version updates are excluded from groups to allow manual review
+# - Major version updates may require manual review before merging
 # - PRs can be auto-merged if CI/CD passes and auto-merge is enabled
-# - Use labels and groups to organize and prioritize dependency updates
+# - Use labels to organize and prioritize dependency updates
+# - Weekly schedule on Monday mornings (UTC) provides predictable update cadence
+# - Open PR limits prevent overwhelming the team with too many updates at once
 # ============================================================================
