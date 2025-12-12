@@ -1,0 +1,26 @@
+# Bytecode and compiled
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+.venv/
+venv/
+
+# Packaging/build artifacts
+dist/
+build/
+*.egg-info/
+
+# Editor/IDE noise
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# System files
+.DS_Store
+Thumbs.db
+

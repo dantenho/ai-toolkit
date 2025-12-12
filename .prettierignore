@@ -1,0 +1,60 @@
+# Prettier ignore file - files and directories to skip formatting
+
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Generated files
+*.min.js
+*.min.css
+
+# Lock files
+package-lock.json
+yarn.lock
+poetry.lock
+uv.lock
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+
+# Git
+.git/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python files (use Ruff instead)
+*.py
+
+# Binary files
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.ico
+*.svg
+*.woff
+*.woff2
+*.ttf
+*.eot
+
+# Documentation builds
+docs/_build/
+site/
+
+
+
+

@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push: # Run on pushes to branches
+    branches: [main, master]
+  pull_request: # Run on pull requests
+    branches: [main, master]
+  workflow_dispatch: # Allow manual triggering of the workflow
+
+jobs:
+  checks: # Quality gates job for code validation
+    name: Quality gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository # Pipeline anchor: bring code into runner
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11 # Ensure consistent interpreter for tooling
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv # Fast Python package manager for venv + locking
+        run: pip install uv
+
+      - name: Sync dependencies if pyproject exists # Guarded install to avoid failures on empty repo
+        if: hashFiles('pyproject.toml') != ''
+        run: uv sync --frozen
+
+      - name: Run tests if present # Executes only when tests directory is detected
+        if: hashFiles('pyproject.toml') != '' && hashFiles('**/tests/**') != ''
+        run: uv run pytest
+
+      - name: Lint with Ruff if configured # Skips when config is missing
+        if: hashFiles('pyproject.toml') != '' && hashFiles('ruff.toml') != ''
+        run: uv run ruff check .

@@ -1,0 +1,221 @@
+# Python project configuration file (PEP 518/621 compliant)
+# This file centralizes project metadata, dependencies, and tool configurations
+[project]
+name = "notebook" # Project name
+version = "0.1.0" # Semantic versioning: major.minor.patch
+description = "Notebook project with comprehensive tooling and monitoring" # Project description
+readme = "README.md" # Path to README file
+requires-python = ">=3.11" # Minimum Python version requirement
+license = {text = "MIT"} # License type
+authors = [
+    {name = "Notebook Team", email = "team@notebook.dev"} # Project authors
+]
+keywords = ["notebook", "python", "monitoring", "ai"] # Project keywords for discovery
+classifiers = [ # PyPI classifiers for project categorization
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+# Project dependencies
+dependencies = [
+    "opentelemetry-api>=1.21.0", # OpenTelemetry API for observability
+    "opentelemetry-sdk>=1.21.0", # OpenTelemetry SDK implementation
+    "opentelemetry-instrumentation>=0.42b0", # Auto-instrumentation for common libraries
+    "opentelemetry-exporter-prometheus>=1.12.0", # Prometheus metrics exporter
+    "firecrawl-py>=0.0.16", # FireCrawl Python SDK for web crawling
+    "playwright>=1.40.0", # Playwright for browser automation and testing
+    "google-generativeai>=0.3.0", # Google Generative AI SDK
+    "prometheus-client>=0.19.0", # Prometheus client library for metrics
+    "grafana-api>=1.0.3", # Grafana API client for dashboard management
+]
+
+# Optional development dependencies
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0", # Testing framework
+    "pytest-asyncio>=0.21.0", # Async test support
+    "pytest-cov>=4.1.0", # Coverage reporting
+    "black>=23.11.0", # Code formatter (alternative to Prettier for Python)
+    "mypy>=1.7.0", # Static type checker
+    "pre-commit>=3.5.0", # Git hooks framework
+]
+
+# Build system configuration (PEP 517)
+[build-system]
+requires = ["setuptools>=68.0.0", "wheel>=0.41.0"] # Build dependencies
+build-backend = "setuptools.build_meta" # Build backend implementation
+
+# Ruff configuration for fast Python linting and formatting
+[tool.ruff]
+# Ruff version to use
+version = "0.1.6" # Ruff version specification
+# Python version target
+target-version = "py311" # Target Python 3.11+ syntax
+# Line length for code formatting
+line-length = 100 # Maximum line length (can be adjusted)
+# Exclude directories from linting
+exclude = [
+    ".git", # Git directory
+    ".venv", # Virtual environment
+    "venv", # Alternative venv directory
+    "__pycache__", # Python cache
+    "build", # Build artifacts
+    "dist", # Distribution files
+    ".eggs", # Setuptools eggs
+    "*.egg-info", # Package metadata
+]
+
+# Ruff linting rules
+[tool.ruff.lint]
+# Enable specific rule sets
+select = [
+    "E", # pycodestyle errors
+    "W", # pycodestyle warnings
+    "F", # Pyflakes
+    "I", # isort (import sorting)
+    "N", # pep8-naming
+    "UP", # pyupgrade (modernize code)
+    "B", # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "DTZ", # flake8-datetimez
+    "T10", # flake8-debugger
+    "EM", # flake8-errmsg
+    "ISC", # flake8-implicit-str-concat
+    "ICN", # flake8-import-conventions
+    "PIE", # flake8-pie
+    "PT", # flake8-pytest-style
+    "Q", # flake8-quotes
+    "RSE", # flake8-raise
+    "RET", # flake8-return
+    "SIM", # flake8-simplify
+    "TID", # flake8-tidy-imports
+    "TCH", # flake8-type-checking
+    "ARG", # flake8-unused-arguments
+    "PTH", # flake8-use-pathlib
+    "ERA", # eradicate (commented code)
+    "PD", # pandas-vet
+    "PGH", # pygrep-hooks
+    "PL", # Pylint
+    "TRY", # tryceratops
+    "NPY", # NumPy-specific rules
+    "RUF", # Ruff-specific rules
+]
+# Ignore specific rules
+ignore = [
+    "E501", # Line too long (handled by formatter)
+    "PLR0913", # Too many arguments (sometimes necessary)
+    "PLR2004", # Magic value used in comparison
+]
+
+# Ruff import sorting configuration
+[tool.ruff.lint.isort]
+# Known first-party modules
+known-first-party = ["notebook"] # Project package name
+# Import section ordering
+force-sort-within-sections = true # Sort imports within sections
+# Split imports into sections
+split-on-trailing-comma = true # Split on trailing comma
+
+# Ruff formatting configuration
+[tool.ruff.format]
+# Quote style preference
+quote-style = "double" # Use double quotes (can be "single" or "double")
+# Indent style
+indent-style = "space" # Use spaces for indentation
+# Skip magic trailing comma
+skip-magic-trailing-comma = false # Include trailing commas
+# Line ending style
+line-ending = "auto" # Auto-detect line endings
+
+# Pytest configuration
+[tool.pytest.ini_options]
+# Test discovery patterns
+testpaths = ["tests"] # Directory containing tests
+# Python files pattern
+python_files = ["test_*.py", "*_test.py"] # Test file naming patterns
+# Python classes pattern
+python_classes = ["Test*"] # Test class naming patterns
+# Python functions pattern
+python_functions = ["test_*"] # Test function naming patterns
+# Minimum Python version
+minversion = "7.0" # Minimum pytest version
+# Add options
+addopts = [
+    "-ra", # Show extra test summary info
+    "--strict-markers", # Strict marker validation
+    "--strict-config", # Strict configuration validation
+    "--cov=notebook", # Coverage for notebook package
+    "--cov-report=html", # HTML coverage report
+    "--cov-report=term-missing", # Terminal coverage with missing lines
+]
+# Markers for test categorization
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+# MyPy type checking configuration
+[tool.mypy]
+# Python version for type checking
+python_version = "3.11" # Target Python version
+# Enable strict type checking
+strict = true # Enable all strict type checking options
+# Warn about missing imports
+warn_unused_ignores = true # Warn about unused type: ignore comments
+# Warn about redundant casts
+warn_redundant_casts = true # Warn about unnecessary type casts
+# Warn about untyped definitions
+warn_unused_configs = true # Warn about unused configuration options
+# Disallow untyped calls
+disallow_untyped_calls = true # Require type annotations for function calls
+# Disallow untyped definitions
+disallow_untyped_defs = true # Require type annotations for function definitions
+# Disallow incomplete stubs
+disallow_incomplete_defs = true # Require complete type annotations
+# Check untyped definitions
+check_untyped_defs = true # Type check untyped function definitions
+# No implicit optional
+no_implicit_optional = true # Require explicit Optional for None defaults
+# Warn about return any
+warn_return_any = true # Warn about returning Any type
+# Warn about unused ignores
+warn_unused_configs = true # Warn about unused configuration
+# Show error codes
+show_error_codes = true # Show error codes in output
+# Namespace packages
+namespace_packages = true # Support namespace packages
+# Explicit packages
+explicit_packages = true # Require explicit package structure
+
+# Coverage configuration
+[tool.coverage.run]
+# Source directories to cover
+source = ["notebook"] # Package to measure coverage for
+# Omit patterns
+omit = [
+    "*/tests/*", # Exclude test files
+    "*/test_*.py", # Exclude test files
+    "*/__pycache__/*", # Exclude cache
+    "*/setup.py", # Exclude setup files
+]
+
+[tool.coverage.report]
+# Exclude lines from coverage
+exclude_lines = [
+    "pragma: no cover", # Exclude pragma comments
+    "def __repr__", # Exclude __repr__ methods
+    "raise AssertionError", # Exclude assertion errors
+    "raise NotImplementedError", # Exclude NotImplementedError
+    "if __name__ == .__main__.:", # Exclude main blocks
+    "if TYPE_CHECKING:", # Exclude type checking blocks
+    "@abstractmethod", # Exclude abstract methods
+]
+
+
+
+

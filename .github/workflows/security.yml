@@ -1,0 +1,102 @@
+# Security scanning workflow using GitHub's CodeQL and additional security tools
+# This workflow performs automated security analysis on code changes
+name: Security Scan
+
+on:
+  push: # Run on pushes to protected branches
+    branches: [main, master]
+  pull_request: # Run on all pull requests
+    branches: [main, master]
+  schedule: # Run weekly security scans
+    - cron: '0 0 * * 1' # Every Monday at midnight UTC
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  # CodeQL analysis for multiple languages
+  codeql-analysis:
+    name: CodeQL Security Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read # Required for all workflows
+      contents: read # Required to checkout code
+      security-events: write # Required to upload results to GitHub Security tab
+
+    strategy:
+      fail-fast: false # Continue even if one language fails
+      matrix:
+        language: ['python', 'javascript'] # Languages to analyze
+
+    steps:
+      - name: Checkout repository # Get source code for analysis
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL # Set up CodeQL analysis engine
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }} # Analyze specified language
+          queries: +security-and-quality # Include security and quality queries
+
+      - name: Autobuild # Automatically build the codebase
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis # Run security analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}" # Categorize results by language
+
+  # Dependency vulnerability scanning
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository # Get source code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11 # Python environment for scanning
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv # Fast Python package manager
+        run: pip install uv
+
+      - name: Install safety # Security vulnerability scanner for Python dependencies
+        run: pip install safety
+
+      - name: Run safety check # Scan dependencies for known vulnerabilities
+        if: hashFiles('pyproject.toml') != '' || hashFiles('requirements*.txt') != ''
+        run: |
+          if [ -f "pyproject.toml" ]; then
+            uv export --format requirements-txt | safety check --stdin
+          elif [ -f "requirements.txt" ]; then
+            safety check --file requirements.txt
+          fi
+        continue-on-error: true # Don't fail workflow on vulnerabilities, just report
+
+      - name: Upload safety results # Upload scan results as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safety-report
+          path: safety-report.json
+          retention-days: 30
+
+  # Secret scanning
+  secret-scan:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository # Get source code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history for secret scanning
+
+      - name: Run Gitleaks # Scan for hardcoded secrets and credentials
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # GitHub token for scanning
+        continue-on-error: true # Report but don't fail on secrets found
+
+
+
+

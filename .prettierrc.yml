@@ -1,0 +1,76 @@
+# Prettier configuration for code formatting
+# Prettier is primarily for JavaScript/TypeScript/JSON/YAML, but can format various file types
+# For Python, Ruff formatter is recommended (configured in pyproject.toml)
+
+# Print width - maximum line length
+printWidth: 100 # Match Ruff's line-length setting
+
+# Tab width - number of spaces per indentation level
+tabWidth: 2 # Standard for YAML/JSON/JS
+
+# Use tabs instead of spaces
+useTabs: false # Use spaces for consistency
+
+# Semicolons at end of statements
+semi: true # Add semicolons in JS/TS
+
+# Single quotes vs double quotes
+singleQuote: false # Use double quotes (match Ruff config)
+
+# Quote style for object properties
+quoteProps: "as-needed" # Only add quotes when necessary
+
+# Trailing commas
+trailingComma: "es5" # Trailing commas where valid in ES5
+
+# Bracket spacing
+bracketSpacing: true # Add spaces inside object brackets { foo: bar }
+
+# Arrow function parentheses
+arrowParens: "always" # Always include parentheses: (x) => x
+
+# End of line style
+endOfLine: "lf" # Unix-style line endings (LF)
+
+# Embedded language formatting
+embeddedLanguageFormatting: "auto" # Format embedded code in markdown, etc.
+
+# HTML whitespace sensitivity
+htmlWhitespaceSensitivity: "css" # Respect CSS display property
+
+# Insert Pragma (add @format comment)
+insertPragma: false # Don't require @format comments
+
+# Require Pragma (only format files with @format comment)
+requirePragma: false # Format all files, not just those with pragma
+
+# Prose wrap (for markdown)
+proseWrap: "preserve" # Don't wrap prose in markdown
+
+# File extensions to format
+overrides:
+  # YAML files
+  - files: "*.yml"
+    options:
+      tabWidth: 2 # 2 spaces for YAML
+      singleQuote: false # Double quotes in YAML
+  # JSON files
+  - files: "*.json"
+    options:
+      tabWidth: 2 # 2 spaces for JSON
+      printWidth: 80 # Shorter lines for JSON
+  # Markdown files
+  - files: "*.md"
+    options:
+      proseWrap: "preserve" # Don't wrap markdown prose
+      printWidth: 100 # Allow longer lines in markdown
+  # JavaScript/TypeScript
+  - files: "*.{js,jsx,ts,tsx}"
+    options:
+      tabWidth: 2 # 2 spaces for JS/TS
+      semi: true # Use semicolons
+      singleQuote: false # Double quotes
+
+
+
+
