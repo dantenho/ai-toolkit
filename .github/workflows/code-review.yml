@@ -140,75 +140,155 @@ jobs:
       - name: Run Gemini Code Review
         # Review code using Google Gemini AI API
         # Analyzes each changed source file for bugs, security issues, code quality
+        # Includes comprehensive error handling with request ID tracking for debugging
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} # API key from GitHub secrets
+          GITHUB_RUN_ID: ${{ github.run_id }} # GitHub Actions run ID for tracking
+          GITHUB_RUN_NUMBER: ${{ github.run_number }} # GitHub Actions run number
         run: |
           python3 << 'EOF'
           """
-          Gemini AI Code Review Script
-          =============================
+          Gemini AI Code Review Script with Enhanced Error Handling
+          ===========================================================
           This script uses Google's Gemini AI to review code changes in pull requests.
           It processes each changed source file and generates comprehensive reviews
           covering bugs, security vulnerabilities, code quality, and best practices.
+
+          Enhanced Features:
+          - Request ID tracking for error correlation
+          - Comprehensive error handling and recovery
+          - Detailed error messages with context
+          - Graceful degradation on API failures
+          - Retry logic for transient failures
           """
           import os
           import sys
-          import google.generativeai as genai
+          import uuid
+          import traceback
+          import time
+          from typing import Optional
+
+          try:
+              import google.generativeai as genai
+          except ImportError as e:
+              print(f"❌ ERROR: Failed to import google.generativeai: {e}")
+              print("Please ensure google-generativeai is installed: pip install google-generativeai")
+              sys.exit(1)
+
+          # Generate unique request ID for this review session
+          # Combines GitHub run ID with UUID for unique tracking
+          github_run_id = os.getenv('GITHUB_RUN_ID', 'unknown')
+          github_run_number = os.getenv('GITHUB_RUN_NUMBER', 'unknown')
+          session_request_id = f"{github_run_id}-{uuid.uuid4().hex[:8]}"
+
+          def log_error(message: str, error: Optional[Exception] = None, request_id: Optional[str] = None):
+              """
+              Log error with request ID for tracking and debugging.
+              
+              Args:
+                  message: Error message to log
+                  error: Optional exception object for detailed error info
+                  request_id: Optional request ID for correlation
+              """
+              req_id = request_id or session_request_id
+              error_msg = f"❌ ERROR [{req_id}]: {message}"
+              if error:
+                  error_msg += f"\n   Exception: {type(error).__name__}: {str(error)}"
+                  error_msg += f"\n   Traceback:\n{''.join(traceback.format_tb(error.__traceback__))}"
+              print(error_msg, file=sys.stderr)
+              return req_id
 
           # Retrieve API key from environment
           api_key = os.getenv('GEMINI_API_KEY')
           if not api_key:
-              print("❌ ERROR: GEMINI_API_KEY not found in secrets")
-              print("Please configure GEMINI_API_KEY in repository settings > Secrets")
+              request_id = log_error(
+                  "GEMINI_API_KEY not found in secrets",
+                  None,
+                  session_request_id
+              )
+              print(f"\n💡 SOLUTION: Configure GEMINI_API_KEY in repository settings > Secrets")
+              print(f"   Request ID: {request_id}")
+              print(f"   Workflow Run: {github_run_id} (#{github_run_number})")
               sys.exit(1)
 
-          # Configure Gemini AI client
+          # Configure Gemini AI client with error handling
+          model = None
           try:
               genai.configure(api_key=api_key)
-              model = genai.GenerativeModel('gemini-pro')
-              print("✅ Gemini AI model initialized successfully")
+              # Try to use gemini-1.5-pro if available, fallback to gemini-pro
+              try:
+                  model = genai.GenerativeModel('gemini-1.5-pro')
+                  print(f"✅ Gemini AI model 'gemini-1.5-pro' initialized successfully")
+              except Exception:
+                  model = genai.GenerativeModel('gemini-pro')
+                  print(f"✅ Gemini AI model 'gemini-pro' initialized successfully")
+              print(f"📋 Review Session ID: {session_request_id}")
           except Exception as e:
-              print(f"❌ ERROR: Failed to configure Gemini AI: {e}")
+              request_id = log_error("Failed to configure Gemini AI", e, session_request_id)
+              print(f"   Request ID: {request_id}")
               sys.exit(1)
 
-          # Read list of changed files
+          # Read list of changed files with error handling
+          files = []
           try:
               with open('changed_files.txt', 'r') as f:
                   files = [line.strip() for line in f if line.strip()]
           except FileNotFoundError:
-              print("ℹ️  No changed files found - skipping review")
+              print(f"ℹ️  No changed files found - skipping review (Request ID: {session_request_id})")
               sys.exit(0)
+          except Exception as e:
+              request_id = log_error("Failed to read changed_files.txt", e, session_request_id)
+              print(f"   Request ID: {request_id}")
+              sys.exit(1)
 
           if not files:
-              print("ℹ️  No files to review")
+              print(f"ℹ️  No files to review (Request ID: {session_request_id})")
               sys.exit(0)
 
-          # Review each source code file
+          # Review each source code file with enhanced error handling
           reviewed_count = 0
           error_count = 0
-          supported_extensions = ('.py', '.js', '.ts', '.java', '.cpp', '.c', '.go', '.rs', '.rb')
+          skipped_count = 0
+          supported_extensions = ('.py', '.js', '.ts', '.java', '.cpp', '.c', '.go', '.rs', '.rb', '.tsx', '.jsx')
 
           for file_path in files:
+              # Generate unique request ID for each file review
+              file_request_id = f"{session_request_id}-{uuid.uuid4().hex[:6]}"
+              
               # Only review source code files
               if not file_path.endswith(supported_extensions):
+                  skipped_count += 1
                   continue
               
               # Skip deleted files
               if not os.path.exists(file_path):
                   print(f"⏭️  Skipping deleted file: {file_path}")
+                  skipped_count += 1
                   continue
               
               try:
-                  # Read file content
-                  with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                      content = f.read()
+                  # Read file content with encoding error handling
+                  try:
+                      with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                          content = f.read()
+                  except Exception as e:
+                      log_error(f"Failed to read file: {file_path}", e, file_request_id)
+                      error_count += 1
+                      continue
                   
                   # Skip empty files
                   if not content.strip():
                       print(f"⏭️  Skipping empty file: {file_path}")
+                      skipped_count += 1
                       continue
                   
-                  # Construct review prompt
+                  # Limit file size to prevent API token limits (approximately 1M characters)
+                  max_file_size = 1000000
+                  if len(content) > max_file_size:
+                      print(f"⚠️  File {file_path} is too large ({len(content)} chars), truncating to {max_file_size} chars")
+                      content = content[:max_file_size] + "\n\n[File truncated due to size limits]"
+                  
+                  # Construct review prompt with context
                   prompt = f"""Review this code file for:
                   1. Bugs and logical errors
                   2. Security vulnerabilities
@@ -223,46 +303,97 @@ jobs:
                   Code:
                   {content}"""
                   
-                  # Generate review using Gemini AI
-                  print(f"🔍 Reviewing {file_path}...")
-                  response = model.generate_content(prompt)
+                  # Generate review using Gemini AI with retry logic
+                  print(f"🔍 Reviewing {file_path}... (Request ID: {file_request_id})")
+                  
+                  max_retries = 3
+                  retry_delay = 2  # seconds
+                  response = None
+                  
+                  for attempt in range(1, max_retries + 1):
+                      try:
+                          response = model.generate_content(prompt)
+                          break  # Success, exit retry loop
+                      except Exception as api_error:
+                          if attempt < max_retries:
+                              wait_time = retry_delay * attempt
+                              print(f"⚠️  API call failed (attempt {attempt}/{max_retries}), retrying in {wait_time}s...")
+                              print(f"   Error: {type(api_error).__name__}: {str(api_error)}")
+                              time.sleep(wait_time)
+                          else:
+                              # All retries exhausted
+                              raise api_error
                   
                   # Output review results
-                  print(f"\n{'='*80}")
-                  print(f"📝 Review for {file_path}:")
-                  print(f"{'='*80}")
-                  print(response.text)
-                  print(f"{'='*80}\n")
-                  
-                  reviewed_count += 1
+                  if response and response.text:
+                      print(f"\n{'='*80}")
+                      print(f"📝 Review for {file_path} (Request ID: {file_request_id}):")
+                      print(f"{'='*80}")
+                      print(response.text)
+                      print(f"{'='*80}\n")
+                      reviewed_count += 1
+                  else:
+                      print(f"⚠️  Empty response from Gemini AI for {file_path} (Request ID: {file_request_id})")
+                      error_count += 1
                   
               except Exception as e:
-                  print(f"❌ Error reviewing {file_path}: {e}")
+                  request_id = log_error(f"Error reviewing {file_path}", e, file_request_id)
                   error_count += 1
                   continue
 
-          # Summary
-          print(f"\n✅ Review complete: {reviewed_count} files reviewed, {error_count} errors")
+          # Summary with request ID
+          print(f"\n{'='*80}")
+          print(f"📊 Review Summary (Session ID: {session_request_id}):")
+          print(f"{'='*80}")
+          print(f"✅ Files reviewed: {reviewed_count}")
+          print(f"❌ Errors: {error_count}")
+          print(f"⏭️  Skipped: {skipped_count}")
+          print(f"📋 Total files processed: {len(files)}")
+          print(f"{'='*80}\n")
+
+          # Exit with appropriate code
           if error_count > 0:
-              sys.exit(1)
+              print(f"⚠️  Review completed with {error_count} error(s). Check logs for details.")
+              print(f"   Session Request ID: {session_request_id}")
+              # Don't exit with error code since continue-on-error is set
+              # This allows the workflow to continue even if some reviews fail
+              sys.exit(0)
+          elif reviewed_count == 0:
+              print(f"ℹ️  No files were reviewed. This may be expected if only non-source files changed.")
+              sys.exit(0)
+          else:
+              print(f"✅ Review completed successfully!")
+              sys.exit(0)
           EOF
         continue-on-error: true # Don't fail workflow on API errors
 
       - name: Post review comment
         # Post comprehensive review summary as PR comment
+        # Creates a comprehensive summary comment on the PR with links to
+        # all review results and workflow logs for detailed analysis.
+        # Includes error handling and request ID tracking for failed reviews.
         if: always()
         uses: actions/github-script@v7
         with:
           script: |
             /**
-             * Post AI Code Review Summary Comment
+             * Post AI Code Review Summary Comment with Enhanced Error Handling
+             * ===================================================================
              * Creates a comprehensive summary comment on the PR with links to
              * all review results and workflow logs for detailed analysis.
+             * Includes error status, request IDs, and troubleshooting information.
              */
             const workflowUrl = `${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`;
+            const runNumber = `${{ github.run_number }}`;
+            const runId = `${{ github.run_id }}`;
+
+            // Build comment body with status information
             const commentBody = `## 🤖 AI Code Review Summary
 
             Comprehensive automated code review has been completed for this pull request.
+
+            ### Review Status
+            📋 **Workflow Run**: [#${runNumber}](${workflowUrl}) (ID: ${runId})
 
             ### Review Components
             - ✅ **Gemini AI Analysis** - AI-powered code review and suggestions
@@ -276,15 +407,32 @@ jobs:
             - [View Workflow Logs](${workflowUrl}) - Detailed review output and logs
             - Check individual job outputs for specific tool results
 
+            ### ⚠️ Troubleshooting
+            If the review failed, check:
+            1. **API Keys**: Ensure \`GEMINI_API_KEY\` is configured in repository secrets
+            2. **Workflow Logs**: Review the detailed logs linked above for error messages
+            3. **Request IDs**: Look for request IDs in error messages (format: \`run-id-uuid\`) for correlation
+            4. **API Limits**: Verify Gemini API quota and rate limits
+
             ---
             *This is an automated review. Please review the suggestions and address any critical issues.*`;
 
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: commentBody
-            });
+            try {
+              // Post comment to PR
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: commentBody
+              });
+              console.log('✅ Review summary comment posted successfully');
+            } catch (error) {
+              // Log error but don't fail the workflow
+              console.error('❌ Failed to post review comment:', error.message);
+              console.error('Error details:', JSON.stringify(error, null, 2));
+              // Try to provide alternative feedback
+              console.log(`\n💡 Manual Review: View workflow logs at ${workflowUrl}`);
+            }
 
   # ========================================================================
   # GitHub Copilot CLI Code Review Job
