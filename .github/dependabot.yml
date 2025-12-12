@@ -1,33 +1,154 @@
+# ============================================================================
+# Dependabot Configuration for Automated Dependency Updates
+# ============================================================================
+# This file configures GitHub Dependabot to automatically check for and
+# create pull requests to update dependencies in the repository.
+#
+# Dependabot helps maintain security and keep dependencies up-to-date by:
+# - Monitoring dependency versions for security vulnerabilities
+# - Creating PRs for dependency updates
+# - Grouping related updates together
+# - Following configured versioning strategies
+#
+# Documentation: https://docs.github.com/en/code-security/dependabot
+# ============================================================================
+
+# Dependabot configuration version (always use version 2)
 version: 2
+
+# Update configurations for different package ecosystems
 updates:
-  # Python dependencies
+  # ----------------------------------------------------------------------------
+  # Python Dependencies (pip/requirements.txt and pyproject.toml)
+  # ----------------------------------------------------------------------------
   - package-ecosystem: "pip"
-    directory: "/"
+    directory: "/" # Root directory containing requirements.txt and pyproject.toml
     schedule:
-      interval: "weekly"
+      interval: "weekly" # Check for updates weekly (options: daily, weekly, monthly)
+      day: "monday" # Day of week for weekly checks (monday-sunday)
+      time: "09:00" # Time in UTC (HH:MM format)
+      timezone: "UTC" # Timezone for scheduling
+    # Limit number of open PRs to prevent overwhelming the team
     open-pull-requests-limit: 5
-    reviewers:
-      - "dependabot[bot]"
-    assignees:
-      - "dependabot[bot]"
+    # Group updates to reduce PR volume
+    groups:
+      production-dependencies: # Group name for production dependencies
+        dependency-type: "production" # Only production dependencies
+        update-types: # Types of updates to include in group
+          - "minor" # Minor version updates
+          - "patch" # Patch version updates
+      development-dependencies: # Group name for development dependencies
+        dependency-type: "development" # Only development dependencies
+        update-types:
+          - "minor"
+          - "patch"
+    # Versioning strategy for dependency updates
+    versioning-strategy: increase # Always increase version requirements
+    # Labels to add to PRs for filtering and automation
+    labels:
+      - "dependencies"
+      - "python"
+      - "automated"
+    # Commit message prefix for dependency update commits
+    commit-message:
+      prefix: "deps" # Prefix for commit messages
+      prefix-development: "deps-dev" # Prefix for dev dependency commits
+      include: "scope" # Include package scope in commit message
 
-  # GitHub Actions
+  # ----------------------------------------------------------------------------
+  # GitHub Actions Workflow Dependencies
+  # ----------------------------------------------------------------------------
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directory: "/" # Root directory containing .github/workflows
     schedule:
-      interval: "weekly"
+      interval: "weekly" # Check for updates weekly
+      day: "monday" # Day of week for weekly checks
+      time: "09:00" # Time in UTC
+      timezone: "UTC" # Timezone for scheduling
+    # Limit number of open PRs for Actions updates
     open-pull-requests-limit: 3
+    # Group all GitHub Actions updates together
+    groups:
+      github-actions-updates:
+        update-types:
+          - "minor"
+          - "patch"
+    # Labels for GitHub Actions PRs
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "automated"
+    # Commit message configuration
+    commit-message:
+      prefix: "ci"
+      include: "scope"
 
-  # Docker
+  # ----------------------------------------------------------------------------
+  # Docker Dependencies (Dockerfile base images)
+  # ----------------------------------------------------------------------------
   - package-ecosystem: "docker"
-    directory: "/"
+    directory: "/" # Root directory containing Dockerfiles
     schedule:
-      interval: "weekly"
+      interval: "weekly" # Check for updates weekly
+      day: "monday" # Day of week for weekly checks
+      time: "09:00" # Time in UTC
+      timezone: "UTC" # Timezone for scheduling
+    # Limit number of open PRs for Docker updates
     open-pull-requests-limit: 3
+    # Group Docker updates together
+    groups:
+      docker-updates:
+        update-types:
+          - "minor"
+          - "patch"
+    # Labels for Docker PRs
+    labels:
+      - "dependencies"
+      - "docker"
+      - "automated"
+    # Commit message configuration
+    commit-message:
+      prefix: "docker"
+      include: "scope"
 
-  # npm (if Node.js project)
-  - package-ecosystem: "npm"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
+  # ----------------------------------------------------------------------------
+  # npm Dependencies (Optional - only if package.json exists)
+  # ----------------------------------------------------------------------------
+  # Uncomment this section if you have Node.js dependencies
+  # - package-ecosystem: "npm"
+  #   directory: "/"
+  #   schedule:
+  #     interval: "weekly"
+  #     day: "monday"
+  #     time: "09:00"
+  #     timezone: "UTC"
+  #   open-pull-requests-limit: 5
+  #   groups:
+  #     npm-production-dependencies:
+  #       dependency-type: "production"
+  #       update-types:
+  #         - "minor"
+  #         - "patch"
+  #     npm-development-dependencies:
+  #       dependency-type: "development"
+  #       update-types:
+  #         - "minor"
+  #         - "patch"
+  #   labels:
+  #     - "dependencies"
+  #     - "npm"
+  #     - "automated"
+  #   commit-message:
+  #     prefix: "deps"
+  #     prefix-development: "deps-dev"
+  #     include: "scope"
+
+# ============================================================================
+# Notes on Configuration
+# ============================================================================
+# - Dependabot requires write access to create pull requests
+# - Security updates are checked separately and always create PRs immediately
+# - Major version updates are excluded from groups to allow manual review
+# - PRs can be auto-merged if CI/CD passes and auto-merge is enabled
+# - Use labels and groups to organize and prioritize dependency updates
+# ============================================================================
