@@ -14,36 +14,36 @@
 # and dependency resolution by modern Python package managers (pip, uv, poetry).
 [project]
 # Project identifier - must be unique on PyPI, use lowercase and hyphens
-name = "notebook"  # Project name following PEP 423 naming conventions
+name = "notebook" # Project name following PEP 423 naming conventions
 # Semantic versioning: major.minor.patch
 # - major: breaking changes
 # - minor: new features (backward compatible)
 # - patch: bug fixes (backward compatible)
-version = "0.1.0"  # Current project version
+version = "0.1.0" # Current project version
 # Human-readable project description for PyPI and package managers
 description = "Notebook project with comprehensive tooling and monitoring"
 # Path to README file containing project documentation (relative to project root)
 readme = "README.md"
 # Minimum Python version requirement - ensures compatibility with Python 3.11+
-requires-python = ">=3.11"  # Python 3.11+ required for modern features
+requires-python = ">=3.11" # Python 3.11+ required for modern features
 # License specification - MIT license allows permissive use and modification
-license = { text = "MIT" }  # Open-source MIT license
+license = { text = "MIT" } # Open-source MIT license
 # Project authors/maintainers - used for package metadata and contact information
 authors = [
-    { name = "Notebook Team", email = "team@notebook.dev" },  # Primary maintainers
+    { name = "Notebook Team", email = "team@notebook.dev" }, # Primary maintainers
 ]
 # Keywords for package discovery on PyPI and search engines
 keywords = ["notebook", "python", "monitoring", "ai", "observability", "opentelemetry"]
 # PyPI classifiers for project categorization - helps users find the package
 classifiers = [
-    "Development Status :: 3 - Alpha",  # Project maturity level
-    "Intended Audience :: Developers",  # Target audience
-    "License :: OSI Approved :: MIT License",  # License classification
-    "Programming Language :: Python :: 3",  # Python 3 support
-    "Programming Language :: Python :: 3.11",  # Python 3.11 support
-    "Programming Language :: Python :: 3.12",  # Python 3.12 support
-    "Topic :: Software Development :: Libraries :: Python Modules",  # Project type
-    "Topic :: System :: Monitoring",  # Monitoring capabilities
+    "Development Status :: 3 - Alpha",                              # Project maturity level
+    "Intended Audience :: Developers",                              # Target audience
+    "License :: OSI Approved :: MIT License",                       # License classification
+    "Programming Language :: Python :: 3",                          # Python 3 support
+    "Programming Language :: Python :: 3.11",                       # Python 3.11 support
+    "Programming Language :: Python :: 3.12",                       # Python 3.12 support
+    "Topic :: Software Development :: Libraries :: Python Modules", # Project type
+    "Topic :: System :: Monitoring",                                # Monitoring capabilities
 ]
 
 # ----------------------------------------------------------------------------
@@ -54,18 +54,18 @@ classifiers = [
 # Version constraints use semantic versioning with minimum version requirements.
 dependencies = [
     # OpenTelemetry ecosystem for distributed tracing and observability
-    "opentelemetry-api>=1.21.0",  # OpenTelemetry API for observability instrumentation
-    "opentelemetry-sdk>=1.21.0",  # OpenTelemetry SDK implementation for metrics/traces
-    "opentelemetry-instrumentation>=0.42b0",  # Auto-instrumentation for common libraries
-    "opentelemetry-exporter-prometheus>=1.12.0",  # Prometheus metrics exporter for monitoring
+    "opentelemetry-api>=1.21.0",                 # OpenTelemetry API for observability instrumentation
+    "opentelemetry-sdk>=1.21.0",                 # OpenTelemetry SDK implementation for metrics/traces
+    "opentelemetry-instrumentation>=0.42b0",     # Auto-instrumentation for common libraries
+    "opentelemetry-exporter-prometheus>=1.12.0", # Prometheus metrics exporter for monitoring
     # Web scraping and browser automation
-    "firecrawl-py>=0.0.16",  # FireCrawl Python SDK for web crawling and content extraction
-    "playwright>=1.40.0",  # Playwright for browser automation, testing, and web scraping
+    "firecrawl-py>=0.0.16", # FireCrawl Python SDK for web crawling and content extraction
+    "playwright>=1.40.0",   # Playwright for browser automation, testing, and web scraping
     # AI and machine learning
-    "google-generativeai>=0.3.0",  # Google Generative AI SDK for Gemini API integration
+    "google-generativeai>=0.3.0", # Google Generative AI SDK for Gemini API integration
     # Monitoring and metrics
-    "prometheus-client>=0.19.0",  # Prometheus client library for custom metrics collection
-    "grafana-api>=1.0.3",  # Grafana API client for programmatic dashboard management
+    "prometheus-client>=0.19.0", # Prometheus client library for custom metrics collection
+    "grafana-api>=1.0.3",        # Grafana API client for programmatic dashboard management
 ]
 
 # ----------------------------------------------------------------------------
@@ -77,17 +77,17 @@ dependencies = [
 # Development tooling for testing, linting, formatting, and code quality
 dev = [
     # Testing framework and utilities
-    "pytest>=7.4.0",  # Modern Python testing framework with fixtures and plugins
-    "pytest-asyncio>=0.21.0",  # Async test support for testing async/await code
-    "pytest-cov>=4.1.0",  # Coverage reporting plugin for pytest
-    "pytest-httpx>=0.27.0",  # HTTPX test client for async HTTP request testing
+    "pytest>=7.4.0",          # Modern Python testing framework with fixtures and plugins
+    "pytest-asyncio>=0.21.0", # Async test support for testing async/await code
+    "pytest-cov>=4.1.0",      # Coverage reporting plugin for pytest
+    "pytest-httpx>=0.27.0",   # HTTPX test client for async HTTP request testing
     # Code formatting and style enforcement
-    "black>=23.11.0",  # Opinionated code formatter (backup to Ruff formatter)
-    "ruff>=0.1.6",  # Fast Python linter and formatter (Rust-based, replaces multiple tools)
+    "black>=23.11.0", # Opinionated code formatter (backup to Ruff formatter)
+    "ruff>=0.1.6",    # Fast Python linter and formatter (Rust-based, replaces multiple tools)
     # Type checking and static analysis
-    "mypy>=1.7.0",  # Static type checker for Python (PEP 484/526 type annotations)
+    "mypy>=1.7.0", # Static type checker for Python (PEP 484/526 type annotations)
     # Git hooks and pre-commit checks
-    "pre-commit>=3.5.0",  # Framework for managing git hooks and pre-commit checks
+    "pre-commit>=3.5.0", # Framework for managing git hooks and pre-commit checks
 ]
 
 # ----------------------------------------------------------------------------
@@ -97,9 +97,12 @@ dev = [
 # Modern Python packaging uses setuptools as the build backend with wheel support.
 [build-system]
 # Build dependencies required to build the package (installed in isolated build environment)
-requires = ["setuptools>=68.0.0", "wheel>=0.41.0"]  # Setuptools for packaging, wheel for binary distributions
+requires = [
+    "setuptools>=68.0.0",
+    "wheel>=0.41.0",
+] # Setuptools for packaging, wheel for binary distributions
 # Build backend that handles package building (setuptools PEP 517 implementation)
-build-backend = "setuptools.build_meta"  # Standard setuptools build backend
+build-backend = "setuptools.build_meta" # Standard setuptools build backend
 
 # ============================================================================
 # Tool Configurations
@@ -115,70 +118,70 @@ build-backend = "setuptools.build_meta"  # Standard setuptools build backend
 # Documentation: https://docs.astral.sh/ruff/
 [tool.ruff]
 # Target Python version for syntax and feature compatibility checking
-target-version = "py311"  # Python 3.11+ syntax and features
+target-version = "py311" # Python 3.11+ syntax and features
 # Maximum line length for code formatting and linting checks
-line-length = 100  # Standard line length (adjustable based on team preferences)
+line-length = 100 # Standard line length (adjustable based on team preferences)
 # Directories and files to exclude from Ruff linting and formatting
 exclude = [
-    ".git",  # Git repository metadata directory
-    ".venv",  # Virtual environment directory (standard naming)
-    "venv",  # Alternative virtual environment directory name
-    "__pycache__",  # Python bytecode cache directories
-    "build",  # Build artifacts directory
-    "dist",  # Distribution packages directory
-    ".eggs",  # Setuptools eggs directory
-    "*.egg-info",  # Package metadata directories
-    ".mypy_cache",  # MyPy type checking cache
-    ".pytest_cache",  # Pytest test cache
-    ".ruff_cache",  # Ruff linting cache
+    ".git",          # Git repository metadata directory
+    ".venv",         # Virtual environment directory (standard naming)
+    "venv",          # Alternative virtual environment directory name
+    "__pycache__",   # Python bytecode cache directories
+    "build",         # Build artifacts directory
+    "dist",          # Distribution packages directory
+    ".eggs",         # Setuptools eggs directory
+    "*.egg-info",    # Package metadata directories
+    ".mypy_cache",   # MyPy type checking cache
+    ".pytest_cache", # Pytest test cache
+    ".ruff_cache",   # Ruff linting cache
 ]
 
 # Ruff linting rules configuration
 [tool.ruff.lint]
 # Enable specific rule sets - comprehensive coverage of Python best practices
 select = [
-    "E",  # pycodestyle errors (PEP 8 style guide violations)
-    "W",  # pycodestyle warnings (style suggestions)
-    "F",  # Pyflakes (logical errors and unused imports)
-    "I",  # isort (import sorting and organization)
-    "N",  # pep8-naming (naming convention checks)
+    "E",   # pycodestyle errors (PEP 8 style guide violations)
+    "W",   # pycodestyle warnings (style suggestions)
+    "F",   # Pyflakes (logical errors and unused imports)
+    "I",   # isort (import sorting and organization)
+    "N",   # pep8-naming (naming convention checks)
     "UP",  # pyupgrade (modernize code to newer Python syntax)
-    "B",  # flake8-bugbear (common bugs and design problems)
+    "B",   # flake8-bugbear (common bugs and design problems)
     "C4",  # flake8-comprehensions (comprehension optimization)
-    "DTZ",  # flake8-datetimez (timezone-aware datetime usage)
-    "T10",  # flake8-debugger (detect debugger statements)
+    "DTZ", # flake8-datetimez (timezone-aware datetime usage)
+    "T10", # flake8-debugger (detect debugger statements)
     "EM",  # flake8-errmsg (error message best practices)
-    "ISC",  # flake8-implicit-str-concat (string concatenation issues)
-    "ICN",  # flake8-import-conventions (import style conventions)
-    "PIE",  # flake8-pie (miscellaneous checks)
+    "ISC", # flake8-implicit-str-concat (string concatenation issues)
+    "ICN", # flake8-import-conventions (import style conventions)
+    "PIE", # flake8-pie (miscellaneous checks)
     "PT",  # flake8-pytest-style (pytest best practices)
-    "Q",  # flake8-quotes (quote style consistency)
-    "RSE",  # flake8-raise (exception raising best practices)
-    "RET",  # flake8-return (return statement best practices)
-    "SIM",  # flake8-simplify (code simplification opportunities)
-    "TID",  # flake8-tidy-imports (import organization)
-    "TCH",  # flake8-type-checking (type checking imports)
-    "ARG",  # flake8-unused-arguments (unused function arguments)
-    "PTH",  # flake8-use-pathlib (use pathlib instead of os.path)
-    "ERA",  # eradicate (detect commented-out code)
+    "Q",   # flake8-quotes (quote style consistency)
+    "RSE", # flake8-raise (exception raising best practices)
+    "RET", # flake8-return (return statement best practices)
+    "SIM", # flake8-simplify (code simplification opportunities)
+    "TID", # flake8-tidy-imports (import organization)
+    "TCH", # flake8-type-checking (type checking imports)
+    "ARG", # flake8-unused-arguments (unused function arguments)
+    "PTH", # flake8-use-pathlib (use pathlib instead of os.path)
+    "ERA", # eradicate (detect commented-out code)
     "PD",  # pandas-vet (pandas-specific best practices)
-    "PGH",  # pygrep-hooks (pattern-based checks)
+    "PGH", # pygrep-hooks (pattern-based checks)
     "PL",  # Pylint rules (comprehensive code quality)
-    "TRY",  # tryceratops (exception handling best practices)
-    "NPY",  # NumPy-specific rules (NumPy best practices)
-    "RUF",  # Ruff-specific rules (Ruff's own rule set)
+    "TRY", # tryceratops (exception handling best practices)
+    "NPY", # NumPy-specific rules (NumPy best practices)
+    "RUF", # Ruff-specific rules (Ruff's own rule set)
 ]
 # Rules to ignore - sometimes necessary for pragmatic code decisions
 ignore = [
-    "E501",  # Line too long (handled by formatter, not linting)
-    "PLR0913",  # Too many arguments (sometimes necessary for API design)
-    "PLR2004",  # Magic value used in comparison (pragmatic exceptions allowed)
+    "E501",    # Line too long (handled by formatter, not linting)
+    "PLR0913", # Too many arguments (sometimes necessary for API design)
+    "PLR2004", # Magic value used in comparison (pragmatic exceptions allowed)
 ]
 
 # Ruff import sorting configuration (replaces isort)
 [tool.ruff.lint.isort]
 # Known first-party modules - imports from these packages are sorted first
-known-first-party = ["notebook"]  # Project package name for import organization
+known-first-party = ["notebook"] # Project package name for import organization
 # Force sorting within import sections (stdlib, third-party, first-party)
 force-sort-within-sections = true
 # Split imports into multiple lines on trailing comma
@@ -187,13 +190,13 @@ split-on-trailing-comma = true
 # Ruff code formatting configuration (replaces black)
 [tool.ruff.format]
 # Quote style preference - double quotes are standard in Python
-quote-style = "double"  # Use double quotes for strings ("example" not 'example')
+quote-style = "double" # Use double quotes for strings ("example" not 'example')
 # Indentation style - spaces are standard in Python (PEP 8)
-indent-style = "space"  # Use spaces for indentation (4 spaces per level)
+indent-style = "space" # Use spaces for indentation (4 spaces per level)
 # Include magic trailing comma in function calls and definitions
-skip-magic-trailing-comma = false  # Preserve trailing commas for better diffs
+skip-magic-trailing-comma = false # Preserve trailing commas for better diffs
 # Line ending style - auto-detect based on platform (CRLF for Windows, LF for Unix)
-line-ending = "auto"  # Platform-appropriate line endings
+line-ending = "auto" # Platform-appropriate line endings
 
 # ----------------------------------------------------------------------------
 # Pytest Configuration - Testing Framework
@@ -202,29 +205,29 @@ line-ending = "auto"  # Platform-appropriate line endings
 # This configuration defines test discovery, execution options, and markers.
 [tool.pytest.ini_options]
 # Test discovery - directory containing test files
-testpaths = ["tests"]  # Look for tests in the 'tests' directory
+testpaths = ["tests"] # Look for tests in the 'tests' directory
 # Test file naming patterns - pytest discovers files matching these patterns
-python_files = ["test_*.py", "*_test.py"]  # Files starting with 'test_' or ending with '_test.py'
+python_files = ["test_*.py", "*_test.py"] # Files starting with 'test_' or ending with '_test.py'
 # Test class naming patterns - pytest discovers classes matching this pattern
-python_classes = ["Test*"]  # Classes starting with 'Test' (e.g., TestMyFeature)
+python_classes = ["Test*"] # Classes starting with 'Test' (e.g., TestMyFeature)
 # Test function naming patterns - pytest discovers functions matching this pattern
-python_functions = ["test_*"]  # Functions starting with 'test_' (e.g., test_my_feature)
+python_functions = ["test_*"] # Functions starting with 'test_' (e.g., test_my_feature)
 # Minimum pytest version required for these configuration options
-minversion = "7.0"  # Require pytest 7.0+ for modern features
+minversion = "7.0" # Require pytest 7.0+ for modern features
 # Additional pytest command-line options applied by default
 addopts = [
-    "-ra",  # Show extra test summary info (short test summary info)
-    "--strict-markers",  # Strict marker validation (fail on unknown markers)
-    "--strict-config",  # Strict configuration validation (fail on invalid config)
-    "--cov=notebook",  # Coverage analysis for 'notebook' package
-    "--cov-report=html",  # Generate HTML coverage report in htmlcov/
-    "--cov-report=term-missing",  # Terminal coverage report showing missing lines
+    "-ra",                       # Show extra test summary info (short test summary info)
+    "--strict-markers",          # Strict marker validation (fail on unknown markers)
+    "--strict-config",           # Strict configuration validation (fail on invalid config)
+    "--cov=notebook",            # Coverage analysis for 'notebook' package
+    "--cov-report=html",         # Generate HTML coverage report in htmlcov/
+    "--cov-report=term-missing", # Terminal coverage report showing missing lines
 ]
 # Test markers for categorizing and filtering tests
 markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",  # Slow-running tests
-    "integration: marks tests as integration tests",  # Integration test marker
-    "unit: marks tests as unit tests",  # Unit test marker
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')", # Slow-running tests
+    "integration: marks tests as integration tests",               # Integration test marker
+    "unit: marks tests as unit tests",                             # Unit test marker
 ]
 
 # ----------------------------------------------------------------------------
@@ -234,33 +237,33 @@ markers = [
 # This configuration enables strict type checking for better code quality.
 [tool.mypy]
 # Target Python version for type checking (must match requires-python)
-python_version = "3.11"  # Python 3.11 type checking
+python_version = "3.11" # Python 3.11 type checking
 # Enable strict type checking mode - enforces comprehensive type safety
-strict = true  # Enable all strict type checking options (recommended for new projects)
+strict = true # Enable all strict type checking options (recommended for new projects)
 # Warn about unused '# type: ignore' comments
-warn_unused_ignores = true  # Encourage removing unnecessary type ignores
+warn_unused_ignores = true # Encourage removing unnecessary type ignores
 # Warn about redundant type casts
-warn_redundant_casts = true  # Detect unnecessary type casting
+warn_redundant_casts = true # Detect unnecessary type casting
 # Warn about unused configuration options
-warn_unused_configs = true  # Alert on MyPy configuration that has no effect
+warn_unused_configs = true # Alert on MyPy configuration that has no effect
 # Disallow calling functions without type annotations
-disallow_untyped_calls = true  # Require type annotations for all function calls
+disallow_untyped_calls = true # Require type annotations for all function calls
 # Disallow defining functions without type annotations
-disallow_untyped_defs = true  # Require type annotations for all function definitions
+disallow_untyped_defs = true # Require type annotations for all function definitions
 # Disallow incomplete type stubs
-disallow_incomplete_defs = true  # Require complete type annotations (no Any placeholders)
+disallow_incomplete_defs = true # Require complete type annotations (no Any placeholders)
 # Type check untyped function definitions
-check_untyped_defs = true  # Infer types for untyped functions and check them
+check_untyped_defs = true # Infer types for untyped functions and check them
 # Require explicit Optional for None defaults
-no_implicit_optional = true  # Require Optional[T] instead of T = None
+no_implicit_optional = true # Require Optional[T] instead of T = None
 # Warn about functions returning Any type
-warn_return_any = true  # Alert when functions return untyped Any values
+warn_return_any = true # Alert when functions return untyped Any values
 # Show error codes in MyPy output
-show_error_codes = true  # Display error codes (e.g., [error-code]) for easier fixing
+show_error_codes = true # Display error codes (e.g., [error-code]) for easier fixing
 # Support namespace packages (PEP 420)
-namespace_packages = true  # Enable namespace package support
+namespace_packages = true # Enable namespace package support
 # Explicit package bases - determine package base from current directory or mypy_path
-explicit_package_bases = true  # Help mypy correctly map file paths to module names
+explicit_package_bases = true # Help mypy correctly map file paths to module names
 
 # ----------------------------------------------------------------------------
 # Coverage Configuration - Code Coverage Analysis
@@ -271,34 +274,33 @@ explicit_package_bases = true  # Help mypy correctly map file paths to module na
 # Coverage.py runtime configuration
 [tool.coverage.run]
 # Source directories to measure coverage for
-source = ["notebook"]  # Measure coverage for the 'notebook' package
+source = ["notebook"] # Measure coverage for the 'notebook' package
 # Files and directories to omit from coverage measurement
 omit = [
-    "*/tests/*",  # Exclude all test files and directories
-    "*/test_*.py",  # Exclude test files matching test_*.py pattern
-    "*/__pycache__/*",  # Exclude Python bytecode cache directories
-    "*/setup.py",  # Exclude setup.py files
-    "*/conftest.py",  # Exclude pytest configuration files
+    "*/tests/*",       # Exclude all test files and directories
+    "*/test_*.py",     # Exclude test files matching test_*.py pattern
+    "*/__pycache__/*", # Exclude Python bytecode cache directories
+    "*/setup.py",      # Exclude setup.py files
+    "*/conftest.py",   # Exclude pytest configuration files
 ]
 
 # Coverage.py reporting configuration
 [tool.coverage.report]
 # Lines to exclude from coverage reports (regex patterns)
 exclude_lines = [
-    "pragma: no cover",  # Exclude lines with '# pragma: no cover' comment
-    "def __repr__",  # Exclude __repr__ methods (often simple string formatting)
-    "raise AssertionError",  # Exclude assertion error raises (expected in tests)
+    "pragma: no cover",           # Exclude lines with '# pragma: no cover' comment
+    "def __repr__",               # Exclude __repr__ methods (often simple string formatting)
+    "raise AssertionError",       # Exclude assertion error raises (expected in tests)
     "raise NotImplementedError",  # Exclude NotImplementedError (abstract methods)
-    "if __name__ == .__main__.:",  # Exclude main execution blocks (entry points)
-    "if TYPE_CHECKING:",  # Exclude TYPE_CHECKING blocks (type-only imports)
-    "@abstractmethod",  # Exclude abstract method decorators (must be implemented)
-    "@property",  # Exclude property decorators (simple getters often not tested)
-    "if self.debug:",  # Exclude debug-only code paths
-    "if settings.DEBUG",  # Exclude debug-only code paths
-    "class .*\\bProtocol\\):",  # Exclude Protocol classes (structural subtyping)
-    "@(abc\\.)?abstractmethod",  # Exclude abstract method decorators
+    "if __name__ == .__main__.:", # Exclude main execution blocks (entry points)
+    "if TYPE_CHECKING:",          # Exclude TYPE_CHECKING blocks (type-only imports)
+    "@abstractmethod",            # Exclude abstract method decorators (must be implemented)
+    "@property",                  # Exclude property decorators (simple getters often not tested)
+    "if self.debug:",             # Exclude debug-only code paths
+    "if settings.DEBUG",          # Exclude debug-only code paths
+    "class .*\\bProtocol\\):",    # Exclude Protocol classes (structural subtyping)
+    "@(abc\\.)?abstractmethod",   # Exclude abstract method decorators
 ]
 # Minimum coverage percentage to enforce (fail if below threshold)
 # Note: This is informational - actual enforcement should be in CI/CD
-fail_under = 80  # Require at least 80% code coverage
- 
+fail_under = 80 # Require at least 80% code coverage
