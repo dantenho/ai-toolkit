@@ -79,17 +79,53 @@
     },
 
     // --------------------------------------------------------------------------
-    // Ruff Configuration
+    // Ruff Configuration - Native Server Integration
     // --------------------------------------------------------------------------
+    // State of the Art: Ruff native server configuration (migrated from ruff-lsp)
+    // The native server is written in Rust and provides better performance and features
+    // Documentation: https://docs.astral.sh/ruff/editors/migration/
     // Ruff settings for Python linting and formatting
-    "ruff.enable": true, // Enable Ruff extension
-    "ruff.lint.enable": true, // Enable Ruff linting
-    "ruff.format.args": [
-      "--line-length=100" // Match pyproject.toml line-length setting
+    "ruff.enable": true, // Enable Ruff extension (uses native server by default)
+    "ruff.lint.enable": true, // Enable Ruff linting (runs on every keystroke by default)
+    // Line length setting - matches pyproject.toml [tool.ruff] line-length = 100
+    "ruff.lineLength": 100, // Maximum line length for code formatting and linting
+    // Lint rule selection - matches pyproject.toml [tool.ruff.lint] select rules
+    // State of the Art: Array format for better editor integration and validation
+    "ruff.lint.select": [
+      "E",   // pycodestyle errors (PEP 8 style guide violations)
+      "W",   // pycodestyle warnings (style suggestions)
+      "F",   // Pyflakes (logical errors and unused imports)
+      "I",   // isort (import sorting and organization)
+      "N",   // pep8-naming (naming convention checks)
+      "UP",  // pyupgrade (modernize code to newer Python syntax)
+      "B",   // flake8-bugbear (common bugs and design problems)
+      "C4",  // flake8-comprehensions (comprehension optimization)
+      "DTZ", // flake8-datetimez (timezone-aware datetime usage)
+      "T10", // flake8-debugger (detect debugger statements)
+      "EM",  // flake8-errmsg (error message best practices)
+      "ISC", // flake8-implicit-str-concat (string concatenation issues)
+      "ICN", // flake8-import-conventions (import style conventions)
+      "PIE", // flake8-pie (miscellaneous checks)
+      "PT",  // flake8-pytest-style (pytest best practices)
+      "Q",   // flake8-quotes (quote style consistency)
+      "RSE", // flake8-raise (exception raising best practices)
+      "RET", // flake8-return (return statement best practices)
+      "SIM", // flake8-simplify (code simplification opportunities)
+      "TID", // flake8-tidy-imports (import organization)
+      "TCH", // flake8-type-checking (type checking imports)
+      "ARG", // flake8-unused-arguments (unused function arguments)
+      "PTH", // flake8-use-pathlib (use pathlib instead of os.path)
+      "ERA", // eradicate (detect commented-out code)
+      "PD",  // pandas-vet (pandas-specific best practices)
+      "PGH", // pygrep-hooks (pattern-based checks)
+      "PL",  // Pylint rules (comprehensive code quality)
+      "TRY", // tryceratops (exception handling best practices)
+      "NPY", // NumPy-specific rules (NumPy best practices)
+      "RUF"  // Ruff-specific rules (Ruff's own rule set)
     ],
-    "ruff.lint.args": [
-      "--select=E,W,F,I,N,UP,B,C4,DTZ,T10,EM,ISC,ICN,PIE,PT,Q,RSE,RET,SIM,TID,TCH,ARG,PTH,ERA,PD,PGH,PL,TRY,NPY,RUF" // Match pyproject.toml select rules
-    ],
+    // Configuration preference: Use pyproject.toml as the primary configuration source
+    // State of the Art: Centralized configuration management following PEP 621 standards
+    "ruff.configurationPreference": "pyproject.toml", // Prefer pyproject.toml over ruff.toml
 
     // --------------------------------------------------------------------------
     // Prettier Configuration
