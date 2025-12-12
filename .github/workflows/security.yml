@@ -22,7 +22,7 @@ on:
     branches: [main, master]
   # Weekly scheduled security scan (Monday at midnight UTC)
   schedule:
-    - cron: '0 0 * * 1'
+    - cron: "0 0 * * 1"
   # Allow manual workflow dispatch for on-demand scans
   workflow_dispatch:
 
@@ -30,7 +30,6 @@ on:
 defaults:
   run:
     shell: bash # Use bash shell for consistent behavior
-    timeout-minutes: 30 # Prevent jobs from hanging indefinitely
 
 jobs:
   # CodeQL analysis for multiple languages
@@ -45,7 +44,7 @@ jobs:
     strategy:
       fail-fast: false # Continue even if one language fails
       matrix:
-        language: ['python', 'javascript'] # Languages to analyze
+        language: ["python", "javascript"] # Languages to analyze
 
     steps:
       - name: Checkout repository # Get source code for analysis
@@ -153,13 +152,5 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # GitHub token for scanning
-        with:
-          # Optional: Configure Gitleaks behavior
-          # no-git: false # Scan git history (default: false)
-          # exit-code: 1 # Exit code when secrets found (default: 1)
-          # severity: high # Minimum severity level to report
         continue-on-error: true # Report but don't fail workflow on secrets found
-
-
-
 
