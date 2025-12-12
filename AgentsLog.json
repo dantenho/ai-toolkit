@@ -1,227 +1,331 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "metadata": {
-    "title": "Autocode Agents Log",
-    "description": "Comprehensive log tracking system for autocode agent interactions, file changes, and system modifications with detailed timestamps and integration tracking",
-    "version": "2.0.0",
-    "created": "2025-12-11T16:10:42Z",
-    "last_updated": "2025-12-11T16:10:42Z",
-    "log_format": "autocode_agent_v2"
-  },
-  "schema_definition": {
-    "entry_structure": {
-      "timestamp": {
-        "type": "string",
-        "format": "date-time",
-        "description": "ISO 8601 timestamp (UTC) of when the change occurred, format: YYYY-MM-DDTHH:mm:ssZ"
+  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "$id": "https://example.com/autocode-agents-log.schema.json",
+  "$comment": "JSON Schema for Autocode Agents Log. Draft 8 (2019-09).",
+  "$defs": {},
+  "title": "Autocode Agents Log",
+  "description": "Comprehensive log tracking system for autocode agent interactions, file changes, and system modifications with detailed timestamps and integration tracking. All content is encoded as UTF-8.",
+  "type": "object",
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "description": "Metadata for the log file",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Human-readable title identifying this log file's purpose"
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed description explaining the log's comprehensive tracking capabilities"
+        },
+        "version": {
+          "type": "string",
+          "description": "Semantic version number of the log schema"
+        },
+        "log_format": {
+          "type": "string",
+          "description": "Format identifier string for programmatic detection of log schema version"
+        }
       },
-      "agent": {
-        "type": "string",
-        "description": "Identifier of the autocode agent or system that made the change (e.g., 'Auto', 'Claude', 'GPT-4', 'CustomAgent-v1.2')"
-      },
-      "agent_version": {
-        "type": "string",
-        "description": "Version or build identifier of the agent instance that performed the action"
-      },
-      "action": {
-        "type": "string",
-        "enum": ["create", "modify", "delete", "read", "integrate", "test", "deploy", "refactor", "optimize", "debug"],
-        "description": "Type of action performed by the autocode agent"
-      },
-      "files": {
-        "type": "array",
-        "description": "Array of files affected by this change, tracked with detailed operation metadata",
-        "items": {
-          "type": "object",
-          "properties": {
-            "path": {
-              "type": "string",
-              "description": "Relative path to the file from repository root"
-            },
-            "operation": {
-              "type": "string",
-              "enum": ["created", "modified", "deleted", "read"],
-              "description": "Specific operation performed on the file"
-            },
-            "lines_changed": {
-              "type": "integer",
-              "description": "Number of lines added, modified, or removed (negative for deletions, positive for additions)"
-            },
-            "lines_added": {
-              "type": "integer",
-              "description": "Number of lines added to the file"
-            },
-            "lines_removed": {
-              "type": "integer",
-              "description": "Number of lines removed from the file"
+      "required": ["title", "description", "version", "log_format"]
+    },
+    "entries": {
+      "type": "array",
+      "description": "Array of log entries tracking each agent operation",
+      "items": {
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp of the log entry in ISO 8601 format"
+          },
+          "agent": {
+            "type": "string",
+            "description": "Name of the agent that performed the action"
+          },
+          "agent_version": {
+            "type": "string",
+            "description": "Version of the agent that performed the action"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "create", "modify", "delete", "read", "integrate", "test", "deploy", "refactor", "optimize", "debug"
+            ],
+            "description": "Type of action performed by the agent"
+          },
+          "files": {
+            "type": "array",
+            "description": "Array of files affected by this change, tracked with detailed operation metadata",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Relative path to the file from repository root"
+                },
+                "operation": {
+                  "type": "string",
+                  "enum": ["created", "modified", "deleted", "read"],
+                  "description": "Specific operation performed on the file"
+                },
+                "lines_changed": {
+                  "type": "integer",
+                  "description": "Number of lines added, modified, or removed (negative for deletions, positive for additions)"
+                },
+                "lines_added": {
+                  "type": "integer",
+                  "description": "Number of lines added to the file"
+                },
+                "lines_removed": {
+                  "type": "integer",
+                  "description": "Number of lines removed from the file"
+                }
+              },
+              "required": ["path", "operation", "lines_changed", "lines_added", "lines_removed"]
             }
           },
-          "required": ["path", "operation"]
-        }
-      },
-      "interactions": {
-        "type": "array",
-        "description": "Array of system components, APIs, services, or tools that the autocode agent interacted with during the operation",
-        "items": {
-          "type": "object",
-          "properties": {
-            "component": {
-              "type": "string",
-              "description": "Name of the component, service, tool, or integration point"
-            },
-            "type": {
-              "type": "string",
-              "enum": ["api", "database", "service", "library", "workflow", "config", "tool", "cli", "sdk"],
-              "description": "Type of interaction or integration point"
-            },
-            "status": {
-              "type": "string",
-              "enum": ["success", "failure", "pending", "skipped", "warning"],
-              "description": "Status result of the interaction attempt"
-            },
-            "duration_ms": {
-              "type": "integer",
-              "description": "Duration of the interaction in milliseconds (if applicable)"
-            },
-            "error_message": {
-              "type": "string",
-              "description": "Error message if status is 'failure' or 'warning'"
+          "interactions": {
+            "type": "array",
+            "description": "Array of system components, APIs, services, or tools that the autocode agent interacted with during the operation",
+            "items": {
+              "type": "object",
+              "properties": {
+                "component": {
+                  "type": "string",
+                  "description": "Name of the component, service, tool, or integration point"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": ["api", "database", "service", "library", "workflow", "config", "tool", "cli", "sdk"],
+                  "description": "Type of interaction or integration point"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": ["success", "failure", "pending", "skipped", "warning"],
+                  "description": "Status result of the interaction attempt"
+                },
+                "duration_ms": {
+                  "type": "integer",
+                  "description": "Duration of the interaction in milliseconds (if applicable)"
+                },
+                "error_message": {
+                  "type": "string",
+                  "description": "Error message if status is 'failure' or 'warning'"
+                }
+              },
+              "required": ["component", "type", "status"]
             }
           },
-          "required": ["component", "type", "status"]
-        }
-      },
-      "dependencies": {
-        "type": "array",
-        "description": "Array of dependencies that were added, updated, or removed during this operation",
-        "items": {
-          "type": "object",
-          "properties": {
-            "name": {
-              "type": "string",
-              "description": "Package name or dependency identifier"
-            },
-            "version": {
-              "type": "string",
-              "description": "Version of the dependency (semver format preferred)"
-            },
-            "previous_version": {
-              "type": "string",
-              "description": "Previous version if this is an update operation"
-            },
-            "operation": {
-              "type": "string",
-              "enum": ["added", "updated", "removed"],
-              "description": "Operation performed on the dependency"
-            },
-            "package_manager": {
-              "type": "string",
-              "enum": ["npm", "pip", "poetry", "uv", "cargo", "maven", "gradle", "composer", "other"],
-              "description": "Package manager used for this dependency operation"
+          "dependencies": {
+            "type": "array",
+            "description": "Array of dependencies that were added, updated, or removed during this operation",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Package name or dependency identifier"
+                },
+                "version": {
+                  "type": "string",
+                  "description": "Version of the dependency (semver format preferred)"
+                },
+                "previous_version": {
+                  "type": "string",
+                  "description": "Previous version if updating a dependency"
+                },
+                "operation": {
+                  "type": "string",
+                  "enum": ["added", "updated", "removed"],
+                  "description": "Operation performed on the dependency"
+                },
+                "package_manager": {
+                  "type": "string",
+                  "enum": ["npm", "pip", "poetry", "uv", "cargo", "maven", "gradle", "composer", "other"],
+                  "description": "Package manager used for this dependency operation"
+                }
+              },
+              "required": ["name", "operation"]
             }
           },
-          "required": ["name", "operation"]
-        }
-      },
-      "code_analysis": {
-        "type": "object",
-        "description": "Code quality and analysis metrics generated by the autocode agent",
-        "properties": {
-          "complexity_score": {
-            "type": "number",
-            "description": "Cyclomatic complexity score of modified code"
+          "code_analysis": {
+            "type": "object",
+            "description": "Code analysis metrics and issues found during this operation",
+            "properties": {
+              "complexity_score": {
+                "type": "number",
+                "description": "Cyclomatic complexity score"
+              },
+              "test_coverage": {
+                "type": "number",
+                "description": "Test coverage percentage"
+              },
+              "lint_issues": {
+                "type": "integer",
+                "description": "Number of linting issues found"
+              },
+              "security_issues": {
+                "type": "integer",
+                "description": "Number of security vulnerabilities detected"
+              }
+            }
           },
-          "test_coverage": {
-            "type": "number",
-            "description": "Test coverage percentage for affected code"
-          },
-          "lint_issues": {
-            "type": "integer",
-            "description": "Number of linting issues found"
-          },
-          "security_issues": {
-            "type": "integer",
-            "description": "Number of security vulnerabilities detected"
-          }
-        }
-      },
-      "summary": {
-        "type": "string",
-        "description": "Human-readable summary describing the changes, actions, and outcomes in detail"
-      },
-      "detailed_description": {
-        "type": "string",
-        "description": "Extended description providing context, rationale, and technical details of the changes"
-      },
-      "roadmap_impact": {
-        "type": "array",
-        "description": "Array of roadmap items, features, or project milestones affected by this change",
-        "items": {
-          "type": "string"
-        }
-      },
-      "tags": {
-        "type": "array",
-        "description": "Array of tags for categorizing and filtering log entries",
-        "items": {
-          "type": "string"
-        }
-      },
-      "ci_cd_status": {
-        "type": "object",
-        "description": "CI/CD pipeline status and configuration changes resulting from this operation",
-        "properties": {
-          "workflow_modified": {
-            "type": "boolean",
-            "description": "Whether CI/CD workflow files were modified"
-          },
-          "tests_added": {
-            "type": "boolean",
-            "description": "Whether new tests were added as part of this change"
-          },
-          "tests_modified": {
-            "type": "boolean",
-            "description": "Whether existing tests were modified"
-          },
-          "lint_status": {
+          "summary": {
             "type": "string",
-            "enum": ["passed", "failed", "skipped", "warning"],
-            "description": "Status of linting checks after this change"
+            "description": "Short summary of this log entry"
           },
-          "build_status": {
+          "detailed_description": {
             "type": "string",
-            "enum": ["passed", "failed", "pending", "skipped"],
-            "description": "Build status after this change"
+            "description": "Detailed description of this log entry"
           },
-          "deployment_status": {
-            "type": "string",
-            "enum": ["deployed", "failed", "pending", "skipped"],
-            "description": "Deployment status if deployment was attempted"
+          "roadmap_impact": {
+            "type": "array",
+            "description": "Array of roadmap impact items",
+            "items": {
+              "type": "string",
+              "description": "Roadmap impact of the change"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tag identifier strings for categorizing and filtering log entries",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ci_cd_status": {
+            "type": "object",
+            "description": "CI/CD pipeline status and configuration changes resulting from this operation",
+            "properties": {
+              "workflow_modified": {
+                "type": "boolean",
+                "description": "Whether CI/CD workflow files were modified"
+              },
+              "tests_added": {
+                "type": "boolean",
+                "description": "Whether new tests were added"
+              },
+              "tests_modified": {
+                "type": "boolean",
+                "description": "Whether existing tests were modified"
+              },
+              "lint_status": {
+                "type": "string",
+                "enum": ["passed", "failed", "skipped"],
+                "description": "Status of lint checks"
+              },
+              "build_status": {
+                "type": "string",
+                "enum": ["passed", "failed", "skipped"],
+                "description": "Status of build operations"
+              },
+              "deployment_status": {
+                "type": "string",
+                "enum": ["passed", "failed", "skipped"],
+                "description": "Status of deployment"
+              }
+            }
+          },
+          "performance_metrics": {
+            "type": "object",
+            "description": "Performance-related metrics associated with this change",
+            "properties": {
+              "execution_time_ms": {
+                "type": "integer",
+                "description": "Total execution time for the agent operation in milliseconds"
+              },
+              "files_processed": {
+                "type": "integer",
+                "description": "Number of files processed by the agent operation"
+              }
+            }
           }
-        }
-      },
-      "performance_metrics": {
-        "type": "object",
-        "description": "Performance-related metrics associated with this change",
-        "properties": {
-          "execution_time_ms": {
-            "type": "integer",
-            "description": "Total execution time for the agent operation in milliseconds"
-          },
-          "memory_usage_mb": {
-            "type": "number",
-            "description": "Memory usage during the operation in megabytes"
-          },
-          "files_processed": {
-            "type": "integer",
-            "description": "Total number of files processed during this operation"
-          }
-        }
+        },
+        "required": ["timestamp", "agent", "agent_version", "action", "files"]
       }
     },
-    "required_fields": ["timestamp", "agent", "action", "summary"],
-    "optional_fields": ["agent_version", "files", "interactions", "dependencies", "code_analysis", "detailed_description", "roadmap_impact", "tags", "ci_cd_status", "performance_metrics"]
+    "statistics": {
+      "type": "object",
+      "description": "Statistics and summary metrics for the log file",
+      "properties": {
+        "total_entries": {
+          "type": "integer",
+          "description": "Total number of entries in the log file"
+        },
+        "total_files_modified": {
+          "type": "integer",
+          "description": "Total number of files modified by the agent operation"
+        },
+        "total_interactions": {
+          "type": "integer",
+          "description": "Total number of interactions with the agent operation"
+        },
+        "agents_active": {
+          "type": "array",
+          "description": "Array of agents that were active during the operation",
+          "items": {
+            "type": "string",
+            "description": "Name of the agent"
+          }
+        },
+        "actions_performed": {
+          "type": "object",
+          "description": "Object containing the number of actions performed by the agent operation",
+          "properties": {
+            "create": {
+              "type": "integer",
+              "description": "Number of create actions performed by the agent operation"
+            },
+            "modify": {
+              "type": "integer",
+              "description": "Number of modify actions performed by the agent operation"
+            },
+            "delete": {
+              "type": "integer",
+              "description": "Number of delete actions performed by the agent operation"
+            },
+            "read": {
+              "type": "integer",
+              "description": "Number of read actions performed by the agent operation"
+            },
+            "integrate": {
+              "type": "integer",
+              "description": "Number of integrate actions performed by the agent operation"
+            },
+            "test": {
+              "type": "integer",
+              "description": "Number of test actions performed by the agent operation"
+            },
+            "deploy": {
+              "type": "integer",
+              "description": "Number of deploy actions performed by the agent operation"
+            },
+            "refactor": {
+              "type": "integer",
+              "description": "Number of refactor actions performed by the agent operation"
+            },
+            "optimize": {
+              "type": "integer",
+              "description": "Number of optimize actions performed by the agent operation"
+            },
+            "debug": {
+              "type": "integer",
+              "description": "Number of debug actions performed by the agent operation"
+            }
+          }
+        },
+        "last_entry_timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of the last log entry in ISO 8601 format"
+        }
+      }
+    }
   },
+  "required": ["metadata", "entries", "statistics"],
   "entries": [
     {
       "timestamp": "2025-12-11T16:10:42Z",
