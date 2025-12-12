@@ -23,14 +23,14 @@ jobs:
       - name: Install uv # Fast Python package manager for venv + locking
         run: pip install uv
 
-      - name: Sync dependencies if pyproject exists # Guarded install to avoid failures on empty repo
+      - name: Sync dependencies if pyproject exists # Install dependencies using uv (PEP 621 compliant)
         if: hashFiles('pyproject.toml') != ''
-        run: uv sync --frozen
+        run: uv sync --frozen --extra dev
 
       - name: Run tests if present # Executes only when tests directory is detected
         if: hashFiles('pyproject.toml') != '' && hashFiles('**/tests/**') != ''
-        run: uv run pytest
+        run: uv run pytest --cov --cov-report=term-missing --cov-report=html
 
-      - name: Lint with Ruff if configured # Skips when config is missing
-        if: hashFiles('pyproject.toml') != '' && hashFiles('ruff.toml') != ''
+      - name: Lint with Ruff if configured # Ruff config is in pyproject.toml (PEP 621 compliant)
+        if: hashFiles('pyproject.toml') != ''
         run: uv run ruff check .

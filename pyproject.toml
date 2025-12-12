@@ -5,6 +5,18 @@
 # following PEP 518 (build system) and PEP 621 (project metadata) standards.
 # It serves as the single source of truth for package information, dependencies,
 # and development tooling configuration (Ruff, MyPy, Pytest, Coverage).
+#
+# Workspace Setup:
+# - This project uses uv for fast package management (https://github.com/astral-sh/uv)
+# - Virtual environment: Created automatically by uv in .venv/ directory
+# - Installation: uv sync (installs all dependencies) or uv sync --extra dev (with dev tools)
+# - Package structure: Supports both src-layout (src/notebook/) and flat-layout (notebook/)
+#
+# GitHub CI/CD Integration:
+# - CI workflows use uv for dependency management (see .github/workflows/ci.yml)
+# - Ruff linting configuration is in this file (not ruff.toml) - PEP 621 compliant
+# - Coverage reporting configured for pytest-cov integration
+# - Type checking with MyPy in strict mode for maximum type safety
 # ============================================================================
 
 # ----------------------------------------------------------------------------
@@ -53,41 +65,142 @@ classifiers = [
 # These are installed when the package is installed via pip/uv.
 # Version constraints use semantic versioning with minimum version requirements.
 dependencies = [
-    # OpenTelemetry ecosystem for distributed tracing and observability
-    "opentelemetry-api>=1.21.0",                 # OpenTelemetry API for observability instrumentation
-    "opentelemetry-sdk>=1.21.0",                 # OpenTelemetry SDK implementation for metrics/traces
-    "opentelemetry-instrumentation>=0.42b0",     # Auto-instrumentation for common libraries
-    "opentelemetry-exporter-prometheus>=1.12.0", # Prometheus metrics exporter for monitoring
-    # Web scraping and browser automation
-    "firecrawl-py>=0.0.16", # FireCrawl Python SDK for web crawling and content extraction
-    "playwright>=1.40.0",   # Playwright for browser automation, testing, and web scraping
-    # AI and machine learning
-    "google-generativeai>=0.3.0", # Google Generative AI SDK for Gemini API integration
-    # Monitoring and metrics
-    "prometheus-client>=0.19.0", # Prometheus client library for custom metrics collection
-    "grafana-api>=1.0.3",        # Grafana API client for programmatic dashboard management
+    # ------------------------------------------------------------------------
+    # Core Framework and Server
+    # ------------------------------------------------------------------------
+    "fastapi>=0.104.1",          # FastAPI - Modern, fast web framework for building APIs: fastapi --> https://fastapi.tiangolo.com/    
+    "uvicorn[standard]>=0.24.0", # Uvicorn - ASGI server for running FastAPI applications: uvicorn --> https://www.uvicorn.org/
+    "starlette>=0.27.0",         # Starlette - Lightweight ASGI framework (FastAPI dependency)
+    # ------------------------------------------------------------------------
+    # HTTP and API Client Libraries
+    # ------------------------------------------------------------------------
+    "httpx>=0.25.0",    # HTTPX - Modern HTTP client for async requests: httpx --> https://www.python-httpx.org/
+    "requests>=2.31.0", # Requests - Simple HTTP library for synchronous requests: requests --> https://requests.readthedocs.io/en/latest/
+    "aiohttp>=3.9.0",   # Aiohttp - Async HTTP client/server framework: aiohttp --> https://docs.aiohttp.org/en/stable/
+    # ------------------------------------------------------------------------
+    # Data Validation and Serialization
+    # ------------------------------------------------------------------------
+    "pydantic>=2.5.0",          # Pydantic - Data validation using Python type annotations: pydantic --> https://docs.pydantic.dev/latest/
+    "pydantic-settings>=2.1.0", # Pydantic Settings - Settings management using Pydantic: pydantic-settings --> https://pydantic-settings.readthedocs.io/en/latest/
+    # ------------------------------------------------------------------------
+    # Database and ORM
+    # ------------------------------------------------------------------------
+    "sqlalchemy>=2.0.23",     # SQLAlchemy - SQL toolkit and ORM: sqlalchemy --> https://www.sqlalchemy.org/ --> https://docs.sqlalchemy.org/en/latest/
+    "alembic>=1.12.1",        # Alembic - Database migration tool: alembic --> https://alembic.sqlalchemy.org/en/latest/ --> https://alembic.sqlalchemy.org/en/latest/api.html
+    "asyncpg>=0.29.0",        # AsyncPG - Async PostgreSQL driver: asyncpg --> https://asyncpg.readthedocs.io/en/stable/
+    "psycopg2-binary>=2.9.9", # Psycopg2 - PostgreSQL adapter (synchronous): psycopg2-binary --> https://www.psycopg.org/docs/ --> https://www.psycopg.org/docs/usage.html --> https://www.psycopg.org/docs/lib/libpq-connect.html
+    # ------------------------------------------------------------------------
+    # Authentication and Security
+    # ------------------------------------------------------------------------
+    "python-jose[cryptography]>=3.3.0", # Python-JOSE - JWT implementation: python-jose[cryptography] --> https://python-jose.readthedocs.io/en/latest/jose/jwt.html
+    "passlib[bcrypt]>=1.7.4",           # Passlib - Password hashing library: passlib[bcrypt] --> https://passlib.readthedocs.io/en/stable/passlib/context.html#bcrypt
+    "python-multipart>=0.0.6",          # Python-Multipart - For handling file uploads: python-multipart --> https://github.com/python-multipart/python-multipart
+    "cryptography>=41.0.7",             # Cryptography - Cryptographic recipes and primitives: cryptography --> https://cryptography.io/en/latest/
+    # ------------------------------------------------------------------------
+    # Monitoring and Observability
+    # ------------------------------------------------------------------------
+    "opentelemetry-api>=1.21.0",                     # OpenTelemetry API for observability instrumentation: opentelemetry-api --> https://opentelemetry-python.readthedocs.io/en/stable/api.html
+    "opentelemetry-sdk>=1.21.0",                     # OpenTelemetry SDK implementation for metrics/traces; opentelemetry-sdk --> https://opentelemetry-python.readthedocs.io/en/stable/sdk.html
+    "opentelemetry-instrumentation>=0.42b0",         # Auto-instrumentation for common libraries: opentelemetry-instrumentation --> https://opentelemetry-python.readthedocs.io/en/stable/instrumentation.html
+    "opentelemetry-instrumentation-fastapi>=0.42b0", # FastAPI auto-instrumentation: opentelemetry-instrumentation-fastapi   --> https://opentelemetry-python.readthedocs.io/en/stable/instrumentation/fastapi.html
+    "opentelemetry-exporter-prometheus>=1.12.0",     # Prometheus metrics exporter for monitoring: opentelemetry-exporter-prometheus --> https://opentelemetry-python.readthedocs.io/en/stable/exporter/prometheus.html
+    "prometheus-client>=0.19.0",                     # Prometheus client library for custom metrics collection: prometheus-client --> https://prometheus.io/docs/instrumenting/client_libraries/
+    "grafana-api>=1.0.3",                            # Grafana API client for programmatic dashboard management: grafana-api    --> https://grafana.com/docs/grafana/latest/http_api/
+    # ------------------------------------------------------------------------
+    # Web Scraping and Browser Automation
+    # ------------------------------------------------------------------------
+    "playwright>=1.40.0",     # Playwright for browser automation, testing, and web scraping : playwright --> https://playwright.dev/python/docs/intro
+    "firecrawl-py>=0.0.16",   # FireCrawl Python SDK for web crawling and content extraction : firecrawl-py --> https://firecrawl.com/docs/python/
+    "beautifulsoup4>=4.12.2", # BeautifulSoup4 - HTML/XML parser : beautifulsoup4 --> https://www.crummy.com/software/BeautifulSoup/bs4/doc/
+    "lxml>=4.9.3",            # LXML - XML and HTML parser : lxml --> https://lxml.de/
+    # ------------------------------------------------------------------------
+    # AI and Machine Learning (Core)
+    # ------------------------------------------------------------------------
+    "google-generativeai>=0.3.0", # Google Generative AI SDK for Gemini API integration : google-generativeai --> https://github.com/google/generative-ai-python
+    "openai>=1.3.0",              # OpenAI - OpenAI API client : openai --> https://github.com/openai/openai-python
+    "langchain>=0.1.0",           # LangChain - Framework for developing LLM applications : langchain --> https://github.com/langchain-ai/langchain
+    # ------------------------------------------------------------------------
+    # Task Queue and Background Jobs
+    # ------------------------------------------------------------------------
+    "celery>=5.3.4", # Celery - Distributed task queue : celery --> https://github.com/celery/celery
+    "redis>=5.0.1",  # Redis - Redis client for Celery broker : redis --> https://github.com/redis/redis-py
+    # ------------------------------------------------------------------------
+    # Data Processing and Utilities
+    # ------------------------------------------------------------------------
+    "pandas>=2.1.3",        # Pandas - Data manipulation and analysis : pandas --> https://github.com/pandas-dev/pandas
+    "numpy>=1.26.2",        # NumPy - Numerical computing library : numpy --> https://github.com/numpy/numpy
+    "pyyaml>=6.0.1",        # PyYAML - YAML parser and emitter : pyyaml --> https://github.com/yaml/pyyaml
+    "python-dotenv>=1.0.0", # Python-Dotenv - Load environment variables from .env files : python-dotenv --> https://github.com/theskumar/python-dotenv         
+    "toml>=0.10.2",         # TOML - TOML parser : toml --> https://github.com/uiri/toml
+    # ------------------------------------------------------------------------
+    # Logging and Utilities
+    # ------------------------------------------------------------------------
+    "python-json-logger>=2.0.7", # Python-JSON-Logger - JSON formatter for Python logging : python-json-logger --> https://github.com/madzak/python-json-logger
+    "colorlog>=6.8.0",           # Colorlog - Colored logging output : colorlog --> https://github.com/borntyping/colorlog
 ]
 
 # ----------------------------------------------------------------------------
-# Optional Development Dependencies
+# Optional Dependencies Groups
 # ----------------------------------------------------------------------------
-# Development dependencies installed via: pip install -e ".[dev]"
-# These are not required for runtime but essential for development workflow.
+# Optional dependency groups installed via: pip install -e ".[group1,group2]"
+# These allow users to install only the dependencies they need for their use case.
 [project.optional-dependencies]
 # Development tooling for testing, linting, formatting, and code quality
+# Install with: pip install -e ".[dev]" or uv sync --extra dev
 dev = [
     # Testing framework and utilities
-    "pytest>=7.4.0",          # Modern Python testing framework with fixtures and plugins
+    "pytest>=7.4.0",          # Modern Python testing framework with fixtures and plugins : pytest --> https://docs.pytest.org/en/latest/
     "pytest-asyncio>=0.21.0", # Async test support for testing async/await code
-    "pytest-cov>=4.1.0",      # Coverage reporting plugin for pytest
-    "pytest-httpx>=0.27.0",   # HTTPX test client for async HTTP request testing
+    "pytest-cov>=4.1.0",      # Coverage reporting plugin for pytest : pytest-cov --> https://github.com/pytest-dev/pytest-cov
+    "pytest-httpx>=0.27.0",   # HTTPX test client for async HTTP request testing : pytest-httpx --> https://github.com/pytest-dev/pytest-httpx
     # Code formatting and style enforcement
-    "black>=23.11.0", # Opinionated code formatter (backup to Ruff formatter)
-    "ruff>=0.1.6",    # Fast Python linter and formatter (Rust-based, replaces multiple tools)
+    "black>=23.11.0", # Opinionated code formatter (backup to Ruff formatter) : black --> https://github.com/psf/black
+    "ruff>=0.1.6",    # Fast Python linter and formatter (Rust-based, replaces multiple tools) : ruff --> https://github.com/astral-sh/ruff
     # Type checking and static analysis
-    "mypy>=1.7.0", # Static type checker for Python (PEP 484/526 type annotations)
+    "mypy>=1.7.0", # Static type checker for Python (PEP 484/526 type annotations) : mypy --> https://github.com/python/mypy
     # Git hooks and pre-commit checks
-    "pre-commit>=3.5.0", # Framework for managing git hooks and pre-commit checks
+    "pre-commit>=3.5.0", # Framework for managing git hooks and pre-commit checks : pre-commit --> https://github.com/pre-commit/pre-commit
+    # Security scanning tools
+    "bandit>=1.7.5", # Security linter for Python code : bandit --> https://github.com/PyCQA/bandit
+    "safety>=2.3.5", # Dependency vulnerability scanner : safety --> https://github.com/pyupio/safety
+]
+
+# Machine Learning and Deep Learning dependencies
+# Install with: pip install -e ".[ml]" or uv sync --extra ml
+# Note: For GPU support, install PyTorch separately with CUDA support
+ml = [
+    # Core ML/DL libraries
+    "torch>=2.1.0",         # PyTorch - Deep learning framework (CPU version) : torch --> https://github.com/pytorch/pytorch        
+    "torchvision>=0.16.0",  # TorchVision - Image and video datasets and models : torchvision --> https://github.com/pytorch/vision
+    "torchaudio>=2.1.0",    # TorchAudio - Audio processing library : torchaudio --> https://github.com/pytorch/audio
+    "torchtext>=0.16.0",    # TorchText - Text processing utilities : torchtext --> https://github.com/pytorch/text
+    "transformers>=4.35.0", # Transformers - State-of-the-art NLP models (BERT, GPT, etc.) : transformers --> https://github.com/huggingface/transformers
+    "xformers>=0.0.22",     # XFormers - Efficient Transformer implementations : xformers --> https://github.com/facebookresearch/xformers
+    "tokenizers>=0.15.0",   # Tokenizers - Fast tokenizers for Transformers
+    "accelerate>=0.25.0",   # Accelerate - Easy mixed precision and distributed training : accelerate --> https://github.com/huggingface/accelerate
+    "datasets>=2.14.0",     # Datasets - Hugging Face datasets library : datasets --> https://github.com/huggingface/datasets   
+    # ONNX and Model Optimization
+    "onnx>=1.15.0",          # ONNX - Open Neural Network Exchange format : onnx --> https://github.com/onnx/onnx
+    "onnxruntime>=1.16.0",   # ONNX Runtime - High-performance inference engine : onnxruntime --> https://github.com/microsoft/onnxruntime
+    "onnxoptimizer>=0.3.13", # ONNX Optimizer - Optimize ONNX models : onnxoptimizer --> https://github.com/microsoft/onnxoptimizer
+    "optimum>=1.14.0",       # Optimum - Optimization toolkit for Transformers : optimum --> https://github.com/huggingface/optimum
+    # Data Processing and Visualization
+    "matplotlib>=3.8.2",   # Matplotlib - Comprehensive plotting library : matplotlib --> https://github.com/matplotlib/matplotlib ;
+    "seaborn>=0.13.0",     # Seaborn - Statistical data visualization
+    "plotly>=5.18.0",      # Plotly - Interactive plotting library : plotly --> https://github.com/plotly/plotly.py
+    "scikit-learn>=1.3.2", # Scikit-learn - Machine learning library : scikit-learn --> https://github.com/scikit-learn/scikit-learn
+    "Pillow>=10.1.0",      # Pillow - Python Imaging Library for image processing : Pillow --> https://github.com/python-pillow/Pillow   
+    "jupyter>=1.0.0",    # Jupyter - Jupyter notebook support : jupyter --> https://github.com/jupyter/jupyter
+    "ipykernel>=6.27.0", # IPython kernel for Jupyter : ipykernel --> https://github.com/ipython/ipykernel
+    # NVIDIA GPU Support Libraries
+    "nvidia-ml-py>=12.535.0", # NVIDIA Management Library Python bindings : nvidia-ml-py --> https://github.com/NVIDIA/nvidia-ml-py
+    "pynvml>=11.5.0",         # Python bindings for NVIDIA Management Library : pynvml --> https://github.com/NVIDIA/pynvml
+]
+
+# All dependencies (dev + ml)
+# Install with: pip install -e ".[all]" or uv sync --extra all
+all = [
+    "notebook[dev,ml]", # Include all dev and ml dependencies : notebook[dev,ml] --> https://github.com/notebook-dev/notebook
 ]
 
 # ----------------------------------------------------------------------------
@@ -98,7 +211,7 @@ dev = [
 [build-system]
 # Build dependencies required to build the package (installed in isolated build environment)
 requires = [
-    "setuptools>=68.0.0",
+    "setuptools>=68.0.0", # Setuptools for packaging, wheel for binary distributions : setuptools --> https://github.com/pypa/setuptools    #
     "wheel>=0.41.0",
 ] # Setuptools for packaging, wheel for binary distributions
 # Build backend that handles package building (setuptools PEP 517 implementation)
@@ -137,66 +250,74 @@ exclude = [
 ]
 
 # Ruff linting rules configuration
+# Note: CI workflow checks for ruff.toml, but configuration is in pyproject.toml : ruff.toml --> https://docs.astral.sh/ruff/configuration/
+# This is the recommended approach per Ruff documentation (PEP 621 compliance) : PEP 621 --> https://peps.python.org/pep-0621/
 [tool.ruff.lint]
 # Enable specific rule sets - comprehensive coverage of Python best practices
+# These rules enforce code quality, security, and maintainability standards
 select = [
-    "E",   # pycodestyle errors (PEP 8 style guide violations)
-    "W",   # pycodestyle warnings (style suggestions)
-    "F",   # Pyflakes (logical errors and unused imports)
-    "I",   # isort (import sorting and organization)
-    "N",   # pep8-naming (naming convention checks)
-    "UP",  # pyupgrade (modernize code to newer Python syntax)
+    "E",   # pycodestyle errors (PEP 8 style guide violations) : pycodestyle --> https://pycodestyle.pycqa.org/en/latest/   
+    "W",   # pycodestyle warnings (style suggestions) : pycodestyle --> https://pycodestyle.pycqa.org/en/latest/   
+    "F",   # Pyflakes (logical errors and unused imports) : Pyflakes --> https://github.com/PyCQA/pyflakes
+    "I",   # isort (import sorting and organization) : isort --> https://github.com/PyCQA/isort
+    "N",   # pep8-naming (naming convention checks) : pep8-naming --> https://github.com/PyCQA/pep8-naming
+    "UP",  # pyupgrade (modernize code to newer Python syntax) : pyupgrade --> https://github.com/astral-sh/pyupgrade
     "B",   # flake8-bugbear (common bugs and design problems)
-    "C4",  # flake8-comprehensions (comprehension optimization)
-    "DTZ", # flake8-datetimez (timezone-aware datetime usage)
-    "T10", # flake8-debugger (detect debugger statements)
-    "EM",  # flake8-errmsg (error message best practices)
-    "ISC", # flake8-implicit-str-concat (string concatenation issues)
-    "ICN", # flake8-import-conventions (import style conventions)
-    "PIE", # flake8-pie (miscellaneous checks)
-    "PT",  # flake8-pytest-style (pytest best practices)
+    "C4",  # flake8-comprehensions (comprehension optimization) : flake8-comprehensions --> https://github.com/asottile/flake8-comprehensions       
+    "DTZ", # flake8-datetimez (timezone-aware datetime usage) : flake8-datetimez --> https://github.com/sobolevn/flake8-datetimez
+    "T10", # flake8-debugger (detect debugger statements) : flake8-debugger --> https://github.com/sobolevn/flake8-debugger
+    "EM",  # flake8-errmsg (error message best practices) : flake8-errmsg --> https://github.com/sobolevn/flake8-errmsg
+    "ISC", # flake8-implicit-str-concat (string concatenation issues) : flake8-implicit-str-concat --> https://github.com/sobolevn/flake8-implicit-str-concat
+    "ICN", # flake8-import-conventions (import style conventions) : flake8-import-conventions --> https://github.com/PyCQA/flake8-import-conventions
+    "PIE", # flake8-pie (miscellaneous checks) : flake8-pie --> https://github.com/sobolevn/flake8-pie
+    "PT",  # flake8-pytest-style (pytest best practices) : flake8-pytest-style --> https://github.com/sobolevn/flake8-pytest-style
     "Q",   # flake8-quotes (quote style consistency)
-    "RSE", # flake8-raise (exception raising best practices)
-    "RET", # flake8-return (return statement best practices)
-    "SIM", # flake8-simplify (code simplification opportunities)
-    "TID", # flake8-tidy-imports (import organization)
-    "TCH", # flake8-type-checking (type checking imports)
-    "ARG", # flake8-unused-arguments (unused function arguments)
-    "PTH", # flake8-use-pathlib (use pathlib instead of os.path)
-    "ERA", # eradicate (detect commented-out code)
-    "PD",  # pandas-vet (pandas-specific best practices)
-    "PGH", # pygrep-hooks (pattern-based checks)
-    "PL",  # Pylint rules (comprehensive code quality)
-    "TRY", # tryceratops (exception handling best practices)
-    "NPY", # NumPy-specific rules (NumPy best practices)
-    "RUF", # Ruff-specific rules (Ruff's own rule set)
+    "RSE", # flake8-raise (exception raising best practices) : flake8-raise --> https://github.com/sobolevn/flake8-raise
+    "RET", # flake8-return (return statement best practices) : flake8-return --> https://github.com/sobolevn/flake8-return
+    "SIM", # flake8-simplify (code simplification opportunities) : flake8-simplify --> https://github.com/sobolevn/flake8-simplify
+    "TID", # flake8-tidy-imports (import organization) : flake8-tidy-imports --> https://github.com/PyCQA/flake8-tidy-imports
+    "TCH", # flake8-type-checking (type checking imports) : flake8-type-checking --> https://github.com/PyCQA/flake8-type-checking
+    "ARG", # flake8-unused-arguments (unused function arguments) : flake8-unused-arguments --> https://github.com/PyCQA/flake8-unused-arguments
+    "PTH", # flake8-use-pathlib (use pathlib instead of os.path) : flake8-use-pathlib --> https://github.com/PyCQA/flake8-use-pathlib
+    "ERA", # eradicate (detect commented-out code) : eradicate --> https://github.com/facebook/eradicate
+    "PD",  # pandas-vet (pandas-specific best practices) : pandas-vet --> https://github.com/pandas-dev/pandas-vet  
+    "PGH", # pygrep-hooks (pattern-based checks) : pygrep-hooks --> https://github.com/PyCQA/pygrep-hooks       
+    "PL",  # Pylint rules (comprehensive code quality) : pylint --> https://github.com/PyCQA/pylint
+    "TRY", # tryceratops (exception handling best practices) : tryceratops --> https://github.com/tryceratops/tryceratops
+    "NPY", # NumPy-specific rules (NumPy best practices) : numpy --> https://github.com/numpy/numpy
+    "RUF", # Ruff-specific rules (Ruff's own rule set) : ruff --> https://github.com/astral-sh/ruff
 ]
 # Rules to ignore - sometimes necessary for pragmatic code decisions
 ignore = [
-    "E501",    # Line too long (handled by formatter, not linting)
-    "PLR0913", # Too many arguments (sometimes necessary for API design)
-    "PLR2004", # Magic value used in comparison (pragmatic exceptions allowed)
+    "E501",    # Line too long (handled by formatter, not linting) : E501 --> https://pycodestyle.pycqa.org/en/latest/intro.html#error-codes
+    "PLR0913", # Too many arguments (sometimes necessary for API design) : PLR0913 --> https://github.com/PyCQA/pylint/blob/main/pylint/extensions/checkers.py#L1161
+    "PLR2004", # Magic value used in comparison (pragmatic exceptions allowed) : PLR2004 --> https://github.com/PyCQA/pylint/blob/main/pylint/extensions/checkers.py#L1161
 ]
 
 # Ruff import sorting configuration (replaces isort)
 [tool.ruff.lint.isort]
 # Known first-party modules - imports from these packages are sorted first
-known-first-party = ["notebook"] # Project package name for import organization
+# Update this when the actual package structure is determined
+known-first-party = ["notebook"] # Project package name for import organization : notebook --> https://github.com/notebook-dev/notebook --> https://isort.readthedocs.io/en/stable/userguide/configuration.html#known-first-party
 # Force sorting within import sections (stdlib, third-party, first-party)
-force-sort-within-sections = true
+force-sort-within-sections = true : force-sort-within-sections --> https://isort.readthedocs.io/en/stable/userguide/configuration.html#force-sort-within-sections
 # Split imports into multiple lines on trailing comma
-split-on-trailing-comma = true
+split-on-trailing-comma = true : split-on-trailing-comma --> https://isort.readthedocs.io/en/stable/userguide/configuration.html#split-on-trailing-comma
+# Combine imports from the same module on a single line
+combine-as-imports = true : combine-as-imports --> https://isort.readthedocs.io/en/stable/userguide/configuration.html#combine-as-imports
+# Sort imports alphabetically within each section
+order-by-type = true : order-by-type --> https://isort.readthedocs.io/en/stable/userguide/configuration.html#order-by-type
 
 # Ruff code formatting configuration (replaces black)
 [tool.ruff.format]
 # Quote style preference - double quotes are standard in Python
-quote-style = "double" # Use double quotes for strings ("example" not 'example')
+quote-style = "double" # Use double quotes for strings ("example" not 'example') : quote-style --> https://isort.readthedocs.io/en/stable/userguide/configuration.html#quote-style
 # Indentation style - spaces are standard in Python (PEP 8)
-indent-style = "space" # Use spaces for indentation (4 spaces per level)
+indent-style = "space" # Use spaces for indentation (4 spaces per level) : indent-style --> https://isort.readthedocs.io/en/stable/userguide/configuration.html#indent-style
 # Include magic trailing comma in function calls and definitions
-skip-magic-trailing-comma = false # Preserve trailing commas for better diffs
+skip-magic-trailing-comma = false # Preserve trailing commas for better diffs : skip-magic-trailing-comma --> https://isort.readthedocs.io/en/stable/userguide/configuration.html#skip-magic-trailing-comma
 # Line ending style - auto-detect based on platform (CRLF for Windows, LF for Unix)
-line-ending = "auto" # Platform-appropriate line endings
+line-ending = "auto" # Platform-appropriate line endings : line-ending --> https://isort.readthedocs.io/en/stable/userguide/configuration.html#line-ending
 
 # ----------------------------------------------------------------------------
 # Pytest Configuration - Testing Framework
@@ -205,7 +326,7 @@ line-ending = "auto" # Platform-appropriate line endings
 # This configuration defines test discovery, execution options, and markers.
 [tool.pytest.ini_options]
 # Test discovery - directory containing test files
-testpaths = ["tests"] # Look for tests in the 'tests' directory
+testpaths = ["tests"] # Look for tests in the 'tests' directory : testpaths --> https://docs.pytest.org/en/latest/reference/reference.html#confval-testpaths
 # Test file naming patterns - pytest discovers files matching these patterns
 python_files = ["test_*.py", "*_test.py"] # Files starting with 'test_' or ending with '_test.py'
 # Test class naming patterns - pytest discovers classes matching this pattern
@@ -274,7 +395,9 @@ explicit_package_bases = true # Help mypy correctly map file paths to module nam
 # Coverage.py runtime configuration
 [tool.coverage.run]
 # Source directories to measure coverage for
-source = ["notebook"] # Measure coverage for the 'notebook' package
+# Note: Update this when the actual package structure is created (e.g., "src/notebook" or "notebook")
+# For now, configured to work with both src-layout and flat-layout package structures
+source = ["notebook", "src"] # Measure coverage for the 'notebook' package (supports both layouts)
 # Files and directories to omit from coverage measurement
 omit = [
     "*/tests/*",       # Exclude all test files and directories
@@ -282,6 +405,10 @@ omit = [
     "*/__pycache__/*", # Exclude Python bytecode cache directories
     "*/setup.py",      # Exclude setup.py files
     "*/conftest.py",   # Exclude pytest configuration files
+    "*/venv/*",        # Exclude virtual environment directories
+    "*/.venv/*",       # Exclude virtual environment directories (alternative naming)
+    "*/build/*",       # Exclude build artifacts
+    "*/dist/*",        # Exclude distribution packages
 ]
 
 # Coverage.py reporting configuration
@@ -301,6 +428,6 @@ exclude_lines = [
     "class .*\\bProtocol\\):",    # Exclude Protocol classes (structural subtyping)
     "@(abc\\.)?abstractmethod",   # Exclude abstract method decorators
 ]
-# Minimum coverage percentage to enforce (fail if below threshold)
+# Minimum coverage percentage to enforce (fail if below threshold) #
 # Note: This is informational - actual enforcement should be in CI/CD
 fail_under = 80 # Require at least 80% code coverage
