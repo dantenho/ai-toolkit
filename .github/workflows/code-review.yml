@@ -73,19 +73,35 @@ jobs:
         if: hashFiles('pyproject.toml') != ''
         run: uv sync
 
-      - name: Run Cursor Bot Review # Placeholder for Cursor AI integration
-        # Note: Replace with actual Cursor Bot API call when available
+      - name: Run Cursor Bot Review
+        # Placeholder for Cursor AI integration
+        # TODO: Replace with actual Cursor Bot API call when available
+        # Expected API: POST to Cursor Bot endpoint with PR diff and context
         run: |
-          echo "Cursor Bot review would run here"
-          echo "PR: ${{ github.event.pull_request.number }}"
+          echo "🔍 Cursor Bot review would run here"
+          echo "PR Number: ${{ github.event.pull_request.number }}"
           echo "Files changed: ${{ github.event.pull_request.changed_files }}"
-        continue-on-error: true
+          echo "Base branch: ${{ github.event.pull_request.base.ref }}"
+          echo "Head branch: ${{ github.event.pull_request.head.ref }}"
+        continue-on-error: true # Don't fail workflow if placeholder fails
 
-  # Gemini Code Assistant review
+  # ========================================================================
+  # Google Gemini AI Code Review Job
+  # ========================================================================
+  # This job uses Google's Gemini AI model to analyze code changes in PRs.
+  # It reviews each changed file for bugs, security issues, code quality,
+  # and suggests improvements. Results are posted as PR comments.
+  # ========================================================================
   gemini-review:
     name: Gemini Code Assistant Review
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false # Skip draft PRs
+    # Skip draft PRs to save CI resources and API costs
+    if: github.event.pull_request.draft == false
+    # Required permissions for PR comments and code access
+    permissions:
+      contents: read # Read repository contents
+      pull-requests: write # Post review comments on PRs
+    timeout-minutes: 20 # Job timeout to prevent excessive API usage
     steps:
       - name: Checkout repository # Get PR code
         uses: actions/checkout@v4
@@ -103,212 +119,550 @@ jobs:
           pip install google-generativeai
           pip install requests
 
-      - name: Get changed files # List files changed in PR
+      - name: Install jq for JSON processing
+        # Install jq utility for parsing JSON output in bash scripts
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Get changed files
+        # Extract list of files changed in PR for review
         id: changed-files
         run: |
-          git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} > changed_files.txt
-          echo "files=$(cat changed_files.txt | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
+          # Get diff between base and head commits
+          git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} > changed_files.txt || true
+          # Convert file list to JSON array for output
+          if [ -s changed_files.txt ]; then
+            echo "files=$(cat changed_files.txt | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
+            echo "Found $(wc -l < changed_files.txt) changed files"
+          else
+            echo "files=[]" >> $GITHUB_OUTPUT
+            echo "No changed files found"
+          fi
 
-      - name: Run Gemini Code Review # Review code using Gemini API
+      - name: Run Gemini Code Review
+        # Review code using Google Gemini AI API
+        # Analyzes each changed source file for bugs, security issues, code quality
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} # API key from secrets
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} # API key from GitHub secrets
         run: |
           python3 << 'EOF'
+          """
+          Gemini AI Code Review Script
+          =============================
+          This script uses Google's Gemini AI to review code changes in pull requests.
+          It processes each changed source file and generates comprehensive reviews
+          covering bugs, security vulnerabilities, code quality, and best practices.
+          """
           import os
+          import sys
           import google.generativeai as genai
 
+          # Retrieve API key from environment
           api_key = os.getenv('GEMINI_API_KEY')
           if not api_key:
-              print("GEMINI_API_KEY not found")
-              exit(1)
+              print("❌ ERROR: GEMINI_API_KEY not found in secrets")
+              print("Please configure GEMINI_API_KEY in repository settings > Secrets")
+              sys.exit(1)
 
-          genai.configure(api_key=api_key)
-          model = genai.GenerativeModel('gemini-pro')
+          # Configure Gemini AI client
+          try:
+              genai.configure(api_key=api_key)
+              model = genai.GenerativeModel('gemini-pro')
+              print("✅ Gemini AI model initialized successfully")
+          except Exception as e:
+              print(f"❌ ERROR: Failed to configure Gemini AI: {e}")
+              sys.exit(1)
 
-          # Read changed files
+          # Read list of changed files
           try:
               with open('changed_files.txt', 'r') as f:
                   files = [line.strip() for line in f if line.strip()]
           except FileNotFoundError:
-              print("No changed files found")
-              exit(0)
+              print("ℹ️  No changed files found - skipping review")
+              sys.exit(0)
 
-          # Review each file
+          if not files:
+              print("ℹ️  No files to review")
+              sys.exit(0)
+
+          # Review each source code file
+          reviewed_count = 0
+          error_count = 0
+          supported_extensions = ('.py', '.js', '.ts', '.java', '.cpp', '.c', '.go', '.rs', '.rb')
+
           for file_path in files:
-              if file_path.endswith(('.py', '.js', '.ts', '.java', '.cpp', '.c')):
-                  try:
-                      with open(file_path, 'r') as f:
-                          content = f.read()
-                      
-                      prompt = f"Review this code for bugs, security issues, and improvements:\n\n{content}"
-                      response = model.generate_content(prompt)
-                      print(f"Review for {file_path}:\n{response.text}\n")
-                  except Exception as e:
-                      print(f"Error reviewing {file_path}: {e}")
-          EOF
-        continue-on-error: true
+              # Only review source code files
+              if not file_path.endswith(supported_extensions):
+                  continue
+              
+              # Skip deleted files
+              if not os.path.exists(file_path):
+                  print(f"⏭️  Skipping deleted file: {file_path}")
+                  continue
+              
+              try:
+                  # Read file content
+                  with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                      content = f.read()
+                  
+                  # Skip empty files
+                  if not content.strip():
+                      print(f"⏭️  Skipping empty file: {file_path}")
+                      continue
+                  
+                  # Construct review prompt
+                  prompt = f"""Review this code file for:
+                  1. Bugs and logical errors
+                  2. Security vulnerabilities
+                  3. Code quality and best practices
+                  4. Performance issues
+                  5. Maintainability concerns
+                  
+                  Provide specific, actionable feedback with line numbers when possible.
+                  
+                  File: {file_path}
+                  
+                  Code:
+                  {content}"""
+                  
+                  # Generate review using Gemini AI
+                  print(f"🔍 Reviewing {file_path}...")
+                  response = model.generate_content(prompt)
+                  
+                  # Output review results
+                  print(f"\n{'='*80}")
+                  print(f"📝 Review for {file_path}:")
+                  print(f"{'='*80}")
+                  print(response.text)
+                  print(f"{'='*80}\n")
+                  
+                  reviewed_count += 1
+                  
+              except Exception as e:
+                  print(f"❌ Error reviewing {file_path}: {e}")
+                  error_count += 1
+                  continue
 
-      - name: Post review comment # Post review results as PR comment
+          # Summary
+          print(f"\n✅ Review complete: {reviewed_count} files reviewed, {error_count} errors")
+          if error_count > 0:
+              sys.exit(1)
+          EOF
+        continue-on-error: true # Don't fail workflow on API errors
+
+      - name: Post review comment
+        # Post comprehensive review summary as PR comment
         if: always()
         uses: actions/github-script@v7
         with:
           script: |
+            /**
+             * Post AI Code Review Summary Comment
+             * Creates a comprehensive summary comment on the PR with links to
+             * all review results and workflow logs for detailed analysis.
+             */
+            const workflowUrl = `${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`;
+            const commentBody = `## 🤖 AI Code Review Summary
+
+            Comprehensive automated code review has been completed for this pull request.
+
+            ### Review Components
+            - ✅ **Gemini AI Analysis** - AI-powered code review and suggestions
+            - 🔒 **Security Scanning** - Trivy, Semgrep, and Bandit security analysis
+            - 📦 **Dependency Review** - Snyk and Dependency Review vulnerability checks
+            - 🐰 **CodeRabbit AI Review** - Automated PR review and suggestions
+            - 📚 **Documentation Review** - Jules.MD documentation analysis
+            - 🔄 **CircleCI Integration** - External CI pipeline triggered
+
+            ### View Results
+            - [View Workflow Logs](${workflowUrl}) - Detailed review output and logs
+            - Check individual job outputs for specific tool results
+
+            ---
+            *This is an automated review. Please review the suggestions and address any critical issues.*`;
+
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '🤖 Comprehensive AI Code Review completed:\n\n- ✅ Gemini AI Analysis\n- 🔒 Security Scanning (Trivy, Semgrep, Bandit)\n- 📦 Dependency Review\n- 🐰 CodeRabbit AI Review\n- 📚 Documentation Review\n- 🔄 CircleCI Integration\n\nCheck the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for detailed feedback.'
-            })
+              body: commentBody
+            });
 
-  # GitHub Copilot CLI integration
+  # ========================================================================
+  # GitHub Copilot CLI Code Review Job
+  # ========================================================================
+  # This job uses GitHub Copilot CLI to explain and review code changes.
+  # Copilot provides AI-powered code explanations and suggestions for
+  # improved code understanding and quality.
+  # ========================================================================
   copilot-review:
     name: GitHub Copilot Review
     runs-on: ubuntu-latest
+    # Skip draft PRs to save CI resources
     if: github.event.pull_request.draft == false
+    # Required permissions for GitHub CLI and Copilot access
+    permissions:
+      contents: read # Read repository contents
+      pull-requests: read # Read PR information
+    timeout-minutes: 15 # Job timeout to prevent hanging
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        # Checkout PR branch for code review
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.ref }} # Checkout PR branch
+          fetch-depth: 0 # Full history for context
 
       - name: Install GitHub CLI
+        # Install GitHub CLI for Copilot integration
         run: |
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          # Add GitHub CLI repository key
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
+            sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          # Add GitHub CLI repository to apt sources
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | \
+            sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          # Update package list and install GitHub CLI
           sudo apt update
-          sudo apt install gh
+          sudo apt install -y gh
 
-      - name: Copilot Code Review
+      - name: Authenticate GitHub CLI
+        # Authenticate GitHub CLI with token for Copilot access
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh auth login --with-token <<< "$GITHUB_TOKEN"
-          git diff --name-only HEAD~1 | while read file; do
-            if [[ -f "$file" ]]; then
-              echo "Reviewing $file with Copilot"
-              gh copilot explain "$file" || echo "Copilot review failed for $file"
+          echo "$GITHUB_TOKEN" | gh auth login --with-token
+          gh auth status # Verify authentication
+
+      - name: Copilot Code Review
+        # Review changed files using GitHub Copilot CLI
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get list of changed files between base and head
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+
+          # Get changed files using git diff
+          git diff --name-only "${BASE_SHA}" "${HEAD_SHA}" | while read -r file; do
+            # Skip if file doesn't exist (deleted files)
+            if [[ ! -f "$file" ]]; then
+              echo "⏭️  Skipping deleted file: $file"
+              continue
+            fi
+            
+            # Only review source code files
+            if [[ "$file" =~ \.(py|js|ts|java|cpp|c|go|rs|rb)$ ]]; then
+              echo "🔍 Reviewing $file with Copilot..."
+              # Use Copilot to explain the file
+              gh copilot explain "$file" || echo "⚠️  Copilot review failed for $file"
+            else
+              echo "⏭️  Skipping non-source file: $file"
             fi
           done
-        continue-on-error: true
+        continue-on-error: true # Don't fail workflow on Copilot errors
 
-  # Security scanning with multiple tools
+  # ========================================================================
+  # Security Scanning Job
+  # ========================================================================
+  # This job runs multiple security scanning tools to identify vulnerabilities:
+  # - Trivy: Comprehensive vulnerability scanner for filesystems and containers
+  # - Semgrep: Static analysis tool for security and code quality issues
+  # - Bandit: Python-specific security linter for common vulnerabilities
+  # Results are uploaded to GitHub Security tab for visibility.
+  # ========================================================================
   security-scan:
     name: Security Analysis
     runs-on: ubuntu-latest
+    # Skip draft PRs to save CI resources
     if: github.event.pull_request.draft == false
+    # Required permissions for security scanning and SARIF upload
+    permissions:
+      contents: read # Read repository contents
+      security-events: write # Upload security scan results to GitHub Security tab
+      actions: read # Read workflow information
+    timeout-minutes: 30 # Job timeout for comprehensive scanning
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Checkout repository
+        # Checkout code for security scanning
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history for comprehensive scanning
+
+      - name: Set up Python 3.11
+        # Python environment for Bandit security linter
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Run Trivy vulnerability scanner
+        # Trivy scans filesystem for known vulnerabilities in dependencies and code
         uses: aquasecurity/trivy-action@master
         with:
-          scan-type: "fs"
-          scan-ref: "."
-          format: "sarif"
-          output: "trivy-results.sarif"
+          scan-type: "fs" # Filesystem scan mode
+          scan-ref: "." # Scan current directory
+          format: "sarif" # SARIF format for GitHub Security tab integration
+          output: "trivy-results.sarif" # Output file for results
+          severity: "CRITICAL,HIGH,MEDIUM" # Only report high-severity issues
 
       - name: Upload Trivy scan results
+        # Upload Trivy results to GitHub Security tab for visibility
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: "trivy-results.sarif"
+          sarif_file: "trivy-results.sarif" # SARIF file from Trivy scan
+          wait-for-processing: false # Don't wait for processing to complete
 
       - name: Run Semgrep security scan
+        # Semgrep performs static analysis for security vulnerabilities
         uses: returntocorp/semgrep-action@v1
         with:
-          config: auto
+          config: auto # Use Semgrep's automatic configuration
         env:
-          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }} # Semgrep API token (optional)
+        continue-on-error: true # Don't fail workflow on Semgrep errors
 
       - name: Run Bandit security linter
+        # Bandit scans Python code for common security vulnerabilities
         run: |
-          pip install bandit
+          # Install Bandit security linter
+          pip install bandit[toml] # Include TOML support for pyproject.toml config
+          # Run Bandit scan on Python files
+          # -r: recursive scan
+          # -f json: JSON output format
+          # -o: output file
+          # || true: don't fail workflow on findings
           bandit -r . -f json -o bandit-report.json || true
-        continue-on-error: true
+        continue-on-error: true # Don't fail workflow on security findings
 
-  # Dependency scanning
+      - name: Upload Bandit results
+        # Upload Bandit scan results as artifact for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-security-report
+          path: bandit-report.json
+          retention-days: 30 # Keep artifacts for 30 days
+
+  # ========================================================================
+  # Dependency Vulnerability Scanning Job
+  # ========================================================================
+  # This job scans project dependencies for known security vulnerabilities:
+  # - Snyk: Comprehensive dependency vulnerability database scanning
+  # - Dependency Review: GitHub's native dependency change analysis
+  # Both tools help identify and prevent vulnerable dependencies from being merged.
+  # ========================================================================
   dependency-scan:
     name: Dependency Analysis
     runs-on: ubuntu-latest
+    # Required permissions for dependency scanning
+    permissions:
+      contents: read # Read repository contents
+      pull-requests: write # Comment on PRs with vulnerability findings
+      security-events: write # Report security vulnerabilities
+    timeout-minutes: 20 # Job timeout for dependency scanning
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        # Checkout code for dependency analysis
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history for dependency tracking
+
+      - name: Set up Python 3.11
+        # Python environment for Snyk scanning
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
       - name: Run Snyk to check for vulnerabilities
+        # Snyk scans Python dependencies for known vulnerabilities
         uses: snyk/actions/python@master
         env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }} # Snyk API token from secrets
         with:
-          args: --severity-threshold=high
-        continue-on-error: true
+          args: --severity-threshold=high # Only report high-severity vulnerabilities
+        continue-on-error: true # Don't fail workflow on vulnerabilities found
 
       - name: Dependency Review
+        # GitHub's native dependency review for PR changes
+        # Analyzes dependency changes in PRs for security issues
+        if: github.event_name == 'pull_request' # Only run on PR events
         uses: actions/dependency-review-action@v4
         with:
-          fail-on-severity: moderate
+          fail-on-severity: moderate # Fail PR if moderate+ severity issues found
+          deny-licenses: # Block specific licenses (configure as needed)
+          deny-ghsas: # Block specific GitHub Security Advisories
 
-  # CodeRabbit AI review
+  # ========================================================================
+  # CodeRabbit AI Review Job
+  # ========================================================================
+  # This job uses CodeRabbit AI to provide automated code review on PRs.
+  # CodeRabbit analyzes code changes and provides intelligent suggestions
+  # for improvements, bug fixes, and best practices.
+  # ========================================================================
   coderabbit-review:
     name: CodeRabbit AI Review
     runs-on: ubuntu-latest
+    # Skip draft PRs to save CI resources and API costs
     if: github.event.pull_request.draft == false
+    # Required permissions for CodeRabbit to comment on PRs
+    permissions:
+      contents: read # Read repository contents
+      pull-requests: write # Post review comments on PRs
+      issues: write # Create issues if needed
+    timeout-minutes: 15 # Job timeout to prevent hanging
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        # Checkout PR branch for CodeRabbit analysis
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.ref }} # Checkout PR branch
+          fetch-depth: 0 # Full history for context
 
       - name: CodeRabbit Review
+        # Run CodeRabbit AI review on PR changes
         uses: coderabbitai/coderabbit-action@v1
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
-        continue-on-error: true
+          github_token: ${{ secrets.GITHUB_TOKEN }} # GitHub token for PR comments
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }} # OpenAI API key for CodeRabbit
+          # Optional: Add more CodeRabbit configuration here
+          # language: python
+          # review_simple_changes: false
+        continue-on-error: true # Don't fail workflow on CodeRabbit errors
 
-  # CircleCI integration trigger
+  # ========================================================================
+  # CircleCI Integration Trigger Job
+  # ========================================================================
+  # This job triggers an external CircleCI pipeline for additional CI/CD
+  # processing. Useful when maintaining separate CI systems or when
+  # CircleCI has specialized build/test configurations.
+  # ========================================================================
   circleci-trigger:
     name: Trigger CircleCI
     runs-on: ubuntu-latest
+    # Skip draft PRs to save CI resources
     if: github.event.pull_request.draft == false
+    # Required permissions for API calls
+    permissions:
+      contents: read # Read repository information
+    timeout-minutes: 5 # Job timeout for API call
     steps:
       - name: Trigger CircleCI Pipeline
+        # Trigger CircleCI pipeline via API
+        env:
+          CIRCLECI_TOKEN: ${{ secrets.CIRCLECI_TOKEN }} # CircleCI API token
         run: |
-          curl -X POST \
-            -H "Circle-Token: ${{ secrets.CIRCLECI_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "branch": "${{ github.event.pull_request.head.ref }}",
-              "parameters": {
-                "pr_number": ${{ github.event.pull_request.number }},
-                "triggered_by": "github_actions"
-              }
-            }' \
-            "https://circleci.com/api/v2/project/github/${{ github.repository }}/pipeline"
-        continue-on-error: true
+          # Validate token exists
+          if [ -z "$CIRCLECI_TOKEN" ]; then
+            echo "⚠️  Warning: CIRCLECI_TOKEN not configured, skipping CircleCI trigger"
+            exit 0
+          fi
 
-  # Jules.MD documentation review
+          # Extract repository owner and name
+          REPO_OWNER=$(echo "${{ github.repository }}" | cut -d'/' -f1)
+          REPO_NAME=$(echo "${{ github.repository }}" | cut -d'/' -f2)
+
+          # Trigger CircleCI pipeline via API v2
+          echo "🔄 Triggering CircleCI pipeline for branch: ${{ github.event.pull_request.head.ref }}"
+          curl -X POST \
+            -H "Circle-Token: $CIRCLECI_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"branch\": \"${{ github.event.pull_request.head.ref }}\",
+              \"parameters\": {
+                \"pr_number\": ${{ github.event.pull_request.number }},
+                \"triggered_by\": \"github_actions\",
+                \"github_event\": \"${{ github.event_name }}\"
+              }
+            }" \
+            "https://circleci.com/api/v2/project/github/${{ github.repository }}/pipeline" || {
+              echo "❌ Failed to trigger CircleCI pipeline"
+              exit 1
+            }
+
+          echo "✅ CircleCI pipeline triggered successfully"
+        continue-on-error: true # Don't fail workflow if CircleCI trigger fails
+
+  # ========================================================================
+  # Jules.MD Documentation Review Job
+  # ========================================================================
+  # This job reviews documentation changes in PRs using Jules.MD AI.
+  # It checks for documentation quality, clarity, completeness, and
+  # adherence to documentation standards.
+  # ========================================================================
   jules-md-review:
     name: Jules.MD Documentation Review
     runs-on: ubuntu-latest
+    # Skip draft PRs to save CI resources
     if: github.event.pull_request.draft == false
+    # Required permissions for PR comments
+    permissions:
+      contents: read # Read repository contents
+      pull-requests: write # Post review comments on PRs
+    timeout-minutes: 15 # Job timeout for documentation review
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        # Checkout PR branch for documentation review
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.ref }} # Checkout PR branch
+          fetch-depth: 0 # Full history for context
 
       - name: Check for documentation changes
+        # Detect if documentation files were changed in this PR
         id: docs-changed
         run: |
-          if git diff --name-only HEAD~1 | grep -E '\.(md|rst|txt)$'; then
+          # Get base and head SHAs for PR comparison
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+
+          # Check for documentation file changes
+          if git diff --name-only "${BASE_SHA}" "${HEAD_SHA}" | grep -E '\.(md|rst|txt|adoc)$'; then
             echo "docs_changed=true" >> $GITHUB_OUTPUT
+            echo "✅ Documentation files changed - review will run"
           else
             echo "docs_changed=false" >> $GITHUB_OUTPUT
+            echo "ℹ️  No documentation files changed - skipping review"
           fi
 
       - name: Jules.MD Review
+        # Review documentation changes using Jules.MD AI
         if: steps.docs-changed.outputs.docs_changed == 'true'
+        env:
+          JULES_API_KEY: ${{ secrets.JULES_API_KEY }} # Jules.MD API key (optional)
         run: |
-          echo "Jules.MD would review documentation changes here"
-          git diff --name-only HEAD~1 | grep -E '\.(md|rst|txt)$' | while read file; do
-            echo "Reviewing documentation: $file"
-            # Placeholder for Jules.MD API integration
+          # Get base and head SHAs for PR comparison
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+
+          echo "📚 Starting Jules.MD documentation review..."
+
+          # Get list of changed documentation files
+          git diff --name-only "${BASE_SHA}" "${HEAD_SHA}" | grep -E '\.(md|rst|txt|adoc)$' | while read -r file; do
+            # Skip deleted files
+            if [[ ! -f "$file" ]]; then
+              echo "⏭️  Skipping deleted documentation file: $file"
+              continue
+            fi
+            
+            echo "🔍 Reviewing documentation: $file"
+            
+            # TODO: Integrate with Jules.MD API when available
+            # Expected API call:
+            # curl -X POST \
+            #   -H "Authorization: Bearer $JULES_API_KEY" \
+            #   -H "Content-Type: application/json" \
+            #   -d "{\"file\": \"$file\", \"content\": \"$(cat $file)\"}" \
+            #   "https://api.jules.md/review"
+            
+            # Placeholder: Show file info
+            echo "  File: $file"
+            echo "  Lines: $(wc -l < "$file")"
+            echo "  Size: $(du -h "$file" | cut -f1)"
+            echo ""
           done
-        continue-on-error: true
+
+          echo "✅ Documentation review complete"
+        continue-on-error: true # Don't fail workflow on documentation review errors

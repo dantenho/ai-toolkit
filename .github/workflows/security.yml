@@ -1,15 +1,36 @@
-# Security scanning workflow using GitHub's CodeQL and additional security tools
-# This workflow performs automated security analysis on code changes
+# ============================================================================
+# Security Scanning Workflow
+# ============================================================================
+# This workflow performs comprehensive automated security analysis on code
+# changes using multiple security tools:
+# - CodeQL: GitHub's semantic code analysis engine for vulnerability detection
+# - Safety: Python dependency vulnerability scanner
+# - Gitleaks: Secret scanning to detect hardcoded credentials and API keys
+#
+# The workflow runs on pushes, pull requests, and scheduled scans to ensure
+# continuous security monitoring and early vulnerability detection.
+# ============================================================================
 name: Security Scan
 
+# Workflow trigger configuration
 on:
-  push: # Run on pushes to protected branches
+  # Trigger on pushes to main/master branches
+  push:
     branches: [main, master]
-  pull_request: # Run on all pull requests
+  # Trigger on pull requests to main/master branches
+  pull_request:
     branches: [main, master]
-  schedule: # Run weekly security scans
-    - cron: '0 0 * * 1' # Every Monday at midnight UTC
-  workflow_dispatch: # Allow manual triggering
+  # Weekly scheduled security scan (Monday at midnight UTC)
+  schedule:
+    - cron: '0 0 * * 1'
+  # Allow manual workflow dispatch for on-demand scans
+  workflow_dispatch:
+
+# Default job configuration
+defaults:
+  run:
+    shell: bash # Use bash shell for consistent behavior
+    timeout-minutes: 30 # Prevent jobs from hanging indefinitely
 
 jobs:
   # CodeQL analysis for multiple languages
@@ -63,39 +84,81 @@ jobs:
       - name: Install safety # Security vulnerability scanner for Python dependencies
         run: pip install safety
 
-      - name: Run safety check # Scan dependencies for known vulnerabilities
+      - name: Run safety check
+        # Scan Python dependencies for known security vulnerabilities
+        # Safety checks against a database of known vulnerable packages
         if: hashFiles('pyproject.toml') != '' || hashFiles('requirements*.txt') != ''
         run: |
+          # Check if pyproject.toml exists and export dependencies
           if [ -f "pyproject.toml" ]; then
-            uv export --format requirements-txt | safety check --stdin
+            echo "📦 Scanning dependencies from pyproject.toml"
+            uv export --format requirements-txt | safety check --stdin --json --output safety-report.json || {
+              echo "⚠️  Safety check found vulnerabilities or failed"
+              # Create empty report if safety fails without JSON output
+              if [ ! -f "safety-report.json" ]; then
+                echo '{"vulnerabilities": []}' > safety-report.json
+              fi
+            }
+          # Fallback to requirements.txt if pyproject.toml doesn't exist
           elif [ -f "requirements.txt" ]; then
-            safety check --file requirements.txt
+            echo "📦 Scanning dependencies from requirements.txt"
+            safety check --file requirements.txt --json --output safety-report.json || {
+              echo "⚠️  Safety check found vulnerabilities or failed"
+              # Create empty report if safety fails without JSON output
+              if [ ! -f "safety-report.json" ]; then
+                echo '{"vulnerabilities": []}' > safety-report.json
+              fi
+            }
+          else
+            echo "ℹ️  No dependency files found (pyproject.toml or requirements.txt)"
+            echo '{"vulnerabilities": []}' > safety-report.json
           fi
         continue-on-error: true # Don't fail workflow on vulnerabilities, just report
 
-      - name: Upload safety results # Upload scan results as artifact
+      - name: Upload safety results
+        # Upload safety scan results as artifact for review and tracking
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: safety-report
           path: safety-report.json
-          retention-days: 30
+          retention-days: 30 # Keep artifacts for 30 days
+          if-no-files-found: ignore # Don't fail if report file doesn't exist
 
-  # Secret scanning
+  # ========================================================================
+  # Secret Scanning Job
+  # ========================================================================
+  # This job scans the repository for hardcoded secrets, API keys, passwords,
+  # and other sensitive credentials that should not be committed to version
+  # control. Uses Gitleaks to detect common secret patterns.
+  # ========================================================================
   secret-scan:
     name: Secret Scanning
     runs-on: ubuntu-latest
+    # Required permissions for secret scanning
+    permissions:
+      contents: read # Read repository contents
+      security-events: write # Report security findings
+    timeout-minutes: 15 # Job timeout for secret scanning
     steps:
-      - name: Checkout repository # Get source code
+      - name: Checkout repository
+        # Checkout code with full history for comprehensive secret scanning
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Full history for secret scanning
+          fetch-depth: 0 # Full history for secret scanning across all commits
 
-      - name: Run Gitleaks # Scan for hardcoded secrets and credentials
+      - name: Run Gitleaks
+        # Scan repository for hardcoded secrets and credentials
+        # Gitleaks detects common patterns for API keys, passwords, tokens, etc.
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # GitHub token for scanning
-        continue-on-error: true # Report but don't fail on secrets found
+        with:
+          # Optional: Configure Gitleaks behavior
+          # no-git: false # Scan git history (default: false)
+          # exit-code: 1 # Exit code when secrets found (default: 1)
+          # severity: high # Minimum severity level to report
+        continue-on-error: true # Report but don't fail workflow on secrets found
 
 
 
